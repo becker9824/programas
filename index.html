@@ -1288,6 +1288,9 @@ function renderSettings() {
     }).catch(() => toast('El archivo no es un respaldo válido de esta app'));
     e.target.value = '';
   } });
+  // Versión del programa de escritorio (se actualiza solo desde GitHub)
+  const version = h('p', { class: 'sub' });
+  if (location.protocol === 'app:') fetch('/version').then(r => r.text()).then(v => { version.textContent = `Versión ${v} · se actualiza sola al abrir el programa`; }).catch(() => {});
   return h('div', null,
     h('h1', null, 'Ajustes'),
     h('p', { class: 'sub' }, 'Los datos se guardan en este navegador. Descarga un respaldo de vez en cuando.'),
@@ -1316,7 +1319,8 @@ function renderSettings() {
             download: `respaldo-programas-${todayISO()}.json` });
           a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
         } }, '⬇ Descargar respaldo'),
-        h('button', { class: 'btn', onclick: () => fileIn.click() }, '⬆ Cargar respaldo'), fileIn)));
+        h('button', { class: 'btn', onclick: () => fileIn.click() }, '⬆ Cargar respaldo'), fileIn)),
+    version);
 }
 
 document.querySelectorAll('nav button').forEach(b => b.addEventListener('click', () => go({ name: b.dataset.view })));

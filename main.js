@@ -59,6 +59,7 @@ async function handleRequest(req) {
   const url = new URL(req.url);
   try {
     if (url.pathname.startsWith('/jw/')) return await handleJw(url);
+    if (url.pathname === '/version') return reply(app.getVersion());
     const rel = decodeURIComponent(url.pathname) === '/' ? '/index.html' : decodeURIComponent(url.pathname);
     const file = path.normalize(path.join(ROOT, rel));
     if (!file.startsWith(ROOT + path.sep)) return reply('No encontrado', 404);
@@ -74,6 +75,7 @@ async function selfTest(win) {
   const result = await win.webContents.executeJavaScript(`(async () => {
     const out = { jspdf: !!(window.jspdf && window.jspdf.jsPDF), protocol: location.protocol };
     out.ping = await (await fetch('/jw/ping')).text();
+    out.version = await (await fetch('/version')).text();
     const { y, w } = isoWeek(todayISO());
     const r = await fetch('/jw/semana?y=' + y + '&w=' + w);
     out.semana = r.status;
