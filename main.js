@@ -89,19 +89,25 @@ async function selfTest(win) {
 }
 
 // Actualizaciones: busca versiones nuevas en GitHub Releases, las descarga
-// en segundo plano y pregunta si reiniciar. Si se dice "Más tarde", se instala al cerrar.
+// en segundo plano y pregunta si reiniciar. Si se dice "Más tarde", se vuelve a preguntar la próxima vez.
+// El instalador se muestra (no silencioso) para que se vea el avance; en discos lentos
+// o con antivirus puede tardar, y si es invisible parece que el programa se congeló.
 function checkUpdates(win) {
   if (!app.isPackaged || process.argv.includes('--prueba')) return;
-  autoUpdater.autoInstallOnAppQuit = true;
+  autoUpdater.autoInstallOnAppQuit = false; // instalar al cerrar sería invisible; se vuelve a preguntar al abrir
   autoUpdater.on('error', e => console.log('Actualización: ' + e.message)); // sin internet, etc.
   autoUpdater.on('update-downloaded', async info => {
     const { response } = await dialog.showMessageBox(win, {
       type: 'info', title: 'Actualización lista',
       message: `Ya se descargó la versión ${info.version} de Programas.`,
-      detail: 'Se instalará al reiniciar el programa. Tus datos no se borran.',
+      detail: 'Al reiniciar, el programa se cierra y aparece el instalador con su barra de avance. '
+        + 'Puede tardar unos minutos; no apagues la computadora. Al terminar, el programa se abre solo. Tus datos no se borran.',
       buttons: ['Reiniciar ahora', 'Más tarde'], defaultId: 0, cancelId: 1,
     });
-    if (response === 0) autoUpdater.quitAndInstall(true, true);
+    if (response !== 0) return;
+    // Sin esto, 'window-all-closed' llama a app.quit() antes de que arranque el instalador
+    app.removeAllListeners('window-all-closed');
+    setImmediate(() => autoUpdater.quitAndInstall(false, true));
   });
   autoUpdater.checkForUpdates().catch(() => {});
 }
