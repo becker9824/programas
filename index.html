@@ -1,0 +1,1329 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Programas y Asignaciones</title>
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<script src="vendor/jspdf.umd.min.js"></script>
+<style>
+  :root {
+    --bg: #f4f5f7; --surface: #ffffff; --surface-2: #f0f2f5; --border: #e2e5ea;
+    --text: #1d2330; --muted: #6b7380; --accent: #0070c0; --accent-text: #ffffff;
+    --red: #c62828; --red-bg: #fdecec; --orange: #b45309; --orange-bg: #fff4e0;
+    --green: #1b7a3d; --green-bg: #e7f6ec; --shadow: 0 1px 3px rgba(0,0,0,.07);
+    --sec-none: #575a5d; --sec-tesoros: #3c7f8b; --sec-maestros: #be8900; --sec-vida: #7e0024;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #12151b; --surface: #1b1f27; --surface-2: #232834; --border: #303746;
+      --text: #e7eaf0; --muted: #98a2b3; --accent: #4ea3e6; --accent-text: #0b1020;
+      --red: #ff8a80; --red-bg: #3a1d1d; --orange: #ffc266; --orange-bg: #3a2c14;
+      --green: #7ddc9b; --green-bg: #173123; --shadow: none;
+      --sec-none: #9aa1a8; --sec-tesoros: #5fb3c1; --sec-maestros: #e0aa2e; --sec-vida: #e0607e;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+    font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  header { background: var(--surface); border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 5; }
+  .bar { max-width: 1240px; margin: 0 auto; padding: 10px 16px; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+  .brand { font-weight: 700; font-size: 17px; margin-right: auto; }
+  nav { display: flex; gap: 4px; }
+  nav button { background: none; border: 0; color: var(--muted); padding: 8px 12px; border-radius: 8px; font: inherit; cursor: pointer; }
+  nav button.active { background: var(--surface-2); color: var(--text); font-weight: 600; }
+  main { max-width: 1240px; margin: 0 auto; padding: 20px 16px 60px; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  h2.group { font-size: 15px; color: var(--muted); margin: 22px 0 8px; font-weight: 600; }
+  .sub { color: var(--muted); margin: 0 0 18px; }
+  .btn { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--border); background: var(--surface);
+    color: var(--text); padding: 7px 12px; border-radius: 8px; font: inherit; cursor: pointer; white-space: nowrap; }
+  .btn:hover { background: var(--surface-2); }
+  .btn:disabled { opacity: .5; cursor: default; }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); font-weight: 600; }
+  .btn.danger { color: var(--red); }
+  .btn.small { padding: 3px 8px; font-size: 13px; }
+  .btn.icon { padding: 3px 7px; min-width: 28px; justify-content: center; }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .spread { justify-content: space-between; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--shadow); }
+  input[type=text], input[type=date], input[type=time], input[type=number], input[type=search], select, textarea {
+    font: inherit; color: var(--text); background: var(--surface); border: 1px solid var(--border);
+    border-radius: 8px; padding: 7px 10px; min-width: 0; }
+  input:focus, select:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+  label.field { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--muted); }
+  .muted { color: var(--muted); }
+  .small-text { font-size: 12px; }
+
+  .notice { padding: 10px 14px; border-radius: 10px; margin-bottom: 14px; font-size: 14px; }
+  .notice.warn { background: var(--orange-bg); color: var(--orange); }
+  .sync { padding: 12px 16px; margin-bottom: 14px; }
+
+  .plist { display: grid; gap: 8px; }
+  .pitem { padding: 12px 14px; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+  .pitem .info { flex: 1; min-width: 200px; cursor: pointer; }
+  .pitem .t { font-weight: 600; }
+  .pitem .d { color: var(--muted); font-size: 13px; }
+  .progress { font-size: 12px; padding: 2px 8px; border-radius: 999px; background: var(--surface-2); color: var(--muted); white-space: nowrap; }
+  .progress.done { background: var(--green-bg); color: var(--green); }
+  .empty { padding: 32px 16px; text-align: center; color: var(--muted); }
+
+  /* ---- Programa semanal ---- */
+  .editor { display: grid; grid-template-columns: minmax(0, 1fr) 290px; gap: 16px; align-items: start; }
+  @media (max-width: 1000px) { .editor { grid-template-columns: 1fr; } }
+  .sheet { padding: 22px 26px 18px; }
+  @media (max-width: 640px) { .sheet { padding: 16px 14px; } }
+  .ph1 { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; font-weight: 700; font-size: 18px;
+    padding-bottom: 8px; border-bottom: 2px solid var(--text); }
+  .ph2 { color: var(--accent); font-weight: 700; font-size: 17px; margin: 12px 0 6px; }
+  .meta { display: grid; grid-template-columns: 2fr 2fr 1fr; gap: 10px; margin: 10px 0; padding: 12px; background: var(--surface-2); border-radius: 10px; }
+  @media (max-width: 640px) { .meta { grid-template-columns: 1fr; } }
+  .psec { display: flex; align-items: center; gap: 9px; color: var(--sec); font-weight: 700; font-size: 15px; letter-spacing: .03em;
+    text-transform: uppercase; padding: 16px 0 6px; border-bottom: 2px solid var(--sec); margin-bottom: 2px; }
+  .psec i { width: 16px; height: 16px; border-radius: 4px; background: var(--sec); display: inline-block; }
+  .prow { display: grid; grid-template-columns: 46px 10px minmax(0, 1fr) minmax(240px, 340px) auto; gap: 10px;
+    align-items: start; padding: 9px 0; border-bottom: 1px solid var(--border); }
+  .prow:last-child { border-bottom: 0; }
+  .ptime { color: var(--muted); font-size: 14px; font-variant-numeric: tabular-nums; padding-top: 7px; }
+  .pdot { width: 8px; height: 8px; border-radius: 50%; margin-top: 13px; }
+  .ptitle { padding-top: 6px; min-width: 0; }
+  .ptitle .pt { font-weight: 500; }
+  .ptitle .min { color: var(--muted); font-weight: 400; white-space: nowrap; }
+  .ptitle .songname { color: var(--muted); }
+  .detail { font-size: 12px; color: var(--muted); margin-top: 2px; line-height: 1.35;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .pslots { display: grid; gap: 6px; }
+  .slot { display: grid; grid-template-columns: 82px minmax(0, 1fr); gap: 8px; align-items: start; }
+  .slabel { text-align: right; font-weight: 600; font-size: 13px; padding-top: 8px; }
+  .slabel.soft { font-weight: 400; color: var(--muted); }
+  .slot input { width: 100%; }
+  .edit-in { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+  .edit-in input[type=text] { flex: 1; min-width: 160px; }
+  .edit-in input[type=number] { width: 70px; }
+  .pacts { white-space: nowrap; padding-top: 4px; }
+  @media (max-width: 700px) {
+    .prow { grid-template-columns: 40px 10px minmax(0, 1fr); }
+    .pslots, .pacts { grid-column: 3; }
+  }
+  .pfoot { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; padding-top: 12px; }
+  .total { font-size: 13px; color: var(--muted); }
+  .hint { font-size: 12px; margin-top: 3px; padding: 2px 6px; border-radius: 6px; display: inline-block; }
+  .hint:empty { display: none; }
+  .s-dup, .s-warn { background: var(--orange-bg); color: var(--orange); }
+  .s-recent { background: var(--red-bg); color: var(--red); }
+  .s-stale, .s-never { background: var(--green-bg); color: var(--green); }
+  .s-ok { color: var(--muted); }
+  input.s-recent, input.s-dup, input.s-warn { border-color: currentColor; }
+  input.focused { outline: 2px solid var(--accent); outline-offset: -1px; }
+  .legend { display: flex; gap: 8px; flex-wrap: wrap; font-size: 12px; margin-top: 10px; }
+
+  .side { padding: 14px; position: sticky; top: 70px; }
+  .side h3 { margin: 0 0 4px; font-size: 15px; }
+  .side p { margin: 0 0 10px; color: var(--muted); font-size: 12px; }
+  .side input[type=search] { width: 100%; margin-bottom: 8px; }
+  .chips { display: flex; gap: 4px; margin-bottom: 8px; }
+  .chips button { flex: 1; border: 1px solid var(--border); background: var(--surface); color: var(--text); border-radius: 999px;
+    padding: 4px 6px; font: inherit; font-size: 13px; cursor: pointer; }
+  .chips button.on { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
+  .sugg { display: flex; flex-direction: column; gap: 2px; max-height: 58vh; overflow-y: auto; }
+  .sugg button { display: flex; justify-content: space-between; align-items: center; gap: 8px; background: none; border: 0; text-align: left;
+    padding: 6px 8px; border-radius: 6px; font: inherit; color: var(--text); cursor: pointer; }
+  .sugg button:hover { background: var(--surface-2); }
+  .sugg .nm small { color: var(--muted); }
+
+  table.stats { width: 100%; border-collapse: collapse; }
+  table.stats th, table.stats td { padding: 8px 10px; border-bottom: 1px solid var(--border); text-align: left; }
+  table.stats th { font-size: 13px; color: var(--muted); font-weight: 600; white-space: nowrap; }
+  table.stats tbody tr { cursor: pointer; }
+  table.stats tbody tr:hover { background: var(--surface-2); }
+  .tablewrap { overflow-x: auto; }
+  .badge { font-size: 12px; padding: 2px 8px; border-radius: 999px; white-space: nowrap; }
+
+  dialog.dlg { border: 1px solid var(--border); border-radius: 14px; padding: 0; width: min(520px, calc(100vw - 32px));
+    background: var(--surface); color: var(--text); }
+  dialog.dlg::backdrop { background: rgba(0,0,0,.4); }
+  .dlg-body { padding: 18px; display: grid; gap: 12px; }
+  .dlg-body h3 { margin: 0; }
+  .dlg-foot { padding: 12px 18px; border-top: 1px solid var(--border); display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; }
+  .radios { display: flex; gap: 16px; color: var(--text); font-size: 15px; }
+  .radios label { display: flex; gap: 6px; align-items: center; }
+  .err { color: var(--red); font-size: 13px; }
+  .err:empty { display: none; }
+  .hist { max-height: 200px; overflow-y: auto; font-size: 13px; border-top: 1px solid var(--border); padding-top: 8px; }
+  .hist div { padding: 3px 0; display: flex; justify-content: space-between; gap: 12px; }
+
+  .toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: var(--text); color: var(--bg);
+    padding: 10px 16px; border-radius: 8px; opacity: 0; transition: opacity .2s; pointer-events: none; z-index: 20; }
+  .toast.show { opacity: 1; }
+  .settings { padding: 16px; display: grid; gap: 16px; max-width: 620px; }
+
+  .fgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px; }
+  .fam { padding: 14px; display: grid; gap: 10px; align-content: start; }
+  .fam-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+  .fam-head strong { font-size: 16px; }
+  .members { display: flex; flex-wrap: wrap; gap: 6px; }
+  .member { display: inline-flex; align-items: center; gap: 6px; background: var(--surface-2); border-radius: 999px;
+    padding: 4px 4px 4px 10px; font-size: 14px; }
+  .member small { color: var(--muted); }
+  .member button { border: 0; background: none; color: var(--muted); cursor: pointer; font-size: 15px; line-height: 1;
+    width: 22px; height: 22px; border-radius: 50%; }
+  .member button:hover { background: var(--border); color: var(--red); }
+  .fam select { width: 100%; }
+  .slips { display: grid; gap: 2px; max-height: 50vh; overflow-y: auto; border-top: 1px solid var(--border); padding-top: 6px; }
+  .slip { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 6px 4px;
+    border-radius: 8px; cursor: pointer; }
+  .slip:hover { background: var(--surface-2); }
+  .slip > span { display: flex; flex-direction: column; min-width: 0; }
+  .slip small { color: var(--muted); font-size: 12px; }
+  .tag-fam { font-size: 11px; padding: 1px 6px; border-radius: 999px; background: var(--surface-2); color: var(--accent); margin-left: 4px; }
+</style>
+</head>
+<body>
+<header>
+  <div class="bar">
+    <div class="brand">📋 Programas</div>
+    <nav>
+      <button data-view="list">Semanas</button>
+      <button data-view="people">Perfiles</button>
+      <button data-view="families">Familias</button>
+      <button data-view="settings">Ajustes</button>
+    </nav>
+  </div>
+</header>
+<main id="app"></main>
+<datalist id="profiles-list"></datalist>
+<div class="toast" id="toast"></div>
+
+<script>
+const KEY = 'programas-app-v2';
+const OLD_PDF_TITLE = 'Reunión Vida y Ministerio Cristianos';
+const defaults = () => ({
+  profiles: [], families: [], programs: [], songs: {}, missing: {}, lastSync: 0,
+  settings: {
+    staleDays: 60, recentCount: 2, weeksAhead: 8, congregation: '',
+    pdfTitle: 'Programa para la reunión de entre semana', meetingDay: 2, startTime: '19:00', paper: 'letter',
+    slipNote: 'En la Guía de actividades está la información para preparar su intervención. Repase también las indicaciones para la reunión Vida y Ministerio Cristianos.',
+    slipFooter: '',
+  },
+});
+const SECTIONS = [
+  { key: 'tesoros', name: 'Tesoros de la Biblia', css: 'var(--sec-tesoros)', rgb: [60, 127, 139] },
+  { key: 'maestros', name: 'Seamos mejores maestros', css: 'var(--sec-maestros)', rgb: [190, 137, 0] },
+  { key: 'vida cristiana', name: 'Nuestra vida cristiana', css: 'var(--sec-vida)', rgb: [126, 0, 36] },
+];
+const WEEKDAYS = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
+
+function hydrate(s) {
+  const d = defaults();
+  const out = { ...d, ...s, songs: { ...(s && s.songs) }, settings: { ...d.settings, ...(s && s.settings) } };
+  if (out.settings.pdfTitle === OLD_PDF_TITLE) out.settings.pdfTitle = d.settings.pdfTitle;
+  for (const p of out.programs) migrateProgram(p);
+  return out;
+}
+// Programas guardados con la versión anterior: el presidente pasa a "Palabras de introducción"
+// y las canciones guardan su número.
+function migrateProgram(p) {
+  const role = p.rows.find(r => r.kind === 'role');
+  const intro = p.rows.find(r => r.kind === 'chair' && /introducci/i.test(r.title));
+  if (intro) intro.intro = true;
+  if (role) { if (intro && !intro.a) intro.a = role.a; p.rows = p.rows.filter(r => r !== role); }
+  if (p.source === 'jw' && !p.rows.some(r => r.num)) { let n = 0; for (const r of p.rows) if (r.kind === 'part') r.num = ++n; }
+  for (const r of p.rows) {
+    if (r.kind === 'part' && /\)$/.test(r.title || '') && r.detail) r.detail = r.detail.replace(/^[A-ZÁÉÍÓÚÑÜ][A-ZÁÉÍÓÚÑÜ ]{3,}\.\s*/, '');
+    if ((r.kind === 'prayer' || r.kind === 'song') && r.song == null) {
+      const m = (r.title || '').match(/canci[oó]n\s+(\d+)/i);
+      r.song = m ? +m[1] : null;
+    }
+  }
+}
+function load() {
+  try { const s = JSON.parse(localStorage.getItem(KEY)); if (s && Array.isArray(s.programs)) return hydrate(s); } catch (e) {}
+  return defaults();
+}
+function save() {
+  try { localStorage.setItem(KEY, JSON.stringify(state)); }
+  catch (e) { toast('No se pudo guardar en este navegador'); }
+}
+let state = load();
+let view = { name: 'list' };
+let syncMsg = { text: '', warn: false };
+let syncing = false;
+let serverOK = null;
+
+// ---------- utilidades ----------
+function h(tag, props, ...kids) {
+  const el = document.createElement(tag);
+  for (const [k, v] of Object.entries(props || {})) {
+    if (v == null || v === false) continue;
+    if (k === 'class') el.className = v;
+    else if (k === 'style' && typeof v === 'object') {
+      for (const [sk, sv] of Object.entries(v)) sk.startsWith('--') ? el.style.setProperty(sk, sv) : (el.style[sk] = sv);
+    }
+    else if (k.startsWith('on')) el.addEventListener(k.slice(2), v);
+    else if (k === 'value' || k === 'checked') el[k] = v;
+    else el.setAttribute(k, v === true ? '' : v);
+  }
+  for (const kid of kids.flat()) {
+    if (kid == null || kid === false) continue;
+    el.append(kid.nodeType ? kid : document.createTextNode(String(kid)));
+  }
+  return el;
+}
+const uid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
+const pad = n => String(n).padStart(2, '0');
+const isoOf = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+const todayISO = () => isoOf(new Date());
+const toDate = iso => new Date(iso + 'T12:00:00');
+function addDays(iso, n) { const d = toDate(iso); d.setDate(d.getDate() + n); return isoOf(d); }
+const daysBetween = (a, b) => Math.round((toDate(b) - toDate(a)) / 864e5);
+const fmtShort = iso => iso ? toDate(iso).toLocaleDateString('es', { day: 'numeric', month: 'short', year: 'numeric' }) : '';
+const fmtDay = iso => iso ? toDate(iso).toLocaleDateString('es', { day: 'numeric', month: 'long' }) : '';
+const norm = s => (s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').trim().replace(/\s+/g, ' ').toLowerCase();
+const squash = s => (s || '').replace(/[\s ]+/g, ' ').trim();
+const capFirst = s => s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
+const titleCase = s => s.toLowerCase().replace(/(^|[\s(])(\p{L})/gu, (m, a, b) => a + b.toUpperCase());
+
+// Semanas ISO (las que usa wol.jw.org)
+function thursdayOf(iso) { const d = toDate(iso); d.setDate(d.getDate() - ((d.getDay() + 6) % 7) + 3); return d; }
+function isoWeek(iso) {
+  const thu = thursdayOf(iso);
+  const first = thursdayOf(`${thu.getFullYear()}-01-04`);
+  return { y: thu.getFullYear(), w: 1 + Math.round((thu - first) / (7 * 864e5)) };
+}
+const mondayOf = iso => addDays(iso, -((toDate(iso).getDay() + 6) % 7));
+const weekKey = iso => { const { y, w } = isoWeek(iso); return `${y}-W${pad(w)}`; };
+function weekLabel(monday) {
+  const end = addDays(monday, 6), a = toDate(monday), b = toDate(end);
+  const month = d => d.toLocaleDateString('es', { month: 'long' });
+  return a.getMonth() === b.getMonth() ? `${a.getDate()}-${b.getDate()} de ${month(a)}` : `${a.getDate()} de ${month(a)} a ${b.getDate()} de ${month(b)}`;
+}
+const meetingDate = p => addDays(p.date, state.settings.meetingDay);
+const fmtMeeting = p => capFirst(toDate(meetingDate(p)).toLocaleDateString('es', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }));
+function fmtTime(m) { const h24 = Math.floor(m / 60) % 24; return `${((h24 + 11) % 12) + 1}:${pad(m % 60)}`; }
+
+function toast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.classList.add('show');
+  clearTimeout(toast._t); toast._t = setTimeout(() => t.classList.remove('show'), 2600);
+}
+
+// ---------- intervenciones ----------
+const sectionOf = name => SECTIONS.find(s => s.name === name);
+const isAssignable = r => r.kind === 'prayer' || r.kind === 'part' || (r.kind === 'chair' && r.intro);
+const hasCounsel = r => r.kind === 'part' && (r.section === SECTIONS[1].name || /lectura de la biblia/i.test(r.title));
+const songText = r => r.song ? `Canción ${r.song}${state.songs[r.song] ? ' - ' + state.songs[r.song] : ''}` : 'Canción';
+
+function displayTitle(r) {
+  if (r.kind === 'prayer' || r.kind === 'song') return songText(r);
+  return (r.num ? r.num + '. ' : '') + (r.title || 'Intervención');
+}
+function slotLabels(r) {
+  if (r.kind === 'prayer') return { a: 'Oración' };
+  if (r.kind === 'chair') return { a: 'Presidente' };
+  if (r.helper === 'Lector') return { a: 'Conductor', b: 'Lector' };
+  if (r.helper === 'Ayudante') return { a: 'Estudiante', b: 'Ayudante', soft: true };
+  return { a: '' };
+}
+function slotNeedsMen(r, slot) {
+  if (r.kind === 'prayer' || r.kind === 'chair') return true;
+  if (slot === 'b') return r.helper === 'Lector';
+  return !!r.men;
+}
+const roleLabel = (r, slot) => slot === 'b' ? `${r.helper}: ${displayTitle(r)}`
+  : r.kind === 'prayer' ? 'Oración' : r.kind === 'chair' ? 'Presidente' : displayTitle(r);
+
+// Horario: canción y oración inicial 5 min, canción intermedia 4 min, 1 min de consejo tras cada
+// intervención de estudiante; la canción final queda a los 100 minutos del inicio.
+function timesFor(p) {
+  const [hh, mm] = (state.settings.startTime || '19:00').split(':').map(Number);
+  const start = hh * 60 + mm;
+  let t = start, prayers = 0;
+  const out = {};
+  for (const r of p.rows) {
+    if (r.kind === 'prayer' && prayers > 0) t = Math.max(t, start + 100);
+    out[r.id] = t;
+    if (r.kind === 'prayer') { t += 5; prayers++; }
+    else if (r.kind === 'song') t += 4;
+    else t += (+r.min || 0) + (hasCounsel(r) ? 1 : 0);
+  }
+  out.end = t;
+  return out;
+}
+
+// ---------- perfiles y asignaciones ----------
+const profById = id => state.profiles.find(p => p.id === id);
+const profByName = name => state.profiles.find(p => norm(p.name) === norm(name));
+const famById = id => state.families.find(f => f.id === id);
+const famOf = pid => { const pr = profById(pid); return pr && pr.familyId ? famById(pr.familyId) : null; };
+const sameFamily = (a, b) => { const f = famOf(a); return !!f && f === famOf(b); };
+const familyMembers = fam => state.profiles.filter(p => p.familyId === fam.id).sort((a, b) => a.name.localeCompare(b.name, 'es'));
+const sortedPrograms = () => [...state.programs].sort((a, b) => b.date.localeCompare(a.date));
+
+function slotsOf(p) {
+  const out = [];
+  for (const row of p.rows) {
+    if (!isAssignable(row)) continue;
+    out.push({ row, slot: 'a', pid: row.a });
+    if (row.helper) out.push({ row, slot: 'b', pid: row.b });
+  }
+  return out;
+}
+const assignmentsOf = p => slotsOf(p).filter(x => x.pid && profById(x.pid));
+
+// Cuántas intervenciones tiene cada persona en la semana. Que el presidente haga
+// también la oración inicial es normal, así que no cuenta como repetido.
+function countsFor(p) {
+  const counts = {};
+  const intro = p.rows.find(r => r.kind === 'chair' && r.intro);
+  const firstPrayer = p.rows.find(r => r.kind === 'prayer');
+  for (const x of slotsOf(p)) {
+    if (!x.pid) continue;
+    if (x.row === firstPrayer && intro && intro.a === x.pid) continue;
+    counts[x.pid] = (counts[x.pid] || 0) + 1;
+  }
+  return counts;
+}
+
+function contextFor(p) {
+  const priors = sortedPrograms().filter(q => q !== p && q.date <= p.date);
+  const last = new Map();
+  for (const q of priors) for (const x of assignmentsOf(q)) if (!last.has(x.pid)) last.set(x.pid, { q, ...x });
+  const recent = new Map();
+  for (const q of priors.slice(0, state.settings.recentCount)) for (const x of assignmentsOf(q)) if (!recent.has(x.pid)) recent.set(x.pid, { q, ...x });
+  return { last, recent };
+}
+
+function statusFor(pid, p, ctx, counts, row, slot) {
+  const prof = profById(pid);
+  if (!prof) return { cls: 's-warn', text: 'Perfil eliminado' };
+  if (counts[pid] > 1) return { cls: 's-dup', text: '⚠ Ya tiene otra intervención en esta semana' };
+  if (slotNeedsMen(row, slot) && prof.sex === 'F') return { cls: 's-warn', text: '⚠ Normalmente la asigna un varón' };
+  if (row.helper === 'Ayudante') {
+    const other = profById(row[slot === 'a' ? 'b' : 'a']);
+    if (other && other.sex !== prof.sex && !sameFamily(prof.id, other.id)) return { cls: 's-warn', text: '⚠ Pareja de distinto sexo que no es de la misma familia' };
+  }
+  const r = ctx.recent.get(pid);
+  if (r) return { cls: 's-recent', text: `↻ Participó el ${fmtShort(r.q.date)}: ${roleLabel(r.row, r.slot)}` };
+  const l = ctx.last.get(pid);
+  if (!l) return { cls: 's-never', text: '★ Nunca ha participado' };
+  const d = daysBetween(l.q.date, p.date);
+  if (d >= state.settings.staleDays) return { cls: 's-stale', text: `★ Hace ${d} días · ${roleLabel(l.row, l.slot)}` };
+  return { cls: 's-ok', text: `Última vez hace ${d} días · ${roleLabel(l.row, l.slot)}` };
+}
+
+function refreshDatalist() {
+  document.getElementById('profiles-list').replaceChildren(
+    ...[...state.profiles].sort((a, b) => a.name.localeCompare(b.name, 'es')).map(p => h('option', { value: p.name })));
+}
+
+// ---------- guía de jw.org ----------
+function newRow(kind, fields) {
+  return { id: uid(), kind, section: '', title: '', detail: '', num: null, min: null, song: null, songHref: null,
+    intro: false, a: null, b: null, helper: null, men: false, ...fields };
+}
+
+function rowsFromHeading(piece, after, section, songHrefs) {
+  const minIn = piece.match(/\((\d+)\s*mins?\.?\)/i);
+  const title = squash(piece.replace(/\(\d+\s*mins?\.?\)/i, ''));
+  const song = title.match(/^canci[oó]n\s+(\d+)/i);
+  if (song && /oraci[oó]n/i.test(title)) return [newRow('prayer', { section, song: +song[1], songHref: songHrefs[song[1]] || null, men: true })];
+  if (song) return [newRow('song', { section, song: +song[1], songHref: songHrefs[song[1]] || null })];
+  if (/palabras de (introducci|conclusi)/i.test(title)) {
+    return [newRow('chair', { section, title, min: minIn ? +minIn[1] : null, intro: /introducci/i.test(title) })];
+  }
+  const numbered = title.match(/^(\d+)\.\s*(.*)$/);
+  let t = numbered ? numbered[2] : title;
+  const minAfter = after.match(/^\((\d+)\s*mins?\.?\)/i);
+  let rest = squash(after.replace(/^\(\d+\s*mins?\.?\)/i, '').replace(/\bRespuesta\b/g, ''));
+  const kind = rest.match(/^([A-ZÁÉÍÓÚÑÜ][A-ZÁÉÍÓÚÑÜ ]{3,})\.\s*/);
+  if (kind) { t += ` (${capFirst(kind[1].toLowerCase())})`; rest = rest.slice(kind[0].length); }
+  const isMaestros = section === SECTIONS[1].name;
+  const isDiscurso = /discurso/i.test(t);
+  return [newRow('part', {
+    section, title: t, num: numbered ? +numbered[1] : null,
+    detail: rest.length > 400 ? rest.slice(0, 397) + '…' : rest,
+    min: minIn ? +minIn[1] : minAfter ? +minAfter[1] : null,
+    helper: isMaestros && !isDiscurso ? 'Ayudante' : /estudio b[ií]blico de la congregaci/i.test(t) ? 'Lector' : null,
+    men: !isMaestros || isDiscurso,
+  })];
+}
+
+function parseGuide(html, monday) {
+  const doc = new DOMParser().parseFromString(html, 'text/html');
+  const art = doc.querySelector('#article') || doc.querySelector('article') || doc.body;
+  const heads = [...art.querySelectorAll('h1, h2, h3')];
+  let reading = '', section = '', title = '';
+  const rows = [];
+  heads.forEach((el, i) => {
+    const text = squash(el.textContent);
+    if (!text) return;
+    if (el.tagName === 'H1') { title = capFirst(text.toLowerCase()); return; }
+    if (el.tagName === 'H2') {
+      const sec = SECTIONS.find(s => norm(text).includes(s.key));
+      if (sec) section = sec.name;
+      else if (!reading && !section) reading = titleCase(text);
+      return;
+    }
+    const songHrefs = {};
+    for (const a of el.querySelectorAll('a[href]')) {
+      const m = squash(a.textContent).match(/canci[oó]n\s+(\d+)/i);
+      if (m) songHrefs[m[1]] = a.getAttribute('href');
+    }
+    const range = doc.createRange();
+    range.setStartAfter(el);
+    if (heads[i + 1]) range.setEndBefore(heads[i + 1]); else range.setEndAfter(art.lastChild);
+    const after = squash(range.toString());
+    for (const piece of text.split('|').map(squash).filter(Boolean)) rows.push(...rowsFromHeading(piece, after, section, songHrefs));
+  });
+  return { title: title || weekLabel(monday), reading, rows };
+}
+
+function blankRows() {
+  const [T, M, V] = SECTIONS.map(s => s.name);
+  return [
+    newRow('prayer', { men: true }),
+    newRow('chair', { title: 'Palabras de introducción', min: 1, intro: true }),
+    newRow('part', { section: T, num: 1, title: '', min: 10, men: true }),
+    newRow('part', { section: T, num: 2, title: 'Busquemos perlas escondidas', min: 10, men: true }),
+    newRow('part', { section: T, num: 3, title: 'Lectura de la Biblia', min: 4, men: true }),
+    newRow('part', { section: M, num: 4, title: '', min: 3, helper: 'Ayudante' }),
+    newRow('part', { section: M, num: 5, title: '', min: 4, helper: 'Ayudante' }),
+    newRow('part', { section: M, num: 6, title: '', min: 5, helper: 'Ayudante' }),
+    newRow('song', { section: V }),
+    newRow('part', { section: V, num: 7, title: '', min: 15, men: true }),
+    newRow('part', { section: V, num: 8, title: 'Estudio bíblico de la congregación', min: 30, men: true, helper: 'Lector' }),
+    newRow('chair', { section: V, title: 'Palabras de conclusión', min: 3 }),
+    newRow('prayer', { section: V, men: true }),
+  ];
+}
+
+async function serverAvailable() {
+  if (serverOK !== null) return serverOK;
+  if (location.protocol === 'file:') return serverOK = false;
+  try { const r = await fetch('/jw/ping', { cache: 'no-store' }); serverOK = r.ok && (await r.text()) === 'ok'; }
+  catch (e) { serverOK = false; }
+  return serverOK;
+}
+
+async function fetchGuide(monday) {
+  const { y, w } = isoWeek(monday);
+  const r = await fetch(`/jw/semana?y=${y}&w=${w}`, { cache: 'no-store' });
+  if (!r.ok) return null;
+  const g = parseGuide(await r.text(), monday);
+  return g.rows.some(x => x.kind === 'part') ? g : null;
+}
+
+// Títulos de las canciones (se guardan una sola vez)
+async function ensureSongTitles(programs) {
+  const need = new Map();
+  for (const p of programs) for (const r of p.rows) if (r.song && !state.songs[r.song] && !need.has(r.song)) need.set(r.song, r.songHref);
+  if (!need.size || !await serverAvailable()) return;
+  for (const [n, href] of need) {
+    const path = n >= 1 && n <= 151 ? `/es/wol/d/r4/lp-s/${1102016800 + n}` : href;
+    if (!path) continue;
+    try {
+      const r = await fetch('/jw/titulo?path=' + encodeURIComponent(path), { cache: 'no-store' });
+      const t = r.ok ? squash(await r.text()) : '';
+      if (t) {
+        state.songs[n] = t;
+        document.querySelectorAll(`[data-song="${n}"]`).forEach(el => { el.textContent = ' - ' + t; });
+      }
+    } catch (e) {}
+  }
+  save();
+}
+
+function setSync(text, warn = false) {
+  syncMsg = { text, warn };
+  const el = document.getElementById('sync-text');
+  if (el) { el.textContent = text; el.className = warn ? 'notice warn' : 'muted small-text'; }
+}
+
+async function syncGuides(manual) {
+  if (syncing) return;
+  syncing = true;
+  setSync('Buscando guías en jw.org…');
+  if (manual) serverOK = null;
+  if (!await serverAvailable()) {
+    syncing = false;
+    setSync('Para buscar las guías en jw.org, abre la app con el archivo “Programas.bat”.', true);
+    return;
+  }
+  const start = mondayOf(todayISO());
+  let added = 0, failed = 0;
+  for (let i = 0; i < state.settings.weeksAhead; i++) {
+    const monday = addDays(start, i * 7), key = weekKey(monday);
+    if (state.programs.some(p => p.week === key)) continue;
+    if (!manual && state.missing[key] && Date.now() - state.missing[key] < 12 * 36e5) continue;
+    setSync(`Buscando la semana del ${fmtDay(monday)}…`);
+    try {
+      const g = await fetchGuide(monday);
+      if (!g) { state.missing[key] = Date.now(); continue; }
+      state.programs.push({ id: uid(), week: key, date: monday, source: 'jw', ...g });
+      delete state.missing[key];
+      added++;
+    } catch (e) { failed++; }
+  }
+  state.lastSync = Date.now();
+  save();
+  setSync('Buscando los títulos de las canciones…');
+  await ensureSongTitles(state.programs);
+  syncing = false;
+  setSync(failed ? 'No se pudo conectar con jw.org. Revisa tu conexión a internet.'
+    : added ? `Se agregaron ${added} semana${added > 1 ? 's' : ''} desde jw.org.`
+      : 'Todo al día: no hay semanas nuevas publicadas todavía.', !!failed);
+  if (view.name === 'list') render();
+}
+
+async function addWeek(dateISO) {
+  const monday = mondayOf(dateISO), key = weekKey(monday);
+  const existing = state.programs.find(p => p.week === key);
+  if (existing) return go({ name: 'edit', id: existing.id });
+  let g = null;
+  if (await serverAvailable()) {
+    toast('Buscando la guía en jw.org…');
+    try { g = await fetchGuide(monday); } catch (e) {}
+    if (!g) toast('No se encontró la guía de esa semana. Se creó un programa en blanco.');
+  }
+  const p = { id: uid(), week: key, date: monday, source: g ? 'jw' : 'manual', ...(g || { title: weekLabel(monday), reading: '', rows: blankRows() }) };
+  state.programs.push(p); save();
+  go({ name: 'edit', id: p.id });
+  ensureSongTitles([p]);
+}
+
+// ---------- PDF ----------
+function downloadPDF(programs) {
+  programs = [...programs].sort((a, b) => a.date.localeCompare(b.date));
+  const J = window.jspdf && window.jspdf.jsPDF;
+  if (!J) return toast('Se necesita internet para crear el PDF.');
+  const s = state.settings;
+  const doc = new J({ unit: 'pt', format: s.paper === 'a4' ? 'a4' : 'letter' });
+  const W = doc.internal.pageSize.getWidth(), H = doc.internal.pageSize.getHeight();
+  const M = 36, LINE = 13;
+  const xTime = M, xDot = M + 36, xTitle = M + 46, xNames = W - M - 170, xLabelR = xNames - 8;
+  const name = id => (profById(id) || {}).name || '';
+  const printed = new Date().toLocaleDateString('es', { day: '2-digit', month: '2-digit', year: 'numeric' });
+
+  programs.forEach((p, idx) => {
+    if (idx) doc.addPage();
+    const times = timesFor(p);
+    // Encabezado
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(15); doc.setTextColor(0);
+    doc.text(s.pdfTitle || 'Programa', M, 46);
+    if (s.congregation) doc.text(s.congregation, W - M, 46, { align: 'right' });
+    doc.setDrawColor(0); doc.setLineWidth(1.4); doc.line(M, 54, W - M, 54);
+    doc.setFontSize(13); doc.setTextColor(0, 112, 192);
+    doc.text(fmtMeeting(p) + (p.reading ? '  |  ' + p.reading.toUpperCase() : ''), M, 80);
+
+    let y = 106, sec = '';
+    for (const r of p.rows) {
+      if (r.section && r.section !== sec) {
+        sec = r.section;
+        const c = (sectionOf(sec) || { rgb: [87, 90, 93] }).rgb;
+        y += 10;
+        doc.setFillColor(...c); doc.roundedRect(M, y - 11, 14, 14, 3, 3, 'F');
+        doc.setFont('helvetica', 'bold'); doc.setFontSize(12.5); doc.setTextColor(...c);
+        doc.text(sec.toUpperCase(), M + 22, y);
+        doc.setDrawColor(...c); doc.setLineWidth(0.9); doc.line(M, y + 6, W - M, y + 6);
+        y += 24;
+      }
+      // Título (con minutos)
+      const min = (r.kind === 'part' || r.kind === 'chair') && r.min ? ` (${r.min} min.)` : '';
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(10.5);
+      const labels = slotLabels(r);
+      const titleLines = doc.splitTextToSize(displayTitle(r) + min, xLabelR - xTitle - (labels.a && !labels.soft ? 62 : 6));
+      // Nombres
+      const slots = [];
+      if (isAssignable(r)) {
+        if (labels.soft) {
+          const pair = [name(r.a), name(r.b)].filter(Boolean).join(' & ');
+          slots.push({ label: '', lines: doc.splitTextToSize(pair, W - M - xNames) });
+        } else {
+          slots.push({ label: labels.a, lines: doc.splitTextToSize(name(r.a), W - M - xNames) });
+          if (r.helper) slots.push({ label: labels.b, lines: doc.splitTextToSize(name(r.b), W - M - xNames) });
+        }
+      }
+      const nameLines = slots.reduce((t, x) => t + Math.max(1, x.lines.length), 0);
+      const lines = Math.max(titleLines.length, nameLines, 1);
+      if (y + lines * LINE > H - 40) { doc.addPage(); y = 50; }
+
+      const c = (sectionOf(r.section) || { rgb: [87, 90, 93] }).rgb;
+      doc.setFontSize(10); doc.setTextColor(60); doc.text(fmtTime(times[r.id]), xTime, y);
+      doc.setFillColor(...c); doc.circle(xDot, y - 3.5, 2.6, 'F');
+      doc.setFontSize(10.5); doc.setTextColor(20);
+      doc.text(titleLines, xTitle, y, { lineHeightFactor: LINE / 10.5 });
+      let ny = y;
+      for (const sl of slots) {
+        if (sl.label) { doc.setFont('helvetica', 'bold'); doc.setTextColor(20); doc.text(sl.label, xLabelR, ny, { align: 'right' }); }
+        doc.setFont('helvetica', 'normal'); doc.setTextColor(20);
+        if (sl.lines.length) doc.text(sl.lines, xNames, ny, { lineHeightFactor: LINE / 10.5 });
+        ny += Math.max(1, sl.lines.length) * LINE;
+      }
+      y += lines * LINE + 8;
+      doc.setDrawColor(228); doc.setLineWidth(0.5); doc.line(xTitle, y - 12, W - M, y - 12);
+    }
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor(140);
+    doc.text('Impreso ' + printed, W - M, H - 22, { align: 'right' });
+  });
+  const fname = programs.length === 1 ? `Programa ${programs[0].title}` : `Programas ${programs[0].title} a ${programs[programs.length - 1].title}`;
+  doc.save(fname.replace(/[\\/:*?"<>|]+/g, '') + '.pdf');
+}
+
+// ---------- Hojas de asignación (una por hoja) ----------
+const isStudentPart = r => hasCounsel(r);
+
+function downloadSlips(items) {
+  const J = window.jspdf && window.jspdf.jsPDF;
+  if (!J) return toast('Se necesita internet para crear el PDF.');
+  if (!items.length) return toast('Elige al menos una asignación.');
+  const s = state.settings;
+  const doc = new J({ unit: 'pt', format: s.paper === 'a4' ? 'a4' : 'letter' });
+  const W = doc.internal.pageSize.getWidth();
+  const name = id => (profById(id) || {}).name || '';
+
+  // Medidas tomadas de la hoja de ejemplo (puntos, carta)
+  const bold = size => { doc.setFont('helvetica', 'bold'); doc.setFontSize(size); };
+  const regular = size => { doc.setFont('helvetica', 'normal'); doc.setFontSize(size); };
+  const slipDate = iso => iso.replace(/-/g, '/');
+
+  items.forEach(({ p, row }, idx) => {
+    if (idx) doc.addPage();
+    doc.setTextColor(0);
+
+    // Título
+    bold(23);
+    doc.text('ASIGNACIÓN PARA LA REUNIÓN', W / 2, 48, { align: 'center' });
+    doc.text('VIDA Y MINISTERIO CRISTIANOS', W / 2, 74, { align: 'center' });
+
+    // Datos: etiqueta en x 49, valor en x 209, renglones de 46 pt
+    let y = 111;
+    const field = (label, value) => {
+      bold(21); doc.text(label, 49, y);
+      regular(21);
+      const lines = value ? doc.splitTextToSize(value, W - 52 - 209) : [];
+      if (lines.length) doc.text(lines, 209, y, { lineHeightFactor: 1.15 });
+      y += Math.max(0, lines.length - 1) * 24 + 46;
+    };
+    field('Nombre:', name(row.a));
+    field(row.helper === 'Lector' ? 'Lector:' : 'Ayudante:', row.helper ? name(row.b) : '');
+    field('Fecha:', slipDate(meetingDate(p)));
+
+    // "Intervención núm.:" va en dos renglones; el tipo de intervención pasa a la descripción
+    const kind = (row.title || '').match(/^(.*\S)\s+\(([^)]+)\)$/);
+    const title = (row.num ? row.num + '. ' : '') + (kind ? kind[1] : row.title);
+    bold(21); doc.text('Intervención', 49, y); doc.text('núm.:', 49, y + 24);
+    regular(21);
+    const tLines = doc.splitTextToSize(title, W - 52 - 209);
+    doc.text(tLines, 209, y, { lineHeightFactor: 1.15 });
+    y += Math.max(24, (tLines.length - 1) * 24) + 41;
+
+    // Descripción de la Guía de actividades
+    const desc = [row.min ? `(${row.min} ${row.min === 1 ? 'min.' : 'mins.'})` : '', kind ? kind[2].toUpperCase() + '.' : '', row.detail || '']
+      .filter(Boolean).join(' ');
+    if (desc) {
+      regular(19);
+      const dLines = doc.splitTextToSize(desc, W - 52 - 82);
+      doc.text(dLines, 82, y, { lineHeightFactor: 1.15 });
+      y += (dLines.length - 1) * 22;
+    }
+
+    // Lugar (las posiciones del ejemplo, salvo que la descripción sea más larga)
+    y = Math.max(389, y + 54);
+    bold(21); doc.text('Se presentará en:', 52, y);
+    y += 36;
+    ['Auditorio principal', 'Sala auxiliar núm. 1', 'Sala auxiliar núm. 2'].forEach((place, i) => {
+      doc.setDrawColor(0); doc.setLineWidth(1); doc.rect(53, y - 13, 14, 14);
+      if (i === 0) { doc.setLineWidth(1.8); doc.lines([[3, 4], [7, -10]], 56, y - 5); }
+      regular(19); doc.text(place, 94, y - 1);
+      y += 23;
+    });
+
+    // Nota al estudiante (la etiqueta en negrita y el texto sigue en el mismo renglón)
+    y = Math.max(552, y + 58);
+    const right = W - 89;
+    bold(19); doc.text('Nota al estudiante:', 52, y);
+    let x = 52 + doc.getTextWidth('Nota al estudiante: ');
+    regular(19);
+    for (const word of (s.slipNote || '').split(/\s+/).filter(Boolean)) {
+      const w = doc.getTextWidth(word);
+      if (x + w > right && x > 52) { y += 21.5; x = 52; }
+      doc.text(word, x, y);
+      x += w + doc.getTextWidth(' ');
+    }
+
+    // Pie (opcional)
+    if (s.slipFooter) { regular(15); doc.text(s.slipFooter, 52, y + 45); }
+  });
+
+  const first = items[0];
+  const fname = items.length === 1
+    ? `Asignación ${name(first.row.a) || 'sin nombre'} - ${first.p.title}`
+    : `Asignaciones ${[...new Set(items.map(x => x.p.title))].join(', ')}`;
+  doc.save(fname.replace(/[\\/:*?"<>|]+/g, '') + '.pdf');
+}
+
+// Elegir qué hojas de asignación descargar
+function openSlipsDialog(p) {
+  const rows = p.rows.filter(r => r.kind === 'part');
+  const checks = rows.map(r => h('input', { type: 'checkbox', checked: isStudentPart(r) && !!r.a }));
+  const name = id => (profById(id) || {}).name;
+  const list = h('div', { class: 'slips' }, rows.map((r, i) => h('label', { class: 'slip' }, checks[i],
+    h('span', null, h('span', null, displayTitle(r)),
+      h('small', null, r.a ? [name(r.a), r.helper && r.b ? ` & ${name(r.b)}` : ''].join('') : 'Sin asignar')),
+    h('button', { class: 'btn small', title: 'Descargar solo esta', onclick: e => { e.preventDefault(); downloadSlips([{ p, row: r }]); } }, '⬇'))));
+  const setAll = v => checks.forEach(c => { c.checked = v; });
+  const dlg = h('dialog', { class: 'dlg' },
+    h('div', { class: 'dlg-body' },
+      h('h3', null, 'Hojas de asignación'),
+      h('p', { class: 'muted small-text', style: { margin: 0 } },
+        `${p.title}. Se descarga un PDF con una asignación por hoja. Ya están marcadas las de estudiantes que tienen nombre.`),
+      h('div', { class: 'row' },
+        h('button', { class: 'btn small', onclick: () => setAll(true) }, 'Marcar todas'),
+        h('button', { class: 'btn small', onclick: () => { checks.forEach((c, i) => { c.checked = isStudentPart(rows[i]); }); } }, 'Solo estudiantes'),
+        h('button', { class: 'btn small', onclick: () => setAll(false) }, 'Ninguna')),
+      list),
+    h('div', { class: 'dlg-foot' },
+      h('button', { class: 'btn', onclick: () => dlg.close() }, 'Cerrar'),
+      h('button', { class: 'btn primary', onclick: () => {
+        const chosen = rows.filter((r, i) => checks[i].checked).map(row => ({ p, row }));
+        if (chosen.length) { downloadSlips(chosen); dlg.close(); } else toast('Marca al menos una asignación.');
+      } }, '⬇ Descargar PDF')));
+  dlg.addEventListener('close', () => dlg.remove());
+  document.body.append(dlg); dlg.showModal();
+}
+
+// ---------- diálogo de perfil ----------
+function openProfileDialog(prof, opts = {}) {
+  let saved = false;
+  const nameI = h('input', { type: 'text', value: prof ? prof.name : (opts.name || ''), placeholder: 'Nombre y apellido' });
+  const ageI = h('input', { type: 'number', min: 0, max: 120, value: prof && prof.age != null ? prof.age : '', style: { width: '120px' } });
+  const sex = prof ? prof.sex : '';
+  const sexM = h('input', { type: 'radio', name: 'sexo', value: 'M', checked: sex === 'M' });
+  const sexF = h('input', { type: 'radio', name: 'sexo', value: 'F', checked: sex === 'F' });
+  const notesI = h('input', { type: 'text', value: prof ? (prof.notes || '') : '', placeholder: 'Opcional' });
+  const famSel = h('select', null, h('option', { value: '' }, '(Sin familia)'),
+    [...state.families].sort((a, b) => a.name.localeCompare(b.name, 'es')).map(f =>
+      h('option', { value: f.id, selected: prof && prof.familyId === f.id ? true : null }, f.name)));
+  const err = h('div', { class: 'err' });
+
+  const hist = [];
+  if (prof) for (const q of sortedPrograms()) for (const x of assignmentsOf(q)) if (x.pid === prof.id) hist.push({ q, x });
+
+  const dlg = h('dialog', { class: 'dlg' },
+    h('div', { class: 'dlg-body' },
+      h('h3', null, prof ? 'Editar perfil' : 'Nuevo perfil'),
+      h('label', { class: 'field' }, 'Nombre', nameI),
+      h('div', { class: 'row', style: { gap: '24px', alignItems: 'flex-start' } },
+        h('label', { class: 'field' }, 'Edad', ageI),
+        h('div', { class: 'field' }, h('span', { class: 'muted', style: { fontSize: '13px' } }, 'Sexo'),
+          h('div', { class: 'radios' }, h('label', null, sexM, 'Masculino'), h('label', null, sexF, 'Femenino')))),
+      state.families.length ? h('label', { class: 'field' }, 'Familia', famSel) : null,
+      h('label', { class: 'field' }, 'Notas', notesI),
+      err,
+      prof ? h('div', { class: 'hist' },
+        h('strong', null, `Historial (${hist.length})`),
+        hist.length ? hist.map(({ q, x }) => h('div', null, h('span', null, roleLabel(x.row, x.slot)), h('span', { class: 'muted' }, fmtShort(q.date))))
+          : h('div', { class: 'muted' }, 'Todavía no tiene asignaciones.')) : null),
+    h('div', { class: 'dlg-foot' },
+      prof ? h('button', { class: 'btn danger', style: { marginRight: 'auto' }, onclick: () => {
+        if (!confirm(`¿Eliminar el perfil de ${prof.name}?${hist.length ? ' Se quitará de las ' + hist.length + ' asignaciones donde aparece.' : ''}`)) return;
+        state.profiles = state.profiles.filter(x => x !== prof);
+        for (const q of state.programs) for (const r of q.rows) { if (r.a === prof.id) r.a = null; if (r.b === prof.id) r.b = null; }
+        save(); saved = true; dlg.close(); render();
+      } }, 'Eliminar') : null,
+      h('button', { class: 'btn', onclick: () => dlg.close() }, 'Cancelar'),
+      h('button', { class: 'btn primary', onclick: submit }, 'Guardar')));
+
+  function submit() {
+    const name = squash(nameI.value);
+    const sexV = sexM.checked ? 'M' : sexF.checked ? 'F' : '';
+    if (!name) return err.textContent = 'Escribe el nombre.';
+    if (!sexV) return err.textContent = 'Elige el sexo.';
+    const other = profByName(name);
+    if (other && other !== prof) return err.textContent = 'Ya existe un perfil con ese nombre.';
+    const age = ageI.value === '' ? null : Math.max(0, Math.round(+ageI.value));
+    const p = prof || { id: uid() };
+    Object.assign(p, { name, sex: sexV, age, notes: squash(notesI.value), familyId: famSel.value || null });
+    if (!prof) state.profiles.push(p);
+    save(); refreshDatalist(); saved = true; dlg.close();
+    if (opts.onSave) opts.onSave(p); else render();
+  }
+  dlg.addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.tagName === 'INPUT') { e.preventDefault(); submit(); } });
+  dlg.addEventListener('close', () => { dlg.remove(); if (!saved && opts.onCancel) opts.onCancel(); });
+  document.body.append(dlg);
+  dlg.showModal();
+  nameI.focus();
+}
+
+// ---------- vistas ----------
+function go(v) { view = v; render(); window.scrollTo(0, 0); }
+
+function render() {
+  document.querySelectorAll('nav button').forEach(b =>
+    b.classList.toggle('active', b.dataset.view === view.name || (view.name === 'edit' && b.dataset.view === 'list')));
+  refreshDatalist();
+  const p = view.name === 'edit' && state.programs.find(x => x.id === view.id);
+  document.getElementById('app').replaceChildren(
+    p ? renderEditor(p) : view.name === 'people' ? renderPeople() : view.name === 'families' ? renderFamilies()
+      : view.name === 'settings' ? renderSettings() : renderList());
+}
+
+function renderList() {
+  const thisMonday = mondayOf(todayISO());
+  const all = sortedPrograms();
+  const upcoming = all.filter(p => p.date >= thisMonday).reverse();
+  const past = all.filter(p => p.date < thisMonday);
+  const selected = new Set();
+  const pdfBtn = h('button', { class: 'btn', disabled: true, onclick: () => downloadPDF(state.programs.filter(p => selected.has(p.id))) }, '⬇ PDF de seleccionadas');
+  const dateI = h('input', { type: 'date', value: todayISO() });
+
+  const card = p => {
+    const slots = slotsOf(p), filled = slots.filter(x => x.pid).length;
+    return h('div', { class: 'card pitem' },
+      h('input', { type: 'checkbox', title: 'Seleccionar para PDF', onchange: e => {
+        e.target.checked ? selected.add(p.id) : selected.delete(p.id);
+        pdfBtn.disabled = !selected.size;
+        pdfBtn.textContent = selected.size ? `⬇ PDF de ${selected.size} semana${selected.size > 1 ? 's' : ''}` : '⬇ PDF de seleccionadas';
+      } }),
+      h('div', { class: 'info', onclick: () => go({ name: 'edit', id: p.id }) },
+        h('div', { class: 't' }, p.title, p.date === thisMonday ? h('span', { class: 'progress', style: { marginLeft: '8px' } }, 'Esta semana') : null),
+        h('div', { class: 'd' }, [fmtMeeting(p), p.reading].filter(Boolean).join(' · '))),
+      h('span', { class: 'progress' + (filled === slots.length && slots.length ? ' done' : '') }, `${filled}/${slots.length} asignaciones`),
+      h('div', { class: 'row' },
+        h('button', { class: 'btn small', onclick: () => go({ name: 'edit', id: p.id }) }, 'Abrir'),
+        h('button', { class: 'btn small', onclick: () => downloadPDF([p]) }, 'Programa PDF'),
+        h('button', { class: 'btn small', onclick: () => openSlipsDialog(p) }, 'Hojas de asignación')));
+  };
+
+  return h('div', null,
+    h('div', { class: 'row spread', style: { marginBottom: '14px' } },
+      h('div', null, h('h1', null, 'Semanas'), h('p', { class: 'sub', style: { margin: 0 } }, 'Programas de la reunión con sus asignaciones.')),
+      pdfBtn),
+    location.protocol === 'file:' ? h('div', { class: 'notice warn' },
+      'Abriste la app directamente. Para que busque las guías en jw.org, ciérrala y ábrela con el archivo “Programas.bat”.') : null,
+    h('div', { class: 'card sync' },
+      h('div', { class: 'row spread' },
+        h('div', null,
+          h('strong', null, 'Guías de actividades de jw.org'),
+          h('div', { id: 'sync-text', class: syncMsg.warn ? 'notice warn' : 'muted small-text', style: syncMsg.warn ? { margin: '6px 0 0' } : null },
+            syncMsg.text || (state.lastSync ? `Última revisión: ${new Date(state.lastSync).toLocaleString('es')}` : 'Aún no se ha revisado.'))),
+        h('button', { class: 'btn primary', onclick: () => syncGuides(true) }, '↻ Buscar semanas nuevas')),
+      h('div', { class: 'row', style: { marginTop: '10px' } },
+        h('span', { class: 'muted small-text' }, 'Agregar otra semana (por ejemplo, una pasada):'),
+        dateI,
+        h('button', { class: 'btn small', onclick: () => dateI.value && addWeek(dateI.value) }, '+ Agregar'))),
+    h('h2', { class: 'group' }, 'Próximas semanas'),
+    upcoming.length ? h('div', { class: 'plist' }, upcoming.map(card))
+      : h('div', { class: 'card empty' }, 'No hay semanas próximas. Pulsa “Buscar semanas nuevas”.'),
+    past.length ? [h('h2', { class: 'group' }, 'Semanas anteriores'), h('div', { class: 'plist' }, past.map(card))] : null);
+}
+
+function renderEditor(p) {
+  let focus = null;              // { rowId, slot }
+  let sexFilter = 'all';
+  let editing = false;
+  const s = state.settings;
+  const body = h('div');
+  const metaBox = h('div');
+  const toolbar = h('div', { class: 'row' });
+  const suggList = h('div', { class: 'sugg' });
+  const suggFor = h('p');
+  const suggFilter = h('input', { type: 'search', placeholder: 'Buscar perfil…', oninput: () => updateSide() });
+  const chips = h('div', { class: 'chips' });
+  const totalEl = h('span', { class: 'total' });
+  const heading = h('div', { class: 'ph2' });
+  const rebuild = () => { save(); build(); };
+
+  function updateHints() {
+    const ctx = contextFor(p);
+    const counts = countsFor(p);
+    body.querySelectorAll('input[data-slot]').forEach(inp => {
+      const row = p.rows.find(r => r.id === inp.dataset.row), slot = inp.dataset.slot;
+      const hint = inp.nextElementSibling;
+      inp.classList.remove('s-dup', 's-recent', 's-warn');
+      const pid = row[slot];
+      if (!pid) { hint.textContent = ''; hint.className = 'hint'; return; }
+      const st = statusFor(pid, p, ctx, counts, row, slot);
+      hint.textContent = st.text; hint.className = 'hint ' + st.cls;
+      if (['s-dup', 's-recent', 's-warn'].includes(st.cls)) inp.classList.add(st.cls);
+    });
+    const slots = slotsOf(p);
+    totalEl.textContent = `${slots.filter(x => x.pid).length} de ${slots.length} asignaciones · termina aprox. a las ${fmtTime(timesFor(p).end)}`;
+    updateSide(ctx);
+  }
+
+  function updateSide(ctx = contextFor(p)) {
+    const used = new Set(slotsOf(p).map(x => x.pid).filter(Boolean));
+    const f = norm(suggFilter.value);
+    chips.replaceChildren(...[['all', 'Todos'], ['M', 'Hombres'], ['F', 'Mujeres']].map(([v, t]) =>
+      h('button', { class: sexFilter === v ? 'on' : '', onclick: () => { sexFilter = v; updateSide(); } }, t)));
+    // En una pareja de estudiantes, los familiares de la otra persona salen primero
+    const fr = focus && p.rows.find(r => r.id === focus.rowId);
+    const partner = fr && fr.helper === 'Ayudante' ? fr[focus.slot === 'a' ? 'b' : 'a'] : null;
+    const items = state.profiles
+      .filter(pr => !used.has(pr.id) && (!f || norm(pr.name).includes(f)))
+      .map(pr => { const l = ctx.last.get(pr.id); return { pr, fam: !!partner && sameFamily(partner, pr.id), days: l ? daysBetween(l.q.date, p.date) : Infinity, recent: ctx.recent.has(pr.id) }; })
+      .filter(it => it.fam || sexFilter === 'all' || it.pr.sex === sexFilter)
+      .sort((a, b) => b.fam - a.fam || b.days - a.days || a.pr.name.localeCompare(b.pr.name, 'es'));
+    suggList.replaceChildren(...(items.length ? items.map(it => h('button', { onclick: () => insertProfile(it.pr) },
+      h('span', { class: 'nm' }, it.pr.name, ' ', h('small', null, `${it.pr.sex === 'M' ? '♂' : '♀'}${it.pr.age != null ? ' ' + it.pr.age : ''}`),
+        it.fam ? h('span', { class: 'tag-fam' }, 'Familia') : null),
+      h('span', { class: 'hint ' + (it.days === Infinity || it.days >= s.staleDays ? 's-stale' : it.recent ? 's-recent' : 's-ok') },
+        it.days === Infinity ? 'nunca' : `hace ${it.days} d`)))
+      : [h('p', null, state.profiles.length ? 'No hay perfiles disponibles con este filtro.' : 'Aún no hay perfiles. Créalos en la pestaña “Perfiles” o escribiendo un nombre nuevo en el programa.')]));
+  }
+
+  function setFocus(row, slot) {
+    focus = { rowId: row.id, slot };
+    const partner = row.helper === 'Ayudante' && profById(row[slot === 'a' ? 'b' : 'a']);
+    sexFilter = slotNeedsMen(row, slot) ? 'M' : partner ? partner.sex : 'all';
+    const lb = slotLabels(row);
+    suggFor.textContent = `Para: ${slot === 'b' ? lb.b : lb.a && !lb.soft ? lb.a : displayTitle(row)}`;
+    body.querySelectorAll('input.focused').forEach(i => i.classList.remove('focused'));
+    const inp = body.querySelector(`input[data-row="${row.id}"][data-slot="${slot}"]`);
+    if (inp) inp.classList.add('focused');
+    updateSide();
+  }
+
+  function assign(row, slot, pid) {
+    row[slot] = pid; save();
+    const inp = body.querySelector(`input[data-row="${row.id}"][data-slot="${slot}"]`);
+    if (inp) inp.value = pid ? profById(pid).name : '';
+    updateHints();
+  }
+
+  function insertProfile(prof) {
+    const fr = focus && p.rows.find(r => r.id === focus.rowId);
+    let target = fr && { row: fr, slot: focus.slot };
+    if (!target || target.row[target.slot]) target = slotsOf(p).find(x => !x.pid);
+    if (!target) return toast('Todas las asignaciones ya están cubiertas');
+    assign(target.row, target.slot, prof.id);
+    const next = slotsOf(p).find(x => !x.pid);
+    if (next) setFocus(next.row, next.slot);
+  }
+
+  function slotNode(row, slot, label, soft) {
+    const pid = row[slot];
+    return h('div', { class: 'slot' },
+      h('span', { class: 'slabel' + (soft ? ' soft' : '') }, label),
+      h('div', null,
+        h('input', {
+          type: 'text', list: 'profiles-list', value: pid && profById(pid) ? profById(pid).name : '',
+          placeholder: 'Asignar…', 'data-row': row.id, 'data-slot': slot,
+          onfocus: () => setFocus(row, slot),
+          onchange: e => {
+            const val = squash(e.target.value);
+            if (!val) return assign(row, slot, null);
+            const prof = profByName(val);
+            if (prof) return assign(row, slot, prof.id);
+            openProfileDialog(null, { name: val, onSave: np => assign(row, slot, np.id), onCancel: () => assign(row, slot, row[slot]) });
+          },
+        }),
+        h('div', { class: 'hint' })));
+  }
+
+  function titleNode(row) {
+    if (row.kind === 'prayer' || row.kind === 'song') {
+      return h('div', { class: 'pt' }, `Canción ${row.song || '—'}`,
+        h('span', { class: 'songname', 'data-song': row.song || '' }, row.song && state.songs[row.song] ? ' - ' + state.songs[row.song] : ''));
+    }
+    return [
+      h('div', { class: 'pt' }, displayTitle(row), row.min ? h('span', { class: 'min' }, ` (${row.min} min.)`) : null),
+      row.detail ? h('div', { class: 'detail', title: row.detail }, row.detail) : null,
+    ];
+  }
+
+  function titleEditor(row) {
+    if (row.kind === 'prayer' || row.kind === 'song') {
+      return h('div', { class: 'edit-in' }, 'Canción n.º',
+        h('input', { type: 'number', min: 1, value: row.song ?? '', onchange: e => {
+          row.song = e.target.value === '' ? null : +e.target.value; rebuild(); ensureSongTitles([p]);
+        } }));
+    }
+    return h('div', { class: 'edit-in' },
+      h('input', { type: 'text', value: row.title, placeholder: 'Título de la intervención', oninput: e => { row.title = e.target.value; save(); } }),
+      h('input', { type: 'number', min: 0, value: row.min ?? '', title: 'Minutos', onchange: e => { row.min = e.target.value === '' ? null : +e.target.value; rebuild(); } }),
+      h('span', { class: 'muted small-text' }, 'min'));
+  }
+
+  function build() {
+    const times = timesFor(p);
+    const nodes = [];
+    let sec = '';
+    p.rows.forEach((row, i) => {
+      if (row.section && row.section !== sec) {
+        sec = row.section;
+        const so = sectionOf(sec);
+        nodes.push(h('div', { class: 'psec', style: { '--sec': so ? so.css : 'var(--sec-none)' } }, h('i'), sec));
+      }
+      const so = sectionOf(row.section);
+      const lb = slotLabels(row);
+      nodes.push(h('div', { class: 'prow' },
+        h('div', { class: 'ptime' }, fmtTime(times[row.id])),
+        h('div', { class: 'pdot', style: { background: so ? so.css : 'var(--sec-none)' } }),
+        h('div', { class: 'ptitle' }, editing ? titleEditor(row) : titleNode(row)),
+        h('div', { class: 'pslots' },
+          isAssignable(row) ? [slotNode(row, 'a', lb.a, lb.soft), row.helper ? slotNode(row, 'b', lb.b, lb.soft) : null] : null),
+        editing ? h('div', { class: 'pacts' },
+          h('button', { class: 'btn icon small', title: 'Subir', disabled: i === 0,
+            onclick: () => { [p.rows[i - 1], p.rows[i]] = [p.rows[i], p.rows[i - 1]]; rebuild(); } }, '↑'), ' ',
+          h('button', { class: 'btn icon small', title: 'Bajar', disabled: i === p.rows.length - 1,
+            onclick: () => { [p.rows[i + 1], p.rows[i]] = [p.rows[i], p.rows[i + 1]]; rebuild(); } }, '↓'), ' ',
+          h('button', { class: 'btn icon small danger', title: 'Quitar', onclick: () => {
+            if (confirm(`¿Quitar “${displayTitle(row)}”?`)) { p.rows.splice(i, 1); rebuild(); }
+          } }, '×')) : h('div')));
+    });
+    body.replaceChildren(...nodes);
+    heading.textContent = fmtMeeting(p) + (p.reading ? '  |  ' + p.reading.toUpperCase() : '');
+    metaBox.replaceChildren(editing ? h('div', { class: 'meta' },
+      h('label', { class: 'field' }, 'Semana', h('input', { type: 'text', value: p.title, oninput: e => { p.title = e.target.value; save(); } })),
+      h('label', { class: 'field' }, 'Lectura de la Biblia', h('input', { type: 'text', value: p.reading || '', oninput: e => { p.reading = e.target.value; save(); heading.textContent = fmtMeeting(p) + (p.reading ? '  |  ' + p.reading.toUpperCase() : ''); } })),
+      h('label', { class: 'field' }, 'Fecha de la reunión', h('input', { type: 'date', value: meetingDate(p), onchange: e => {
+        if (!e.target.value) return;
+        p.date = mondayOf(e.target.value); p.week = weekKey(p.date); rebuild();
+      } }))) : '');
+    toolbar.replaceChildren(...[
+      editing ? h('button', { class: 'btn danger', onclick: () => {
+        if (confirm(`¿Eliminar la semana “${p.title}”? Se perderán sus asignaciones.`)) { state.programs = state.programs.filter(x => x !== p); save(); go({ name: 'list' }); }
+      } }, 'Eliminar semana') : null,
+      h('button', { class: 'btn', onclick: () => { editing = !editing; build(); } }, editing ? '✓ Listo' : '✎ Editar programa'),
+      h('button', { class: 'btn', onclick: () => openSlipsDialog(p) }, '📄 Hojas de asignación'),
+      h('button', { class: 'btn primary', onclick: () => downloadPDF([p]) }, '⬇ Programa PDF')].filter(Boolean));
+    updateHints();
+    if (focus) { const fr = p.rows.find(r => r.id === focus.rowId); if (fr && isAssignable(fr)) setFocus(fr, focus.slot); }
+  }
+
+  function addRow() {
+    const sec = h('select', null, h('option', { value: '' }, '(sin sección)'), SECTIONS.map(x => h('option', { value: x.name }, x.name)));
+    const title = h('input', { type: 'text', placeholder: 'Ej.: Necesidades de la congregación' });
+    const min = h('input', { type: 'number', min: 0, value: 5, style: { width: '90px' } });
+    const helper = h('select', null, h('option', { value: '' }, 'No'), h('option', { value: 'Ayudante' }, 'Ayudante'), h('option', { value: 'Lector' }, 'Lector'));
+    const men = h('input', { type: 'checkbox' });
+    const dlg = h('dialog', { class: 'dlg' },
+      h('div', { class: 'dlg-body' }, h('h3', null, 'Agregar intervención'),
+        h('label', { class: 'field' }, 'Título', title),
+        h('div', { class: 'row', style: { gap: '16px' } },
+          h('label', { class: 'field' }, 'Sección', sec), h('label', { class: 'field' }, 'Minutos', min), h('label', { class: 'field' }, '¿Con ayudante?', helper)),
+        h('label', { class: 'row' }, men, 'La suele presentar un varón')),
+      h('div', { class: 'dlg-foot' },
+        h('button', { class: 'btn', onclick: () => dlg.close() }, 'Cancelar'),
+        h('button', { class: 'btn primary', onclick: () => {
+          const row = newRow('part', { section: sec.value, title: squash(title.value), min: min.value === '' ? null : +min.value, helper: helper.value || null, men: men.checked });
+          // Al final de su sección; si no tiene sección, antes de las palabras de conclusión
+          let at = -1;
+          p.rows.forEach((r, i) => { if (row.section && r.section === row.section && r.kind === 'part') at = i; });
+          if (at < 0) { const c = p.rows.findIndex(r => r.kind === 'chair' && !r.intro); at = c < 0 ? p.rows.length - 1 : c - 1; }
+          p.rows.splice(at + 1, 0, row);
+          dlg.close(); rebuild();
+        } }, 'Agregar')));
+    dlg.addEventListener('close', () => dlg.remove());
+    document.body.append(dlg); dlg.showModal(); title.focus();
+  }
+
+  queueMicrotask(() => {
+    build();
+    const first = slotsOf(p).find(x => !x.pid) || slotsOf(p)[0];
+    if (first) setFocus(first.row, first.slot);
+    ensureSongTitles([p]);
+  });
+
+  return h('div', null,
+    h('div', { class: 'row spread', style: { marginBottom: '14px' } },
+      h('button', { class: 'btn', onclick: () => go({ name: 'list' }) }, '← Semanas'),
+      toolbar),
+    h('div', { class: 'editor' },
+      h('div', { class: 'card sheet' },
+        h('div', { class: 'ph1' }, h('span', null, s.pdfTitle || 'Programa'), s.congregation ? h('span', null, s.congregation) : null),
+        heading,
+        metaBox,
+        body,
+        h('div', { class: 'pfoot' },
+          h('button', { class: 'btn small', onclick: addRow }, '+ Agregar intervención'), totalEl),
+        h('div', { class: 'legend' },
+          h('span', { class: 'hint s-recent' }, `↻ participó en las últimas ${s.recentCount} semanas`),
+          h('span', { class: 'hint s-dup' }, '⚠ repetido en esta semana o revisar'),
+          h('span', { class: 'hint s-stale' }, `★ ${s.staleDays}+ días sin participar o nunca`))),
+      h('aside', { class: 'card side' },
+        h('h3', null, 'Quién lleva más tiempo sin participar'),
+        suggFor,
+        chips, suggFilter, suggList,
+        h('button', { class: 'btn small', style: { marginTop: '10px', width: '100%' }, onclick: () => openProfileDialog(null, { onSave: () => updateSide() }) }, '+ Nuevo perfil'))));
+}
+
+function renderPeople() {
+  let sort = 'stale', sexF = 'all';
+  const filter = h('input', { type: 'search', placeholder: 'Buscar…', oninput: () => fill() });
+  const tbody = h('tbody');
+  const today = todayISO();
+
+  function stats() {
+    const progs = sortedPrograms();
+    const recentPids = new Set(progs.filter(q => q.date <= today).slice(0, state.settings.recentCount).flatMap(q => assignmentsOf(q).map(x => x.pid)));
+    return state.profiles.map(pr => {
+      let count = 0, last = null, next = null;
+      for (const q of progs) for (const x of assignmentsOf(q)) {
+        if (x.pid !== pr.id) continue;
+        count++;
+        if (q.date <= today) { if (!last) last = { q, ...x }; } else next = { q, ...x }; // progs va de más nuevo a más viejo
+      }
+      return { pr, count, last, next, days: last ? daysBetween(last.q.date, today) : Infinity, recent: recentPids.has(pr.id) };
+    });
+  }
+
+  function fill() {
+    const f = norm(filter.value);
+    const byName = (a, b) => a.pr.name.localeCompare(b.pr.name, 'es');
+    const rows = stats().filter(x => (!f || norm(x.pr.name).includes(f)) && (sexF === 'all' || x.pr.sex === sexF)).sort(
+      sort === 'stale' ? (a, b) => b.days - a.days || byName(a, b)
+        : sort === 'count' ? (a, b) => b.count - a.count || byName(a, b)
+          : sort === 'age' ? (a, b) => (b.pr.age ?? -1) - (a.pr.age ?? -1) || byName(a, b) : byName);
+    tbody.replaceChildren(...(rows.length ? rows.map(x => {
+      const badge = x.days === Infinity ? ['s-never', x.next ? 'Programado' : 'Nunca']
+        : x.days >= state.settings.staleDays ? ['s-stale', 'Hace mucho'] : x.recent ? ['s-recent', 'Reciente'] : ['s-ok', 'Normal'];
+      return h('tr', { onclick: () => openProfileDialog(x.pr) },
+        h('td', null, h('strong', null, x.pr.name), x.pr.notes ? h('div', { class: 'muted small-text' }, x.pr.notes) : null),
+        h('td', null, x.pr.sex === 'M' ? 'Masculino' : 'Femenino'),
+        h('td', null, x.pr.age ?? '—'),
+        h('td', { class: 'small-text' }, (famOf(x.pr.id) || {}).name || '—'),
+        h('td', null, x.count),
+        h('td', null, x.last ? fmtShort(x.last.q.date) : '—'),
+        h('td', null, x.days === Infinity ? '—' : `${x.days} días`),
+        h('td', { class: 'small-text' }, x.last ? roleLabel(x.last.row, x.last.slot) : '—'),
+        h('td', null, x.next ? fmtShort(x.next.q.date) : '—'),
+        h('td', null, h('span', { class: 'badge ' + badge[0] }, badge[1])));
+    }) : [h('tr', null, h('td', { colspan: 10, class: 'empty' }, state.profiles.length ? 'Ningún perfil coincide.' : 'Aún no hay perfiles. Pulsa “+ Nuevo perfil”.'))]));
+  }
+
+  fill();
+  return h('div', null,
+    h('div', { class: 'row spread', style: { marginBottom: '14px' } },
+      h('div', null, h('h1', null, 'Perfiles'),
+        h('p', { class: 'sub', style: { margin: 0 } }, 'Ordenados por el tiempo que llevan sin participar. Toca un perfil para editarlo o ver su historial.')),
+      h('button', { class: 'btn primary', onclick: () => openProfileDialog(null) }, '+ Nuevo perfil')),
+    h('div', { class: 'card', style: { padding: '14px' } },
+      h('div', { class: 'row', style: { marginBottom: '10px' } }, filter,
+        h('select', { onchange: e => { sexF = e.target.value; fill(); } },
+          h('option', { value: 'all' }, 'Todos'), h('option', { value: 'M' }, 'Hombres'), h('option', { value: 'F' }, 'Mujeres')),
+        h('select', { onchange: e => { sort = e.target.value; fill(); } },
+          h('option', { value: 'stale' }, 'Más tiempo sin participar'),
+          h('option', { value: 'count' }, 'Más veces asignado'),
+          h('option', { value: 'age' }, 'Edad'),
+          h('option', { value: 'az' }, 'Alfabético'))),
+      h('div', { class: 'tablewrap' }, h('table', { class: 'stats' },
+        h('thead', null, h('tr', null, ['Nombre', 'Sexo', 'Edad', 'Familia', 'Veces', 'Última vez', 'Hace', 'Última asignación', 'Próxima', 'Estado'].map(t => h('th', null, t)))),
+        tbody))));
+}
+
+function openFamilyDialog(fam) {
+  const nameI = h('input', { type: 'text', value: fam ? fam.name : '', placeholder: 'Ej.: Familia Tapia' });
+  const err = h('div', { class: 'err' });
+  const dlg = h('dialog', { class: 'dlg' },
+    h('div', { class: 'dlg-body' },
+      h('h3', null, fam ? 'Cambiar nombre' : 'Nueva familia'),
+      h('label', { class: 'field' }, 'Nombre de la familia', nameI), err),
+    h('div', { class: 'dlg-foot' },
+      h('button', { class: 'btn', onclick: () => dlg.close() }, 'Cancelar'),
+      h('button', { class: 'btn primary', onclick: submit }, 'Guardar')));
+  function submit() {
+    const name = squash(nameI.value);
+    if (!name) return err.textContent = 'Escribe el nombre de la familia.';
+    if (state.families.some(f => f !== fam && norm(f.name) === norm(name))) return err.textContent = 'Ya existe una familia con ese nombre.';
+    if (fam) fam.name = name; else state.families.push({ id: uid(), name });
+    save(); dlg.close(); render();
+  }
+  dlg.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); submit(); } });
+  dlg.addEventListener('close', () => dlg.remove());
+  document.body.append(dlg); dlg.showModal(); nameI.focus();
+}
+
+function renderFamilies() {
+  const fams = [...state.families].sort((a, b) => a.name.localeCompare(b.name, 'es'));
+  const free = state.profiles.filter(p => !p.familyId || !famById(p.familyId)).sort((a, b) => a.name.localeCompare(b.name, 'es'));
+  const card = f => {
+    const members = familyMembers(f);
+    return h('div', { class: 'card fam' },
+      h('div', { class: 'fam-head' },
+        h('strong', null, f.name),
+        h('div', { class: 'row' },
+          h('button', { class: 'btn small', onclick: () => openFamilyDialog(f) }, 'Renombrar'),
+          h('button', { class: 'btn small danger', onclick: () => {
+            if (!confirm(`¿Eliminar “${f.name}”? Los perfiles no se borran, solo dejan de estar en esta familia.`)) return;
+            state.families = state.families.filter(x => x !== f);
+            for (const p of state.profiles) if (p.familyId === f.id) p.familyId = null;
+            save(); render();
+          } }, 'Eliminar'))),
+      members.length ? h('div', { class: 'members' }, members.map(m => h('span', { class: 'member' },
+        m.name, h('small', null, `${m.sex === 'M' ? '♂' : '♀'}${m.age != null ? ' ' + m.age : ''}`),
+        h('button', { title: 'Quitar de la familia', onclick: () => { m.familyId = null; save(); render(); } }, '×'))))
+        : h('div', { class: 'muted small-text' }, 'Todavía no tiene miembros.'),
+      free.length ? h('select', { onchange: e => {
+        const pr = profById(e.target.value); if (!pr) return;
+        pr.familyId = f.id; save(); render();
+      } }, h('option', { value: '' }, '+ Agregar miembro…'), free.map(p => h('option', { value: p.id }, p.name)))
+        : h('div', { class: 'muted small-text' }, state.profiles.length ? 'Todos los perfiles ya tienen familia.' : 'Primero crea perfiles en la pestaña “Perfiles”.'));
+  };
+  return h('div', null,
+    h('div', { class: 'row spread', style: { marginBottom: '14px' } },
+      h('div', null, h('h1', null, 'Familias'),
+        h('p', { class: 'sub', style: { margin: 0 } },
+          'Agrupa a las personas que son familia. Al elegir ayudante, la app muestra primero a los familiares y avisa si la pareja es de distinto sexo y no es de la misma familia.')),
+      h('button', { class: 'btn primary', onclick: () => openFamilyDialog(null) }, '+ Nueva familia')),
+    fams.length ? h('div', { class: 'fgrid' }, fams.map(card))
+      : h('div', { class: 'card empty' }, 'Aún no hay familias. Pulsa “+ Nueva familia” para crear la primera.'));
+}
+
+function renderSettings() {
+  const s = state.settings;
+  const num = (label, key, min, max) => h('label', { class: 'field' }, label,
+    h('input', { type: 'number', min, max, value: s[key], style: { width: '120px' }, onchange: e => { s[key] = Math.min(max, Math.max(min, Math.round(+e.target.value) || min)); e.target.value = s[key]; save(); } }));
+  const text = (label, key, ph) => h('label', { class: 'field' }, label,
+    h('input', { type: 'text', value: s[key], placeholder: ph, oninput: e => { s[key] = e.target.value; save(); } }));
+  const fileIn = h('input', { type: 'file', accept: '.json,application/json', style: { display: 'none' }, onchange: e => {
+    const f = e.target.files[0]; if (!f) return;
+    f.text().then(txt => {
+      const data = JSON.parse(txt);
+      if (!Array.isArray(data.programs) || !Array.isArray(data.profiles)) throw new Error();
+      if (!confirm('Esto reemplazará todos los datos actuales por los del respaldo. ¿Continuar?')) return;
+      state = hydrate(data); save(); toast('Respaldo cargado'); go({ name: 'list' });
+    }).catch(() => toast('El archivo no es un respaldo válido de esta app'));
+    e.target.value = '';
+  } });
+  return h('div', null,
+    h('h1', null, 'Ajustes'),
+    h('p', { class: 'sub' }, 'Los datos se guardan en este navegador. Descarga un respaldo de vez en cuando.'),
+    h('div', { class: 'card settings' },
+      text('Título del programa', 'pdfTitle', 'Programa para la reunión de entre semana'),
+      text('Nombre de la congregación', 'congregation', 'Opcional'),
+      h('div', { class: 'row', style: { gap: '20px', alignItems: 'flex-end' } },
+        h('label', { class: 'field' }, 'Día de la reunión',
+          h('select', { onchange: e => { s.meetingDay = +e.target.value; save(); } },
+            WEEKDAYS.map((d, i) => h('option', { value: i, selected: s.meetingDay === i ? true : null }, d)))),
+        h('label', { class: 'field' }, 'Hora de inicio',
+          h('input', { type: 'time', value: s.startTime, onchange: e => { if (e.target.value) { s.startTime = e.target.value; save(); } } })),
+        h('label', { class: 'field' }, 'Tamaño de papel del PDF',
+          h('select', { onchange: e => { s.paper = e.target.value; save(); } },
+            h('option', { value: 'letter', selected: s.paper !== 'a4' ? true : null }, 'Carta'),
+            h('option', { value: 'a4', selected: s.paper === 'a4' ? true : null }, 'A4')))),
+      h('label', { class: 'field' }, 'Nota al estudiante (en las hojas de asignación)',
+        h('textarea', { rows: 3, oninput: e => { s.slipNote = e.target.value; save(); } }, s.slipNote)),
+      text('Texto al pie de las hojas de asignación', 'slipFooter', 'Opcional (por ejemplo, el código del formulario)'),
+      num('Marcar como “reciente” si participó en las últimas … semanas', 'recentCount', 1, 20),
+      num('Marcar como “hace mucho” después de … días', 'staleDays', 1, 3650),
+      num('Cuántas semanas hacia adelante buscar en jw.org', 'weeksAhead', 1, 16),
+      h('div', { class: 'row' },
+        h('button', { class: 'btn', onclick: () => {
+          const a = h('a', { href: URL.createObjectURL(new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' })),
+            download: `respaldo-programas-${todayISO()}.json` });
+          a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+        } }, '⬇ Descargar respaldo'),
+        h('button', { class: 'btn', onclick: () => fileIn.click() }, '⬆ Cargar respaldo'), fileIn)));
+}
+
+document.querySelectorAll('nav button').forEach(b => b.addEventListener('click', () => go({ name: b.dataset.view })));
+render();
+// Revisa jw.org al abrir, como máximo cada 12 horas (o siempre si faltan semanas próximas)
+if (Date.now() - state.lastSync > 12 * 36e5 || !state.programs.some(p => p.date >= mondayOf(todayISO()))) syncGuides(false);
+else ensureSongTitles(state.programs);
+</script>
+</body>
+</html>

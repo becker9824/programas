@@ -1,0 +1,52 @@
+{
+  "name": "programas",
+  "productName": "Programas",
+  "version": "1.1.0",
+  "description": "Programas y asignaciones de la reunión Vida y Ministerio Cristianos",
+  "main": "main.js",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "prueba": "electron . --prueba",
+    "instalador": "electron-builder --win nsis",
+    "publicar": "powershell -ExecutionPolicy Bypass -File publicar.ps1"
+  },
+  "build": {
+    "appId": "local.programas.reunion",
+    "productName": "Programas",
+    "files": [
+      "main.js",
+      "index.html",
+      "icon.png",
+      "icon.svg",
+      "vendor/**"
+    ],
+    "directories": {
+      "output": "dist"
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "becker9824",
+      "repo": "programas"
+    },
+    "win": {
+      "target": "nsis",
+      "icon": "icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "shortcutName": "Programas",
+      "artifactName": "Programas-Setup-${version}.${ext}"
+    }
+  },
+  "devDependencies": {
+    "electron": "^45.0.0",
+    "electron-builder": "^26.15.3",
+    "jspdf": "^2.5.1"
+  },
+  "dependencies": {
+    "electron-updater": "^6.8.9"
+  }
+}
