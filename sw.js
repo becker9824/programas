@@ -1,15 +1,14 @@
-// Guarda la app en el dispositivo para que funcione sin internet.
+// Guarda la app en el celular para que abra rápido y funcione sin internet.
 // Sube el número de versión cada vez que cambies index.html.
-const CACHE = 'programas-v1';
+const CACHE = 'programas-v2';
 const FILES = [
   './',
   './index.html',
+  './firebase-config.js',
   './manifest.webmanifest',
   './icon.svg',
-  './icon-192.png',
-  './icon-512.png',
-  'https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js',
-  'https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.2/dist/jspdf.plugin.autotable.min.js',
+  './icon.png',
+  './vendor/jspdf.umd.min.js',
 ];
 
 self.addEventListener('install', e => {
@@ -23,8 +22,9 @@ self.addEventListener('activate', e => {
 });
 
 // Primero intenta la red (para recibir actualizaciones); si no hay conexión, usa lo guardado.
+// Solo los archivos de la app: Firebase maneja sus propias conexiones.
 self.addEventListener('fetch', e => {
-  if (e.request.method !== 'GET') return;
+  if (e.request.method !== 'GET' || new URL(e.request.url).origin !== location.origin) return;
   e.respondWith(
     fetch(e.request)
       .then(res => {

@@ -5,7 +5,12 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Programas y Asignaciones</title>
 <link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon.png">
+<meta name="theme-color" content="#0070c0">
+<meta name="apple-mobile-web-app-capable" content="yes">
 <script src="vendor/jspdf.umd.min.js"></script>
+<script src="firebase-config.js"></script>
 <style>
   :root {
     --bg: #f4f5f7; --surface: #ffffff; --surface-2: #f0f2f5; --border: #e2e5ea;
@@ -47,7 +52,7 @@
   .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
   .spread { justify-content: space-between; }
   .card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--shadow); }
-  input[type=text], input[type=date], input[type=time], input[type=number], input[type=search], select, textarea {
+  input[type=text], input[type=email], input[type=password], input[type=date], input[type=time], input[type=number], input[type=search], select, textarea {
     font: inherit; color: var(--text); background: var(--surface); border: 1px solid var(--border);
     border-radius: 8px; padding: 7px 10px; min-width: 0; }
   input:focus, select:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
@@ -176,18 +181,41 @@
   .slip > span { display: flex; flex-direction: column; min-width: 0; }
   .slip small { color: var(--muted); font-size: 12px; }
   .tag-fam { font-size: 11px; padding: 1px 6px; border-radius: 999px; background: var(--surface-2); color: var(--accent); margin-left: 4px; }
+
+  /* ---- Congregación: acceso, publicadores, usuarios e informes ---- */
+  nav { overflow-x: auto; max-width: 100%; }
+  @media (max-width: 640px) { .brand { width: 100%; } nav button { padding: 8px 9px; } }
+  .auth { min-height: 70vh; display: grid; place-items: center; }
+  .auth-card { width: min(440px, 100%); padding: 22px; display: grid; gap: 14px; }
+  .auth-card h2 { margin: 0; font-size: 20px; }
+  .auth-card p { margin: 0; }
+  .auth-card input { width: 100%; }
+  .linkbtn { background: none; border: 0; color: var(--accent); font: inherit; font-size: 13px; cursor: pointer; padding: 0; justify-self: start; }
+  .tabs { display: flex; gap: 4px; background: var(--surface-2); padding: 4px; border-radius: 10px; }
+  .tabs button { flex: 1; border: 0; background: none; padding: 7px 6px; border-radius: 8px; font: inherit; font-size: 13px; color: var(--muted); cursor: pointer; }
+  .tabs button.on { background: var(--surface); color: var(--text); font-weight: 600; box-shadow: var(--shadow); }
+  .mine { padding: 16px; margin-bottom: 16px; border-left: 4px solid var(--accent); display: grid; gap: 4px; }
+  .mine-t { font-size: 18px; font-weight: 700; }
+  .vweek { margin-bottom: 10px; }
+  .vweek summary { padding: 12px 14px; cursor: pointer; }
+  .vbody { padding: 0 14px 12px; }
+  .vrow { display: grid; grid-template-columns: 46px minmax(0, 1fr); gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--border); }
+  .vrow:last-child { border-bottom: 0; }
+  .vrow .ptime { padding-top: 0; }
+  .vnames { display: flex; flex-wrap: wrap; gap: 2px 14px; font-size: 14px; color: var(--muted); margin-top: 2px; }
+  .vnames .yo { color: var(--accent); font-weight: 700; }
+  .urow { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; padding: 10px 0; border-bottom: 1px solid var(--border); }
+  .urow:last-child { border-bottom: 0; }
+  .urow .info { flex: 1; min-width: 180px; }
+  .code { font: 700 22px ui-monospace, Consolas, monospace; letter-spacing: .15em; }
+  .totals { display: flex; gap: 18px; flex-wrap: wrap; margin: 4px 0 10px; font-size: 14px; }
 </style>
 </head>
 <body>
 <header>
   <div class="bar">
     <div class="brand">📋 Programas</div>
-    <nav>
-      <button data-view="list">Semanas</button>
-      <button data-view="people">Perfiles</button>
-      <button data-view="families">Familias</button>
-      <button data-view="settings">Ajustes</button>
-    </nav>
+    <nav></nav>
   </div>
 </header>
 <main id="app"></main>
@@ -196,6 +224,10 @@
 
 <script>
 const KEY = 'programas-app-v2';
+// Con FIREBASE_CONFIG (firebase-config.js) los datos viven en la nube de la congregación;
+// sin él, la app funciona como antes, solo en esta PC. "?emu" usa el Firebase local de prueba.
+const EMU = /[?&]emu\b/.test(location.search);
+const FB_CONFIG = EMU ? { apiKey: 'demo-key', authDomain: 'localhost', projectId: 'demo-programas' } : window.FIREBASE_CONFIG;
 const OLD_PDF_TITLE = 'Reunión Vida y Ministerio Cristianos';
 const defaults = () => ({
   profiles: [], families: [], programs: [], songs: {}, missing: {}, lastSync: 0,
@@ -241,10 +273,11 @@ function load() {
   return defaults();
 }
 function save() {
+  if (FB_CONFIG) return saveCloud();
   try { localStorage.setItem(KEY, JSON.stringify(state)); }
   catch (e) { toast('No se pudo guardar en este navegador'); }
 }
-let state = load();
+let state = FB_CONFIG ? defaults() : load();
 let view = { name: 'list' };
 let syncMsg = { text: '', warn: false };
 let syncing = false;
@@ -546,7 +579,9 @@ async function syncGuides(manual) {
   if (manual) serverOK = null;
   if (!await serverAvailable()) {
     syncing = false;
-    setSync('Para buscar las guías en jw.org, abre la app con el archivo “Programas.bat”.', true);
+    setSync(location.protocol === 'https:'
+      ? 'Desde la versión web no se puede leer jw.org. Busca las semanas desde el programa de PC y aparecerán aquí solas.'
+      : 'Para buscar las guías en jw.org, abre la app con el archivo “Programas.bat”.', true);
     return;
   }
   const start = mondayOf(todayISO());
@@ -855,17 +890,585 @@ function openProfileDialog(prof, opts = {}) {
   nameI.focus();
 }
 
+// ---------- congregación en la nube (Firebase) ----------
+// Firestore: codigos/{código} → congregación; congregaciones/{id} con miembros/{uid},
+// privado/estado (todos los datos, solo admins), publico/programa (semanas con nombres,
+// para todos) e informes/{uid_AAAA-MM}. Quién puede qué lo deciden las reglas (firestore.rules).
+const nube = { user: null, cong: null, congData: null, me: null, rol: null, listo: false, publico: null,
+  miembros: [], ultimo: '', ultimoPub: '', registro: null, unsubMe: null, unsubDatos: [] };
+let F = null; // funciones de Firebase, cargadas al abrir
+
+async function loadFirebase() {
+  const base = 'https://www.gstatic.com/firebasejs/13.1.0/firebase-';
+  const [app, auth, fs] = await Promise.all(['app', 'auth', 'firestore'].map(m => import(base + m + '.js')));
+  const a = app.initializeApp(FB_CONFIG);
+  F = { ...auth, ...fs, auth: auth.getAuth(a), db: fs.getFirestore(a) };
+  if (EMU) {
+    auth.connectAuthEmulator(F.auth, 'http://127.0.0.1:9099', { disableWarnings: true });
+    fs.connectFirestoreEmulator(F.db, '127.0.0.1', 8080);
+  }
+}
+const ref = (...path) => F.doc(F.db, ...path);
+const congRef = (...path) => ref('congregaciones', nube.cong, ...path);
+const isAdmin = () => nube.rol === 'admin';
+const byNombre = (a, b) => (a.nombre || '').localeCompare(b.nombre || '', 'es');
+const fmtStamp = t => t && t.toDate ? t.toDate().toLocaleString('es', { day: 'numeric', month: 'long', hour: 'numeric', minute: '2-digit' }) : '';
+const busy = () => !!document.querySelector('dialog[open]') || /^(INPUT|TEXTAREA|SELECT)$/.test((document.activeElement || {}).tagName);
+
+function errMsg(e) {
+  const c = (e && e.code) || '';
+  return ({
+    'auth/invalid-email': 'El correo no es válido.',
+    'auth/invalid-credential': 'Correo o contraseña incorrectos.',
+    'auth/wrong-password': 'Correo o contraseña incorrectos.',
+    'auth/user-not-found': 'No hay ninguna cuenta con ese correo.',
+    'auth/missing-password': 'Escribe la contraseña.',
+    'auth/email-already-in-use': 'Ya hay una cuenta con ese correo. Usa “Entrar”.',
+    'auth/weak-password': 'La contraseña debe tener al menos 6 caracteres.',
+    'auth/too-many-requests': 'Demasiados intentos. Espera unos minutos y vuelve a intentar.',
+    'auth/network-request-failed': 'No hay conexión a internet.',
+    'permission-denied': 'No tienes permiso para hacer esto.',
+    'unavailable': 'No hay conexión con el servidor. Revisa tu internet.',
+    'codigo': 'Ese código de congregación no existe. Pídeselo de nuevo a un administrador.',
+  })[c] || 'Ocurrió un error: ' + ((e && e.message) || c);
+}
+
+function newCode() {
+  const abc = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789', n = crypto.getRandomValues(new Uint8Array(6));
+  return [...n].map(x => abc[x % abc.length]).join('');
+}
+async function freeCode() {
+  for (let i = 0; i < 5; i++) { const c = newCode(); if (!(await F.getDoc(ref('codigos', c))).exists()) return c; }
+  throw new Error('No se pudo crear un código, intenta de nuevo.');
+}
+
+async function joinCongregation(codigo, nombre) {
+  const code = (codigo || '').toUpperCase().replace(/\s+/g, '');
+  const c = code && await F.getDoc(ref('codigos', code));
+  if (!c || !c.exists()) throw { code: 'codigo' };
+  const cid = c.data().cong, u = nube.user;
+  await F.setDoc(ref('congregaciones', cid, 'miembros', u.uid), { nombre: squash(nombre), email: u.email, estado: 'pendiente',
+    admin: false, perfil: null, codigo: code, creado: F.serverTimestamp() });
+  await F.setDoc(ref('usuarios', u.uid), { cong: cid });
+  nube.cong = cid;
+}
+
+async function createCongregation(nombreCong, nombre) {
+  const u = nube.user, cid = F.doc(F.collection(F.db, 'congregaciones')).id, code = await freeCode();
+  await F.setDoc(ref('congregaciones', cid), { nombre: squash(nombreCong), codigo: code, creador: u.uid });
+  await F.setDoc(ref('codigos', code), { cong: cid });
+  await F.setDoc(ref('congregaciones', cid, 'miembros', u.uid), { nombre: squash(nombre), email: u.email, estado: 'activo',
+    admin: true, perfil: null, codigo: code, creado: F.serverTimestamp() });
+  // Si esta PC ya tenía datos (versión anterior), se pueden llevar a la congregación nueva
+  let datos = defaults();
+  const local = load();
+  if ((local.programs.length || local.profiles.length) &&
+    confirm(`En este equipo hay ${local.profiles.length} perfiles y ${local.programs.length} semanas guardados. ¿Subirlos a la congregación nueva?`)) datos = local;
+  datos.settings.congregation = squash(nombreCong);
+  await F.setDoc(ref('congregaciones', cid, 'privado', 'estado'), { datos: JSON.stringify(datos), actualizado: F.serverTimestamp(), por: u.uid });
+  await F.setDoc(ref('usuarios', u.uid), { cong: cid });
+  nube.cong = cid;
+}
+
+async function changeCode() {
+  if (!confirm('Se creará un código nuevo y el actual dejará de servir para crear cuentas. Las cuentas que ya existen no cambian. ¿Continuar?')) return;
+  try {
+    const old = nube.congData.codigo, code = await freeCode();
+    await F.setDoc(ref('codigos', code), { cong: nube.cong });
+    await F.updateDoc(congRef(), { codigo: code });
+    if (old) await F.deleteDoc(ref('codigos', old)).catch(() => {});
+    toast('Código nuevo: ' + code);
+  } catch (e) { toast(errMsg(e)); }
+}
+
+// Al abrir: carga Firebase y sigue la sesión (entrar, salir, aprobación, cambio de rol)
+async function startCloud() {
+  screen(h('div', { class: 'card auth-card' }, h('p', { class: 'muted' }, 'Conectando…')));
+  try { await loadFirebase(); }
+  catch (e) { return screenMessage('No se pudo conectar. Revisa tu internet y vuelve a abrir la app.'); }
+  F.onAuthStateChanged(F.auth, async user => {
+    stopListening(); if (nube.unsubMe) { nube.unsubMe(); nube.unsubMe = null; }
+    Object.assign(nube, { user, cong: null, congData: null, me: null, rol: null, listo: false, miembros: [], publico: null, ultimo: '', ultimoPub: '' });
+    if (!user) return renderAuth();
+    screen(h('div', { class: 'card auth-card' }, h('p', { class: 'muted' }, 'Cargando tu cuenta…')));
+    let joinErr = '';
+    try {
+      const reg = nube.registro; nube.registro = null;
+      if (reg && reg.tipo === 'unirse') await joinCongregation(reg.codigo, reg.nombre).catch(e => { joinErr = errMsg(e); });
+      else if (reg && reg.tipo === 'crear') await createCongregation(reg.cong, reg.nombre);
+      if (!nube.cong) { const u = await F.getDoc(ref('usuarios', user.uid)); nube.cong = u.exists() ? u.data().cong : null; }
+    } catch (e) { return screenMessage(errMsg(e)); }
+    if (!nube.cong) return renderJoin(joinErr);
+    nube.unsubMe = F.onSnapshot(congRef('miembros', user.uid), snap => {
+      nube.me = snap.exists() ? snap.data() : null;
+      if (!nube.me || nube.me.estado !== 'activo') {
+        stopListening(); nube.rol = null; nube.listo = false;
+        return nube.me ? renderWaiting() : renderJoin('Tu solicitud fue rechazada o se quitó tu cuenta de la congregación.');
+      }
+      const rol = nube.me.admin ? 'admin' : 'pub';
+      if (rol !== nube.rol) { nube.rol = rol; enterCongregation(); }
+      else if (nube.listo && !busy()) render();
+    }, e => screenMessage(errMsg(e)));
+  });
+}
+
+function stopListening() { nube.unsubDatos.forEach(f => f()); nube.unsubDatos = []; }
+
+function enterCongregation() {
+  stopListening();
+  nube.listo = false; view = { name: 'list' };
+  screen(h('div', { class: 'card auth-card' }, h('p', { class: 'muted' }, 'Cargando la congregación…')));
+  const listen = (r, fn) => nube.unsubDatos.push(F.onSnapshot(r, fn, e => screenMessage(errMsg(e))));
+  listen(congRef(), s => { nube.congData = s.data() || {}; if (nube.listo && !busy()) render(); });
+  if (isAdmin()) {
+    listen(congRef('privado', 'estado'), receiveState);
+    listen(F.collection(F.db, 'congregaciones', nube.cong, 'miembros'), s => {
+      nube.miembros = s.docs.map(d => ({ id: d.id, ...d.data() }));
+      if (nube.listo && (view.name === 'users' || view.name === 'report') && !busy()) render(); else if (nube.listo) buildNav();
+    });
+  } else {
+    listen(congRef('publico', 'programa'), s => {
+      nube.publico = s.exists() ? s.data() : null;
+      const first = !nube.listo; nube.listo = true;
+      if (first || !busy()) render();
+    });
+  }
+}
+
+// Datos completos (solo admins). Si otro admin cambia algo, llega aquí.
+function receiveState(snap) {
+  if (snap.metadata.hasPendingWrites) return;
+  const d = snap.data(), first = !nube.listo;
+  if (d && d.datos !== nube.ultimo) {
+    nube.ultimo = d.datos;
+    state = hydrate(JSON.parse(d.datos));
+    nube.ultimoPub = '';
+  } else if (!d && first) state = defaults();
+  else if (!first) return;
+  nube.listo = true;
+  if (first) { render(); startJw(); }
+  else if (!busy()) render(); else toast('Otro administrador hizo cambios; se verán al terminar de editar.');
+}
+
+function saveCloud() {
+  if (!isAdmin() || !nube.listo) return;
+  clearTimeout(saveCloud.t);
+  saveCloud.t = setTimeout(uploadState, 800);
+}
+async function uploadState() {
+  clearTimeout(saveCloud.t); saveCloud.t = null;
+  const datos = JSON.stringify(state);
+  try {
+    if (datos !== nube.ultimo) {
+      if (datos.length > 900000) toast('Ya casi se llena el espacio de la congregación; borra semanas muy antiguas.');
+      nube.ultimo = datos;
+      await F.setDoc(congRef('privado', 'estado'), { datos, actualizado: F.serverTimestamp(), por: nube.user.uid });
+    }
+    await publishProgram();
+  } catch (e) { toast('No se pudo guardar en la nube: ' + errMsg(e)); }
+}
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden' && saveCloud.t) uploadState(); });
+
+// Lo que ven todos: semanas desde hace un mes, ya con horas y nombres (sin edades ni notas)
+function publicWeeks() {
+  const from = addDays(mondayOf(todayISO()), -28);
+  const person = id => { const pr = id && profById(id); return pr ? { id, n: pr.name } : null; };
+  return state.programs.filter(p => p.date >= from).sort((a, b) => a.date.localeCompare(b.date)).map(p => {
+    const t = timesFor(p);
+    return { id: p.id, date: p.date, day: meetingDate(p), title: p.title, reading: p.reading || '', meeting: fmtMeeting(p),
+      rows: p.rows.map(r => ({ kind: r.kind, section: r.section || '', t: displayTitle(r), min: r.kind === 'part' ? +r.min || null : null,
+        time: fmtTime(t[r.id]), detail: r.kind === 'part' ? r.detail || '' : '', labels: slotLabels(r),
+        a: isAssignable(r) ? person(r.a) : null, b: isAssignable(r) && r.helper ? person(r.b) : null })) };
+  });
+}
+async function publishProgram() {
+  const pub = { semanas: JSON.stringify(publicWeeks()), congregacion: state.settings.congregation || '' };
+  const key = pub.semanas + '|' + pub.congregacion;
+  if (key === nube.ultimoPub) return;
+  nube.ultimoPub = key;
+  await F.setDoc(congRef('publico', 'programa'), { ...pub, actualizado: F.serverTimestamp() });
+  if (pub.congregacion && nube.congData && pub.congregacion !== nube.congData.nombre) await F.updateDoc(congRef(), { nombre: pub.congregacion });
+}
+
+const congName = () => (isAdmin() ? state.settings.congregation : nube.publico && nube.publico.congregacion) || (nube.congData && nube.congData.nombre) || '';
+const signOutBtn = () => h('button', { class: 'btn', onclick: () => F.signOut(F.auth) }, 'Cerrar sesión');
+
+// ---------- pantallas de acceso ----------
+function screen(...kids) {
+  buildNav([]);
+  document.getElementById('app').replaceChildren(
+    EMU ? h('div', { class: 'notice warn' }, 'Modo de prueba: usando el Firebase local de esta PC.') : null,
+    h('div', { class: 'auth' }, ...kids));
+}
+function screenMessage(msg) {
+  screen(h('div', { class: 'card auth-card' }, h('p', null, msg),
+    h('div', { class: 'row' }, h('button', { class: 'btn', onclick: () => location.reload() }, 'Reintentar'), nube.user ? signOutBtn() : null)));
+}
+
+function renderAuth(tab = 'entrar', msg = '') {
+  const field = (label, el) => h('label', { class: 'field' }, label, el);
+  const email = h('input', { type: 'email', autocomplete: 'email', placeholder: 'tu@correo.com' });
+  const pass = h('input', { type: 'password', autocomplete: tab === 'entrar' ? 'current-password' : 'new-password',
+    placeholder: tab === 'entrar' ? '' : 'Al menos 6 caracteres' });
+  const code = h('input', { type: 'text', autocomplete: 'off', placeholder: 'Ej.: K7M3QX', style: { textTransform: 'uppercase' } });
+  const name = h('input', { type: 'text', autocomplete: 'name', placeholder: 'Nombre y apellido' });
+  const congI = h('input', { type: 'text', placeholder: 'Ej.: Congregación Centro' });
+  const err = h('div', { class: 'err' }, msg);
+  const btn = h('button', { class: 'btn primary', onclick: submit },
+    tab === 'entrar' ? 'Entrar' : tab === 'unirse' ? 'Crear mi cuenta' : 'Crear congregación');
+
+  async function submit() {
+    err.textContent = '';
+    const em = email.value.trim(), pw = pass.value;
+    if (tab !== 'entrar') {
+      if (tab === 'unirse' && !code.value.trim()) return err.textContent = 'Escribe el código de la congregación.';
+      if (tab === 'crear' && !squash(congI.value)) return err.textContent = 'Escribe el nombre de la congregación.';
+      if (!squash(name.value)) return err.textContent = 'Escribe tu nombre.';
+    }
+    btn.disabled = true;
+    try {
+      if (tab === 'entrar') await F.signInWithEmailAndPassword(F.auth, em, pw);
+      else {
+        nube.registro = tab === 'unirse' ? { tipo: 'unirse', codigo: code.value, nombre: name.value } : { tipo: 'crear', cong: congI.value, nombre: name.value };
+        await F.createUserWithEmailAndPassword(F.auth, em, pw);
+      }
+    } catch (e) { nube.registro = null; err.textContent = errMsg(e); btn.disabled = false; }
+  }
+  async function forgot() {
+    const em = email.value.trim();
+    if (!em) return err.textContent = 'Escribe tu correo y vuelve a pulsar “¿Olvidaste tu contraseña?”.';
+    try { await F.sendPasswordResetEmail(F.auth, em); toast('Te enviamos un correo para cambiar tu contraseña.'); }
+    catch (e) { err.textContent = errMsg(e); }
+  }
+
+  const card = h('div', { class: 'card auth-card' },
+    h('h2', null, '📋 Programas'),
+    h('div', { class: 'tabs' }, [['entrar', 'Entrar'], ['unirse', 'Crear cuenta'], ['crear', 'Nueva congregación']].map(([k, t]) =>
+      h('button', { class: k === tab ? 'on' : null, onclick: () => renderAuth(k) }, t))),
+    tab === 'unirse' ? h('p', { class: 'muted small-text' }, 'Pide el código a un administrador de tu congregación. Tu cuenta quedará en espera hasta que te aprueben.') : null,
+    tab === 'crear' ? h('p', { class: 'muted small-text' }, 'Solo para el primer administrador. Después compartirás el código para que los demás creen su cuenta.') : null,
+    tab === 'unirse' ? field('Código de la congregación', code) : null,
+    tab === 'crear' ? field('Nombre de la congregación', congI) : null,
+    tab !== 'entrar' ? field('Tu nombre', name) : null,
+    field('Correo', email), field('Contraseña', pass),
+    err, btn,
+    tab === 'entrar' ? h('button', { class: 'linkbtn', onclick: forgot }, '¿Olvidaste tu contraseña?') : null);
+  card.addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.tagName === 'INPUT') submit(); });
+  screen(card);
+}
+
+// Con sesión iniciada pero sin congregación (o la quitaron)
+function renderJoin(msg = '') {
+  const code = h('input', { type: 'text', autocomplete: 'off', placeholder: 'Ej.: K7M3QX', style: { textTransform: 'uppercase' } });
+  const name = h('input', { type: 'text', autocomplete: 'name', placeholder: 'Nombre y apellido' });
+  const err = h('div', { class: 'err' }, msg);
+  const btn = h('button', { class: 'btn primary', onclick: async () => {
+    if (!squash(name.value)) return err.textContent = 'Escribe tu nombre.';
+    btn.disabled = true; err.textContent = '';
+    try { await joinCongregation(code.value, name.value); location.reload(); }
+    catch (e) { err.textContent = errMsg(e); btn.disabled = false; }
+  } }, 'Unirme');
+  screen(h('div', { class: 'card auth-card' },
+    h('h2', null, 'Unirte a una congregación'),
+    h('p', { class: 'muted' }, `Entraste como ${nube.user.email}. Escribe el código que te dio un administrador.`),
+    h('label', { class: 'field' }, 'Código de la congregación', code),
+    h('label', { class: 'field' }, 'Tu nombre', name),
+    err, h('div', { class: 'row' }, btn, signOutBtn())));
+}
+
+function renderWaiting() {
+  screen(h('div', { class: 'card auth-card' },
+    h('h2', null, '⏳ Esperando aprobación'),
+    h('p', null, `Hola, ${nube.me.nombre}. Tu cuenta ya está creada y un administrador de la congregación tiene que aprobarla.`),
+    h('p', { class: 'muted' }, 'Esta pantalla cambiará sola en cuanto te aprueben. Puedes cerrar la app y volver más tarde.'),
+    h('div', { class: 'row' }, signOutBtn())));
+}
+
+// ---------- vista de publicadores ----------
+function myAssignments(weeks) {
+  const pid = nube.me && nube.me.perfil, today = todayISO(), out = [];
+  if (!pid) return out;
+  for (const w of weeks) {
+    if ((w.day || addDays(w.date, 6)) < today) continue; // la reunión ya pasó
+    for (const r of w.rows) for (const k of ['a', 'b']) {
+      if (!r[k] || r[k].id !== pid) continue;
+      const other = r[k === 'a' ? 'b' : 'a'];
+      out.push({ w, r, role: r.labels[k] || '', with: other ? other.n : '' });
+    }
+  }
+  return out;
+}
+
+function nextAssignmentCard(weeks) {
+  const title = h('div', { class: 'small-text muted' }, 'Tu próxima asignación');
+  if (!nube.me || !nube.me.perfil) return h('div', { class: 'card mine' }, title,
+    h('div', null, 'Un administrador todavía no ha unido tu cuenta con tu perfil. Cuando lo haga, aquí verás tus asignaciones.'));
+  const [x, ...rest] = myAssignments(weeks);
+  if (!x) return h('div', { class: 'card mine' }, title, h('div', null, 'No tienes asignaciones en las próximas semanas.'));
+  return h('div', { class: 'card mine' }, title,
+    h('div', { class: 'mine-t' }, x.r.t),
+    h('div', null, `${x.w.meeting} · ${x.r.time}`),
+    x.role ? h('div', null, h('strong', null, x.role), x.with ? ` · con ${x.with}` : '') : null,
+    x.r.detail ? h('div', { class: 'detail' }, x.r.detail) : null,
+    rest.length ? h('div', { class: 'small-text muted', style: { marginTop: '6px' } },
+      'Después: ' + rest.map(y => `${fmtShort(y.w.date)} (${y.r.t})`).join(' · ')) : null);
+}
+
+function publicWeekCard(w, open) {
+  const pid = nube.me && nube.me.perfil, body = [];
+  let sec = null;
+  for (const r of w.rows) {
+    if (r.section && r.section !== sec) {
+      sec = r.section; const s = sectionOf(sec);
+      body.push(h('div', { class: 'psec', style: { '--sec': s ? s.css : 'var(--sec-none)' } }, h('i'), sec));
+    }
+    const names = ['a', 'b'].filter(k => r[k]).map(k =>
+      h('span', { class: r[k].id === pid ? 'yo' : null }, (r.labels[k] ? r.labels[k] + ': ' : '') + r[k].n));
+    body.push(h('div', { class: 'vrow' }, h('span', { class: 'ptime' }, r.time),
+      h('div', null, h('div', { class: 'pt' }, r.t, r.min ? h('span', { class: 'min' }, ` (${r.min} mins.)`) : null),
+        names.length ? h('div', { class: 'vnames' }, names) : null)));
+  }
+  return h('details', { class: 'card vweek', open: open || null },
+    h('summary', null, h('strong', null, w.title), h('span', { class: 'muted small-text' }, ' · ' + w.meeting)),
+    h('div', { class: 'vbody' }, body));
+}
+
+function renderPubList() {
+  const weeks = nube.publico ? JSON.parse(nube.publico.semanas || '[]') : [];
+  const today = todayISO();
+  const next = weeks.filter(w => (w.day || addDays(w.date, 6)) >= today);
+  return h('div', null,
+    h('h1', null, 'Semanas'),
+    h('p', { class: 'sub' }, congName() || 'Programa de la reunión de entre semana'),
+    nextAssignmentCard(weeks),
+    next.length ? next.map((w, i) => publicWeekCard(w, i === 0))
+      : h('div', { class: 'card empty' }, 'Todavía no hay programas publicados.'));
+}
+
+function renderPubSettings() {
+  const version = h('div');
+  if (location.protocol === 'app:') fetch('/version').then(r => r.text()).then(v => { version.textContent = 'Versión ' + v; }).catch(() => {});
+  else version.textContent = 'Versión web';
+  const item = (label, value) => h('div', { class: 'field' }, h('span', null, label), h('div', { style: { color: 'var(--text)', fontSize: '15px' } }, value));
+  return h('div', null,
+    h('h1', null, 'Ajustes'),
+    h('p', { class: 'sub' }, 'Estos datos los administra tu congregación.'),
+    h('div', { class: 'card settings' },
+      item('Congregación', congName() || '—'),
+      item('Tu nombre', nube.me.nombre),
+      item('Correo', nube.user.email),
+      item('Aplicación', version),
+      h('div', { class: 'row' }, signOutBtn())));
+}
+
+// ---------- informe mensual ----------
+function recentMonths(n) {
+  const out = [], d = new Date(); d.setDate(1);
+  for (let i = 0; i < n; i++) { out.push(`${d.getFullYear()}-${pad(d.getMonth() + 1)}`); d.setMonth(d.getMonth() - 1); }
+  return out;
+}
+const fmtMonth = m => capFirst(new Date(m + '-15T12:00:00').toLocaleDateString('es', { month: 'long', year: 'numeric' }));
+// Del 1 al 20 normalmente se informa el mes anterior
+const defaultMonth = () => recentMonths(2)[new Date().getDate() <= 20 ? 1 : 0];
+const monthSelect = (months, value, onchange) => h('select', { onchange: e => onchange(e.target.value) },
+  months.map(m => h('option', { value: m, selected: m === value ? true : null }, fmtMonth(m))));
+
+function renderReport() {
+  let month = defaultMonth();
+  const box = h('div');
+  const admin = isAdmin() ? congregationReports() : null;
+
+  async function load() {
+    box.replaceChildren(h('div', { class: 'card settings muted' }, 'Cargando…'));
+    const id = `${nube.user.uid}_${month}`;
+    let prev = null;
+    try { const s = await F.getDoc(congRef('informes', id)); prev = s.exists() ? s.data() : null; }
+    catch (e) { return box.replaceChildren(h('div', { class: 'card settings err' }, errMsg(e))); }
+    let part = prev ? prev.participo : null;
+    const yes = h('input', { type: 'radio', name: 'participo', checked: part === true, onchange: () => { part = true; } });
+    const no = h('input', { type: 'radio', name: 'participo', checked: part === false, onchange: () => { part = false; } });
+    const hours = h('input', { type: 'number', min: 0, max: 744, step: 'any', placeholder: 'Opcional', style: { width: '140px' },
+      value: prev && prev.horas != null ? prev.horas : '' });
+    const studies = h('input', { type: 'number', min: 0, max: 99, step: 1, style: { width: '100px' }, value: prev ? prev.cursos : 0 });
+    const notes = h('textarea', { rows: 3, maxlength: 1000, placeholder: 'Opcional' }, prev ? prev.notas : '');
+    const err = h('div', { class: 'err' });
+    const btn = h('button', { class: 'btn primary', onclick: async () => {
+      err.textContent = '';
+      if (part === null) return err.textContent = 'Indica si participaste en la predicación.';
+      const hv = hours.value.trim() === '' ? null : Math.round(Number(hours.value) * 100) / 100;
+      if (hv != null && !(hv >= 0 && hv <= 744)) return err.textContent = 'Revisa las horas.';
+      const cv = Math.round(Number(studies.value) || 0);
+      if (cv < 0 || cv > 99) return err.textContent = 'Revisa los cursos bíblicos.';
+      btn.disabled = true;
+      try {
+        await F.setDoc(congRef('informes', id), { uid: nube.user.uid, nombre: nube.me.nombre, mes: month, participo: part,
+          horas: hv, cursos: cv, notas: notes.value.trim().slice(0, 1000), enviado: F.serverTimestamp() });
+        toast('Informe enviado. ¡Gracias!');
+        load(); if (admin) admin.reload();
+      } catch (e) { err.textContent = errMsg(e); btn.disabled = false; }
+    } }, prev ? 'Actualizar informe' : 'Enviar informe');
+    box.replaceChildren(h('div', { class: 'card settings' },
+      h('div', { class: 'field' }, h('span', null, '¿Participaste en alguna forma de la predicación este mes?'),
+        h('div', { class: 'radios' }, h('label', null, yes, 'Sí'), h('label', null, no, 'No'))),
+      h('div', { class: 'row', style: { gap: '20px', alignItems: 'flex-end' } },
+        h('label', { class: 'field' }, 'Horas (precursores)', hours),
+        h('label', { class: 'field' }, 'Cursos bíblicos', studies)),
+      h('label', { class: 'field' }, 'Notas', notes),
+      prev ? h('div', { class: 'small-text muted' }, `Enviado ${prev.enviado ? 'el ' + fmtStamp(prev.enviado) : ''}. Puedes corregirlo y volver a enviarlo.`) : null,
+      err, h('div', { class: 'row' }, btn)));
+  }
+  load();
+  return h('div', null,
+    h('h1', null, isAdmin() ? 'Informes' : 'Informe mensual'),
+    h('p', { class: 'sub' }, 'Llena lo que te corresponda: los precursores también anotan sus horas.'),
+    h('div', { class: 'row', style: { marginBottom: '12px' } },
+      h('label', { class: 'field' }, 'Mes del informe', monthSelect(recentMonths(6), month, m => { month = m; load(); }))),
+    box,
+    admin ? admin.el : null);
+}
+
+// Solo admins: los informes de todos para un mes
+function congregationReports() {
+  let month = defaultMonth();
+  const box = h('div');
+  async function reload() {
+    box.replaceChildren(h('div', { class: 'muted' }, 'Cargando…'));
+    let docs;
+    try {
+      const q = F.query(F.collection(F.db, 'congregaciones', nube.cong, 'informes'), F.where('mes', '==', month));
+      docs = (await F.getDocs(q)).docs.map(d => d.data());
+    } catch (e) { return box.replaceChildren(h('div', { class: 'err' }, errMsg(e))); }
+    const byUid = new Map(docs.map(d => [d.uid, d]));
+    const people = nube.miembros.filter(m => m.estado === 'activo').map(m => ({ nombre: m.nombre, r: byUid.get(m.id) }));
+    for (const d of docs) if (!people.some(p => p.r === d)) people.push({ nombre: d.nombre + ' (ya no está)', r: d });
+    people.sort(byNombre);
+    const sent = docs.length, joined = docs.filter(d => d.participo).length;
+    const hours = docs.reduce((a, d) => a + (d.horas || 0), 0), studies = docs.reduce((a, d) => a + (d.cursos || 0), 0);
+    box.replaceChildren(
+      h('div', { class: 'totals' },
+        h('span', null, h('strong', null, `${sent} de ${people.length}`), ' enviados'),
+        h('span', null, h('strong', null, joined), ' participaron'),
+        h('span', null, h('strong', null, Math.round(hours * 100) / 100), ' horas'),
+        h('span', null, h('strong', null, studies), ' cursos')),
+      h('div', { class: 'tablewrap' }, h('table', { class: 'stats' },
+        h('thead', null, h('tr', null, ['Nombre', '¿Participó?', 'Horas', 'Cursos', 'Notas'].map(t => h('th', null, t)))),
+        h('tbody', null, people.length ? people.map(({ nombre, r }) => h('tr', { style: { cursor: 'default' } },
+          h('td', null, h('strong', null, nombre)),
+          r ? [h('td', null, r.participo ? 'Sí' : 'No'), h('td', null, r.horas ?? '—'), h('td', null, r.cursos || 0),
+            h('td', { class: 'small-text' }, r.notas || '')]
+            : h('td', { colspan: 4 }, h('span', { class: 'badge s-warn' }, 'Sin enviar'))))
+          : h('tr', null, h('td', { colspan: 5, class: 'empty' }, 'Todavía no hay miembros aprobados.'))))));
+  }
+  reload();
+  const el = h('div', { style: { marginTop: '28px' } },
+    h('h2', { style: { fontSize: '18px', margin: '0 0 4px' } }, 'Informes de la congregación'),
+    h('p', { class: 'sub' }, 'Solo los administradores ven esta parte.'),
+    h('div', { class: 'card', style: { padding: '14px' } },
+      h('div', { class: 'row', style: { marginBottom: '10px' } },
+        monthSelect(recentMonths(12), month, m => { month = m; reload(); }),
+        h('button', { class: 'btn small', onclick: () => reload() }, '↻ Actualizar')),
+      box));
+  return { el, reload };
+}
+
+// ---------- usuarios (solo admins) ----------
+function renderUsers() {
+  const ms = [...nube.miembros].sort(byNombre);
+  const pending = ms.filter(m => m.estado !== 'activo'), active = ms.filter(m => m.estado === 'activo');
+  const admins = active.filter(m => m.admin).length;
+  const profiles = [...state.profiles].sort((a, b) => a.name.localeCompare(b.name, 'es'));
+  const linked = new Map(active.filter(m => m.perfil).map(m => [m.perfil, m]));
+  const update = async (m, data, msg) => {
+    try { await F.updateDoc(congRef('miembros', m.id), data); if (msg) toast(msg); }
+    catch (e) { toast(errMsg(e)); render(); }
+  };
+  const profileSelect = (m, value, onchange) => h('select', { onchange: e => onchange(e.target.value || null) },
+    h('option', { value: '' }, '— Sin perfil —'),
+    profiles.map(p => {
+      const other = linked.get(p.id);
+      return h('option', { value: p.id, selected: p.id === value ? true : null }, p.name + (other && other.id !== m.id ? ` (cuenta de ${other.nombre})` : ''));
+    }));
+
+  const pendingRow = m => {
+    let perfil = (profByName(m.nombre) || {}).id || null;
+    const sel = profileSelect(m, perfil, v => { perfil = v; });
+    return h('div', { class: 'urow' },
+      h('div', { class: 'info' }, h('strong', null, m.nombre), h('div', { class: 'muted small-text' }, m.email)),
+      h('label', { class: 'field' }, 'Unir con el perfil', sel),
+      h('button', { class: 'btn small', onclick: () => openProfileDialog(null, { name: m.nombre, onSave: p => { perfil = p.id; render(); } }) }, '+ Crear perfil'),
+      h('button', { class: 'btn small primary', onclick: () => update(m, { estado: 'activo', perfil }, `${m.nombre} ya puede entrar`) }, 'Aprobar'),
+      h('button', { class: 'btn small danger', onclick: async () => {
+        if (!confirm(`¿Rechazar la solicitud de ${m.nombre}?`)) return;
+        try { await F.deleteDoc(congRef('miembros', m.id)); } catch (e) { toast(errMsg(e)); }
+      } }, 'Rechazar'));
+  };
+
+  const activeRow = m => {
+    const self = m.id === nube.user.uid;
+    const adminBox = h('input', { type: 'checkbox', checked: !!m.admin, disabled: self && admins <= 1 ? true : null, onchange: e => {
+      const on = e.target.checked;
+      if (on && !confirm(`${m.nombre} podrá ver y cambiar todo, incluidos los informes y los usuarios. ¿Hacerlo administrador?`)) return e.target.checked = false;
+      if (!on && self && !confirm('Dejarás de ser administrador y ya no verás estas opciones. ¿Continuar?')) return e.target.checked = true;
+      update(m, { admin: on }, on ? `${m.nombre} ahora es administrador` : `${m.nombre} ya no es administrador`);
+    } });
+    return h('div', { class: 'urow' },
+      h('div', { class: 'info' }, h('strong', null, m.nombre, self ? ' (tú)' : ''), h('div', { class: 'muted small-text' }, m.email)),
+      h('label', { class: 'field' }, 'Perfil', profileSelect(m, m.perfil, v => update(m, { perfil: v }, 'Perfil actualizado'))),
+      h('label', { class: 'row', title: self && admins <= 1 ? 'La congregación necesita al menos un administrador' : null }, adminBox, 'Administrador'),
+      self ? null : h('button', { class: 'btn small danger', onclick: async () => {
+        if (!confirm(`¿Quitar a ${m.nombre} de la congregación? Ya no podrá entrar.`)) return;
+        try { await F.deleteDoc(congRef('miembros', m.id)); toast('Se quitó la cuenta'); } catch (e) { toast(errMsg(e)); }
+      } }, 'Quitar'));
+  };
+
+  const code = (nube.congData && nube.congData.codigo) || '';
+  return h('div', null,
+    h('h1', null, 'Usuarios'),
+    h('p', { class: 'sub' }, 'Aprueba cuentas nuevas, únelas a su perfil y elige quién es administrador. Solo los administradores ven esta sección.'),
+    h('div', { class: 'card', style: { padding: '14px', marginBottom: '14px' } },
+      h('div', { class: 'row spread' },
+        h('div', null, h('div', { class: 'muted small-text' }, 'Código para crear cuenta'), h('div', { class: 'code' }, code || '—')),
+        h('div', { class: 'row' },
+          h('button', { class: 'btn small', onclick: () => navigator.clipboard.writeText(code).then(() => toast('Código copiado')) }, 'Copiar'),
+          h('button', { class: 'btn small', onclick: changeCode }, 'Cambiar código'))),
+      h('p', { class: 'muted small-text', style: { margin: '8px 0 0' } }, 'Compártelo solo con hermanos de la congregación. Aunque alguien lo tenga, no entra hasta que un administrador lo apruebe.')),
+    h('h2', { class: 'group' }, `Esperando aprobación (${pending.length})`),
+    h('div', { class: 'card', style: { padding: '4px 14px' } },
+      pending.length ? pending.map(pendingRow) : h('div', { class: 'empty' }, 'No hay cuentas esperando.')),
+    h('h2', { class: 'group' }, `Cuentas activas (${active.length})`),
+    h('div', { class: 'card', style: { padding: '4px 14px' } }, active.map(activeRow)));
+}
+
 // ---------- vistas ----------
 function go(v) { view = v; render(); window.scrollTo(0, 0); }
 
+function navItems() {
+  if (!FB_CONFIG) return [['list', 'Semanas'], ['people', 'Perfiles'], ['families', 'Familias'], ['settings', 'Ajustes']];
+  if (nube.rol === 'pub') return [['list', 'Semanas'], ['report', 'Informe'], ['settings', 'Ajustes']];
+  if (nube.rol !== 'admin') return [];
+  const waiting = nube.miembros.filter(m => m.estado !== 'activo').length;
+  return [['list', 'Semanas'], ['people', 'Perfiles'], ['families', 'Familias'], ['users', waiting ? `Usuarios (${waiting})` : 'Usuarios'],
+    ['report', 'Informes'], ['settings', 'Ajustes']];
+}
+function buildNav(items = navItems()) {
+  document.querySelector('nav').replaceChildren(...items.map(([v, t]) =>
+    h('button', { class: view.name === v || (view.name === 'edit' && v === 'list') ? 'active' : null, onclick: () => go({ name: v }) }, t)));
+  const name = FB_CONFIG && nube.listo ? congName() : '';
+  document.querySelector('.brand').textContent = '📋 ' + (name || 'Programas');
+}
+
 function render() {
-  document.querySelectorAll('nav button').forEach(b =>
-    b.classList.toggle('active', b.dataset.view === view.name || (view.name === 'edit' && b.dataset.view === 'list')));
+  if (FB_CONFIG && !(nube.rol && nube.listo)) return; // las pantallas de acceso se dibujan aparte
+  buildNav();
+  const app = document.getElementById('app');
+  if (nube.rol === 'pub') return app.replaceChildren(
+    view.name === 'report' ? renderReport() : view.name === 'settings' ? renderPubSettings() : renderPubList());
   refreshDatalist();
   const p = view.name === 'edit' && state.programs.find(x => x.id === view.id);
-  document.getElementById('app').replaceChildren(
+  app.replaceChildren(
     p ? renderEditor(p) : view.name === 'people' ? renderPeople() : view.name === 'families' ? renderFamilies()
-      : view.name === 'settings' ? renderSettings() : renderList());
+      : view.name === 'users' && isAdmin() ? renderUsers() : view.name === 'report' && isAdmin() ? renderReport()
+        : view.name === 'settings' ? renderSettings() : renderList());
 }
 
 function renderList() {
@@ -899,6 +1502,7 @@ function renderList() {
     h('div', { class: 'row spread', style: { marginBottom: '14px' } },
       h('div', null, h('h1', null, 'Semanas'), h('p', { class: 'sub', style: { margin: 0 } }, 'Programas de la reunión con sus asignaciones.')),
       pdfBtn),
+    isAdmin() && nube.me.perfil ? nextAssignmentCard(publicWeeks()) : null,
     location.protocol === 'file:' ? h('div', { class: 'notice warn' },
       'Abriste la app directamente. Para que busque las guías en jw.org, ciérrala y ábrela con el archivo “Programas.bat”.') : null,
     h('div', { class: 'card sync' },
@@ -1283,7 +1887,8 @@ function renderSettings() {
     f.text().then(txt => {
       const data = JSON.parse(txt);
       if (!Array.isArray(data.programs) || !Array.isArray(data.profiles)) throw new Error();
-      if (!confirm('Esto reemplazará todos los datos actuales por los del respaldo. ¿Continuar?')) return;
+      if (!confirm(FB_CONFIG ? 'Esto reemplazará todos los datos de la congregación por los del respaldo. ¿Continuar?'
+        : 'Esto reemplazará todos los datos actuales por los del respaldo. ¿Continuar?')) return;
       state = hydrate(data); save(); toast('Respaldo cargado'); go({ name: 'list' });
     }).catch(() => toast('El archivo no es un respaldo válido de esta app'));
     e.target.value = '';
@@ -1291,9 +1896,14 @@ function renderSettings() {
   // Versión del programa de escritorio (se actualiza solo desde GitHub)
   const version = h('p', { class: 'sub' });
   if (location.protocol === 'app:') fetch('/version').then(r => r.text()).then(v => { version.textContent = `Versión ${v} · se actualiza sola al abrir el programa`; }).catch(() => {});
+  else if (FB_CONFIG) version.textContent = 'Versión web';
   return h('div', null,
     h('h1', null, 'Ajustes'),
-    h('p', { class: 'sub' }, 'Los datos se guardan en este navegador. Descarga un respaldo de vez en cuando.'),
+    h('p', { class: 'sub' }, FB_CONFIG ? 'Los datos se guardan en la nube de la congregación; solo los administradores los ven completos.'
+      : 'Los datos se guardan en este navegador. Descarga un respaldo de vez en cuando.'),
+    FB_CONFIG ? h('div', { class: 'card settings', style: { marginBottom: '14px' } },
+      h('div', null, h('strong', null, nube.me.nombre), h('div', { class: 'muted small-text' }, nube.user.email + ' · Administrador')),
+      h('div', { class: 'row' }, signOutBtn())) : null,
     h('div', { class: 'card settings' },
       text('Título del programa', 'pdfTitle', 'Programa para la reunión de entre semana'),
       text('Nombre de la congregación', 'congregation', 'Opcional'),
@@ -1323,11 +1933,16 @@ function renderSettings() {
     version);
 }
 
-document.querySelectorAll('nav button').forEach(b => b.addEventListener('click', () => go({ name: b.dataset.view })));
-render();
-// Revisa jw.org al abrir, como máximo cada 12 horas (o siempre si faltan semanas próximas)
-if (Date.now() - state.lastSync > 12 * 36e5 || !state.programs.some(p => p.date >= mondayOf(todayISO()))) syncGuides(false);
-else ensureSongTitles(state.programs);
+// Revisa jw.org al abrir, como máximo cada 12 horas (o siempre si faltan semanas próximas).
+// En la versión web no se puede leer jw.org, así que no se intenta solo.
+function startJw() {
+  if (location.protocol === 'https:') return;
+  if (Date.now() - state.lastSync > 12 * 36e5 || !state.programs.some(p => p.date >= mondayOf(todayISO()))) syncGuides(false);
+  else ensureSongTitles(state.programs);
+}
+if (FB_CONFIG) startCloud();
+else { render(); startJw(); }
+if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => {});
 </script>
 </body>
 </html>

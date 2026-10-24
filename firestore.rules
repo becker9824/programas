@@ -1,0 +1,79 @@
+rules_version = '2';
+// Reglas de seguridad: las revisa el servidor de Google en cada lectura y escritura.
+// Roles: "admin" puede todo en su congregación; un miembro activo solo ve el programa
+// público y sus propios informes. Nadie que no sea admin puede ver quién es admin.
+service cloud.firestore {
+  match /databases/{db}/documents {
+    function signedIn() { return request.auth != null; }
+    function me() { return request.auth.uid; }
+    function member(c) { return get(/databases/$(db)/documents/congregaciones/$(c)/miembros/$(me())).data; }
+    function isMember(c) { return signedIn() && exists(/databases/$(db)/documents/congregaciones/$(c)/miembros/$(me())); }
+    function isActive(c) { return isMember(c) && member(c).estado == 'activo'; }
+    function isAdmin(c) { return isActive(c) && member(c).admin == true; }
+    function only(keys) { return request.resource.data.keys().hasOnly(keys); }
+
+    // Qué congregación usa cada cuenta (solo la propia persona)
+    match /usuarios/{uid} {
+      allow read, delete: if signedIn() && me() == uid;
+      allow create, update: if signedIn() && me() == uid && only(['cong']);
+    }
+
+    // Código de la congregación -> id. Se puede consultar un código, no listarlos.
+    match /codigos/{codigo} {
+      allow get: if signedIn();
+      allow create: if signedIn() && only(['cong'])
+        && (isAdmin(request.resource.data.cong)
+          || get(/databases/$(db)/documents/congregaciones/$(request.resource.data.cong)).data.creador == me());
+      allow delete: if isAdmin(resource.data.cong);
+    }
+
+    match /congregaciones/{c} {
+      allow get: if isActive(c) || (signedIn() && resource.data.creador == me());
+      allow create: if signedIn() && request.resource.data.creador == me()
+        && only(['nombre', 'codigo', 'creador']);
+      allow update: if isAdmin(c) && request.resource.data.creador == resource.data.creador;
+
+      match /miembros/{uid} {
+        // La persona ve su propia ficha; los admins ven todas.
+        allow get: if (signedIn() && me() == uid) || isAdmin(c);
+        allow list: if isAdmin(c);
+        // Registrarse: queda "pendiente" y sin admin, y debe dar el código correcto.
+        // Quien creó la congregación entra directo como admin.
+        allow create: if signedIn() && me() == uid
+          && only(['nombre', 'email', 'estado', 'admin', 'perfil', 'codigo', 'creado'])
+          && request.resource.data.perfil == null
+          && get(/databases/$(db)/documents/codigos/$(request.resource.data.codigo)).data.cong == c
+          && ((request.resource.data.estado == 'pendiente' && request.resource.data.admin == false)
+            || (request.resource.data.estado == 'activo' && request.resource.data.admin == true
+              && get(/databases/$(db)/documents/congregaciones/$(c)).data.creador == me()));
+        // Solo los admins aprueban, unen al perfil o hacen admin a alguien.
+        allow update, delete: if isAdmin(c);
+      }
+
+      // Todos los datos (perfiles con edad y notas, familias, ajustes): solo admins.
+      match /privado/{doc} {
+        allow read, write: if isAdmin(c);
+      }
+
+      // Programa de las semanas, ya con nombres: lo ve cualquier miembro activo.
+      match /publico/{doc} {
+        allow read: if isActive(c);
+        allow write: if isAdmin(c);
+      }
+
+      // Informe mensual: id = uid_AAAA-MM. Cada quien el suyo; los admins ven todos.
+      match /informes/{id} {
+        allow get: if isAdmin(c) || (isActive(c) && id.matches(me() + '_[0-9]{4}-[0-9]{2}'));
+        allow list: if isAdmin(c) || (isActive(c) && resource.data.uid == me());
+        allow create, update: if isActive(c) && request.resource.data.uid == me()
+          && id == me() + '_' + request.resource.data.mes
+          && only(['uid', 'nombre', 'mes', 'participo', 'horas', 'cursos', 'notas', 'enviado'])
+          && request.resource.data.participo is bool
+          && (request.resource.data.horas == null || (request.resource.data.horas is number && request.resource.data.horas >= 0 && request.resource.data.horas <= 744))
+          && request.resource.data.cursos is int && request.resource.data.cursos >= 0
+          && request.resource.data.notas is string && request.resource.data.notas.size() <= 1000;
+        allow delete: if isAdmin(c);
+      }
+    }
+  }
+}

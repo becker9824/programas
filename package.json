@@ -9,7 +9,9 @@
     "start": "electron .",
     "prueba": "electron . --prueba",
     "instalador": "electron-builder --win nsis",
-    "publicar": "powershell -ExecutionPolicy Bypass -File publicar.ps1"
+    "publicar": "powershell -ExecutionPolicy Bypass -File publicar.ps1",
+    "prueba-reglas": "firebase emulators:exec --only firestore --project demo-reglas \"node --test pruebas/reglas.test.mjs\"",
+    "nube-local": "firebase emulators:start --only auth,firestore --project demo-programas"
   },
   "build": {
     "appId": "local.programas.reunion",
@@ -17,6 +19,7 @@
     "files": [
       "main.js",
       "index.html",
+      "firebase-config.js",
       "icon.png",
       "icon.svg",
       "vendor/**"
@@ -42,8 +45,11 @@
     }
   },
   "devDependencies": {
+    "@firebase/rules-unit-testing": "^6.0.0",
     "electron": "^45.0.0",
     "electron-builder": "^26.15.3",
+    "firebase": "^13.1.0",
+    "firebase-tools": "^15.34.1",
     "jspdf": "^2.5.1"
   },
   "dependencies": {

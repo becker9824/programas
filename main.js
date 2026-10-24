@@ -6,7 +6,8 @@ const path = require('node:path');
 const fs = require('node:fs/promises');
 
 const ROOT = __dirname;
-const START_URL = 'app://programas/index.html';
+// --emu: usa el Firebase local de prueba (npm run nube-local)
+const START_URL = 'app://programas/index.html' + (process.argv.includes('--emu') ? '?emu' : '');
 const TYPES = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8',
   '.json': 'application/json; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon',
@@ -82,6 +83,7 @@ async function selfTest(win) {
     if (r.ok) { const g = parseGuide(await r.text(), mondayOf(todayISO())); out.titulo = g.title; out.intervenciones = g.rows.length; }
     out.cancion = await (await fetch('/jw/titulo?path=' + encodeURIComponent('/es/wol/d/r4/lp-s/1102016821'))).text();
     localStorage.setItem('prueba', '1'); out.guardado = localStorage.getItem('prueba') === '1'; localStorage.removeItem('prueba');
+    if (FB_CONFIG) { for (let i = 0; i < 50 && !F; i++) await new Promise(r => setTimeout(r, 200)); out.firebase = !!F; }
     return out;
   })()`);
   console.log('PRUEBA ' + JSON.stringify(result));

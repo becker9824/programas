@@ -26,6 +26,15 @@ App para organizar las asignaciones de la reunión semanal Vida y Ministerio Cri
 - Familias: sugieren y validan parejas estudiante/ayudante.
 - PDF del programa (una semana por hoja, diseño basado en un PDF de ejemplo del usuario) y hojas de asignación (una por hoja, copiando las medidas de la hoja de asignación de ejemplo; nota y pie editables en Ajustes).
 
+## Congregación en la nube (rama `congregacion`, en prueba)
+- Con `window.FIREBASE_CONFIG` (`firebase-config.js`) la app usa Firebase: cuentas con correo, roles y datos compartidos. Si es `null`, funciona como antes (solo esta PC, `localStorage`).
+- Registro: código de la congregación + nombre + correo + contraseña → queda `pendiente` hasta que un admin lo aprueba y lo une a su perfil (sección Usuarios). El primer admin usa “Nueva congregación”.
+- Firestore: `codigos/{código}`, `usuarios/{uid}`, `congregaciones/{id}` con `miembros/{uid}`, `privado/estado` (todo el `state` como JSON, solo admins), `publico/programa` (semanas con nombres, lo genera `publishProgram()` al guardar) e `informes/{uid}_{AAAA-MM}`.
+- Publicador: Semanas (solo lectura + “Tu próxima asignación”), Informe, Ajustes de solo lectura. Admin: todo + Usuarios + Informes de la congregación.
+- La seguridad está en `firestore.rules`, no en la interfaz. Pruebas: `npm run prueba-reglas` (proyecto `demo-reglas`).
+- Prueba local sin tocar el Firebase real: `npm run nube-local` y abrir `http://localhost:8765/?emu` (con `servidor.ps1`) o `npx electron . --emu`. Cuentas en `pruebas/cuentas-prueba.txt`.
+- La versión web (https) no puede leer jw.org (CORS): las semanas se importan desde el programa de PC.
+
 ## Pendiente / ideas
 - Versión para celular Android (APK).
 - Opción para elegir sala auxiliar en las hojas de asignación.

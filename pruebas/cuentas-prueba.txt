@@ -1,0 +1,5 @@
+Cuentas SOLO para el Firebase local de prueba (npm run nube-local, http://localhost:8765/?emu).
+No existen en el Firebase real. Se borran al cerrar el Firebase local.
+
+Administrador:  admin@prueba.test  /  prueba123
+Publicador:     pub@prueba.test    /  prueba123
