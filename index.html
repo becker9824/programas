@@ -29,6 +29,7 @@
     }
   }
   * { box-sizing: border-box; }
+  a { color: var(--accent); }
   body { margin: 0; background: var(--bg); color: var(--text);
     font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
   header { background: var(--surface); border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 5; }
@@ -228,7 +229,7 @@
 
 <script>
 const KEY = 'programas-app-v2';
-const APP_VERSION = '1.5.2'; // igual que "version" en package.json (publicar.ps1 lo revisa)
+const APP_VERSION = '1.6.0'; // igual que "version" en package.json (publicar.ps1 lo revisa)
 // Con FIREBASE_CONFIG (firebase-config.js) los datos viven en la nube de la congregación;
 // sin él, la app funciona como antes, solo en esta PC. "?emu" usa el Firebase local de prueba.
 const EMU = /[?&]emu\b/.test(location.search);
@@ -979,14 +980,15 @@ function openProfileDialog(prof, opts = {}) {
 // Desde la 1.3 los datos van por partes (perfiles/, familias/, semanas/, config/ajustes) en vez de
 // un solo privado/estado (que tenía límite de 1 MB); privado/estado queda como copia de la 1.2.
 const nube = { user: null, cong: null, congData: null, me: null, acceso: '', listo: false, publico: null,
-  miembros: [], sent: {}, ultimoPub: '', registro: null, inicial: null, unsubMe: null, unsubDatos: [] };
+  miembros: [], anuncios: [], contactos: new Map(), sent: {}, ultimoPub: '', registro: null, inicial: null, unsubMe: null, unsubDatos: [] };
 // Funciones que el coordinador puede dar a cada cuenta (el coordinador tiene todas)
 const PERMS = [
   ['programa', 'Programa VyM', 'Semanas, perfiles, familias y ajustes de la reunión'],
   ['secretario', 'Secretario', 'Informes de todos: verlos y capturarlos'],
+  ['ancianos', 'Anciano', 'Anuncios y directorio (las otras funciones ya los incluyen)'],
 ];
 // Colecciones que se guardan por documento: [colección, parte de state, permisos para leer]
-const COLLS = [['perfiles', 'profiles', ['programa', 'secretario']], ['familias', 'families', ['programa']], ['semanas', 'programs', ['programa']]];
+const COLLS = [['perfiles', 'profiles', ['programa', 'secretario', 'ancianos']], ['familias', 'families', ['programa']], ['semanas', 'programs', ['programa']]];
 let F = null; // funciones de Firebase, cargadas al abrir
 
 async function loadFirebase() {
@@ -1003,6 +1005,8 @@ const ref = (...path) => F.doc(F.db, ...path);
 const congRef = (...path) => ref('congregaciones', nube.cong, ...path);
 const isAdmin = () => !!(nube.me && nube.me.estado === 'activo' && nube.me.admin); // coordinador
 const can = p => isAdmin() || !!(nube.me && nube.me.estado === 'activo' && (nube.me.permisos || []).includes(p));
+// Todas las funciones son de ancianos: cualquiera da anuncios (publicar) y directorio
+const isElder = () => can('ancianos') || can('programa') || can('secretario');
 const accessKey = () => nube.me ? JSON.stringify([!!nube.me.admin, [...(nube.me.permisos || [])].sort()]) : '';
 const reportsByMembers = () => !nube.congData || nube.congData.modo !== 'encargados';
 // JSON con las claves ordenadas, para saber si un documento cambió de verdad
@@ -1094,7 +1098,8 @@ async function startCloud() {
   catch (e) { return screenMessage('No se pudo conectar. Revisa tu internet y vuelve a abrir la app.'); }
   F.onAuthStateChanged(F.auth, async user => {
     stopListening(); if (nube.unsubMe) { nube.unsubMe(); nube.unsubMe = null; }
-    Object.assign(nube, { user, cong: null, congData: null, me: null, acceso: '', listo: false, miembros: [], publico: null, sent: {}, ultimoPub: '' });
+    Object.assign(nube, { user, cong: null, congData: null, me: null, acceso: '', listo: false, miembros: [], anuncios: [],
+      contactos: new Map(), publico: null, sent: {}, ultimoPub: '' });
     if (!user) return renderAuth();
     screen(h('div', { class: 'card auth-card' }, h('p', { class: 'muted' }, 'Cargando tu cuenta…')));
     let joinErr = '';
@@ -1134,7 +1139,10 @@ function enterCongregation() {
     nube.unsubDatos.push(F.onSnapshot(r, s => {
       const changed = fn(s);
       if (waiting.delete(name) && !waiting.size) return firstLoad();
-      if (nube.listo && changed) { if (!busy()) render(); else if (name !== 'cong') toast('Otro hermano hizo cambios; se verán al terminar de editar.'); }
+      if (nube.listo && changed) {
+        if (!busy()) render();
+        else { nube.redraw = true; if (!['cong', 'anuncios', 'contactos'].includes(name)) toast('Otro hermano hizo cambios; se verán al terminar de editar.'); }
+      }
     }, e => screenMessage(errMsg(e))));
   };
   listen('cong', congRef(), s => { nube.congData = s.data() || {}; return true; });
@@ -1144,6 +1152,15 @@ function enterCongregation() {
     return view.name === 'users';
   });
   for (const [col, key, perms] of COLLS) if (perms.some(can)) listen(col, F.collection(F.db, 'congregaciones', nube.cong, col), s => receiveDocs(col, key, s));
+  listen('anuncios', F.collection(F.db, 'congregaciones', nube.cong, 'anuncios'), s => {
+    nube.anuncios = s.docs.map(d => ({ id: d.id, ...d.data() }));
+    if (nube.listo && view.name !== 'anuncios') buildNav();
+    return view.name === 'anuncios' || view.name === 'list';
+  });
+  if (isElder()) listen('contactos', F.collection(F.db, 'congregaciones', nube.cong, 'contactos'), s => {
+    nube.contactos = new Map(s.docs.map(d => [d.id, d.data()]));
+    return view.name === 'directorio';
+  });
   if (can('programa')) listen('config', congRef('config', 'ajustes'), receiveConfig);
   else listen('publico', congRef('publico', 'programa'), s => { nube.publico = s.exists() ? s.data() : null; return true; });
 }
@@ -1214,6 +1231,7 @@ function saveCloud() {
 // Sube solo los documentos que cambiaron (y borra los que ya no están)
 async function uploadState() {
   clearTimeout(saveCloud.t); saveCloud.t = null;
+  if (!nube.cong || !can('programa')) return; // ya se cerró la sesión
   const writes = [];
   for (const [col, key] of COLLS) {
     const sent = nube.sent[col] || (nube.sent[col] = new Map()), now = new Map(state[key].map(o => [o.id, o]));
@@ -1250,7 +1268,14 @@ async function publishProgram() {
 }
 
 const congName = () => (nube.congData && nube.congData.nombre) || '';
-const signOutBtn = () => h('button', { class: 'btn', onclick: () => F.signOut(F.auth) }, 'Cerrar sesión');
+// Antes de salir se sube lo que esté pendiente de guardar
+const signOutBtn = () => h('button', { class: 'btn', onclick: async () => { if (saveCloud.t) await uploadState(); F.signOut(F.auth); } }, 'Cerrar sesión');
+// Si llegaron cambios mientras había un diálogo abierto, se dibujan al cerrarlo
+// (todos los diálogos se quitan de la página al cerrarse)
+new MutationObserver(muts => {
+  if (!nube.redraw || !muts.some(m => [...m.removedNodes].some(n => n.tagName === 'DIALOG'))) return;
+  setTimeout(() => { if (nube.listo && !busy()) { nube.redraw = false; render(); } });
+}).observe(document.body, { childList: true });
 
 // ---------- pantallas de acceso ----------
 function screen(...kids) {
@@ -1399,6 +1424,7 @@ function renderPubList() {
   return h('div', null,
     h('h1', null, 'Semanas'),
     h('p', { class: 'sub' }, congName() || 'Programa de la reunión de entre semana'),
+    unreadBanner(),
     nextAssignmentCard(weeks),
     next.length ? next.map((w, i) => publicWeekCard(w, i === 0))
       : h('div', { class: 'card empty' }, 'Todavía no hay programas publicados.'));
@@ -1641,6 +1667,161 @@ function congregationReports() {
   return { el, reload };
 }
 
+// ---------- anuncios (los leen todos; los publican los ancianos) ----------
+const stampMs = t => t && t.toMillis ? t.toMillis() : Date.now(); // recién creado: la hora del servidor aún no llega
+const seenKey = () => 'anuncios-vistos-' + (nube.user ? nube.user.uid : '');
+const seenAt = () => { try { return +localStorage.getItem(seenKey()) || 0; } catch (e) { return 0; } };
+// Los vencidos solo los siguen viendo los ancianos (marcados como vencidos)
+function visibleAnnouncements() {
+  const today = todayISO();
+  return nube.anuncios.filter(a => isElder() || !a.vence || a.vence >= today)
+    .sort((a, b) => b.fijado - a.fijado || stampMs(b.fecha) - stampMs(a.fecha));
+}
+const unreadAnnouncements = () => {
+  const seen = seenAt(), today = todayISO();
+  return nube.anuncios.filter(a => a.autor !== nube.user.uid && stampMs(a.fecha) > seen && (!a.vence || a.vence >= today)).length;
+};
+function unreadBanner() {
+  const n = FB_CONFIG && nube.listo ? unreadAnnouncements() : 0;
+  return n ? h('div', { class: 'notice warn row spread', style: { cursor: 'pointer' }, onclick: () => go({ name: 'anuncios' }) },
+    h('span', null, `📢 Tienes ${n} anuncio${n > 1 ? 's' : ''} nuevo${n > 1 ? 's' : ''}`), h('strong', null, 'Ver →')) : null;
+}
+// Texto con saltos de línea y enlaces que se pueden tocar
+function richText(text) {
+  const out = [];
+  for (const part of (text || '').split(/(https?:\/\/[^\s<>"]+)/g)) {
+    if (/^https?:\/\//.test(part)) out.push(h('a', { href: part, target: '_blank', rel: 'noopener' }, part));
+    else part.split('\n').forEach((line, i) => { if (i) out.push(h('br')); if (line) out.push(line); });
+  }
+  return out;
+}
+
+function openAnnouncementDialog(a) {
+  const title = h('input', { type: 'text', maxlength: 150, value: a ? a.titulo : '', placeholder: 'Ej.: Asamblea de circuito' });
+  const text = h('textarea', { rows: 8, maxlength: 5000, placeholder: 'Escribe el anuncio. Puedes pegar enlaces.' }, a ? a.texto : '');
+  const pin = h('input', { type: 'checkbox', checked: a ? a.fijado : false });
+  const until = h('input', { type: 'date', value: a && a.vence ? a.vence : '' });
+  const err = h('div', { class: 'err' });
+  const dlg = h('dialog', { class: 'dlg' },
+    h('div', { class: 'dlg-body' }, h('h3', null, a ? 'Editar anuncio' : 'Nuevo anuncio'),
+      h('label', { class: 'field' }, 'Título', title),
+      h('label', { class: 'field' }, 'Texto', text),
+      h('div', { class: 'row', style: { gap: '20px', alignItems: 'flex-end' } },
+        h('label', { class: 'row', style: { gap: '6px', color: 'var(--text)' } }, pin, '📌 Fijar arriba'),
+        h('label', { class: 'field' }, 'Mostrar hasta (opcional)', until)),
+      err),
+    h('div', { class: 'dlg-foot' },
+      h('button', { class: 'btn', onclick: () => dlg.close() }, 'Cancelar'),
+      h('button', { class: 'btn primary', onclick: async e => {
+        if (!squash(title.value)) return err.textContent = 'Escribe un título.';
+        const data = { titulo: squash(title.value), texto: text.value.trim(), fijado: pin.checked, vence: until.value || null };
+        e.target.disabled = true;
+        try {
+          if (a) await F.updateDoc(congRef('anuncios', a.id), { ...data, editado: F.serverTimestamp() });
+          else await F.addDoc(F.collection(F.db, 'congregaciones', nube.cong, 'anuncios'),
+            { ...data, autor: nube.user.uid, autorNombre: nube.me.nombre, fecha: F.serverTimestamp() });
+          toast(a ? 'Anuncio actualizado' : 'Anuncio publicado'); dlg.close(); dlg.remove();
+        } catch (ex) { err.textContent = errMsg(ex); e.target.disabled = false; }
+      } }, a ? 'Guardar' : 'Publicar')));
+  dlg.addEventListener('close', () => dlg.remove());
+  document.body.append(dlg); dlg.showModal(); title.focus();
+}
+
+function renderAnnouncements() {
+  const seen = seenAt(), today = todayISO(), list = visibleAnnouncements();
+  try { localStorage.setItem(seenKey(), String(Date.now())); } catch (e) {}
+  const card = a => {
+    const isNew = a.autor !== nube.user.uid && stampMs(a.fecha) > seen, expired = a.vence && a.vence < today;
+    return h('div', { class: 'card', style: { padding: '16px', marginBottom: '12px', borderLeft: a.fijado ? '4px solid var(--accent)' : null, opacity: expired ? '.6' : null } },
+      h('div', { class: 'row spread', style: { alignItems: 'flex-start' } },
+        h('div', null,
+          h('strong', { style: { fontSize: '17px' } }, a.fijado ? '📌 ' : '', a.titulo),
+          isNew ? h('span', { class: 'badge s-stale', style: { marginLeft: '8px' } }, 'Nuevo') : null,
+          h('div', { class: 'muted small-text' }, [a.autorNombre, a.fecha ? fmtStamp(a.fecha) : 'ahora',
+            a.vence ? (expired ? `vencido el ${fmtShort(a.vence)}` : `hasta el ${fmtShort(a.vence)}`) : null].filter(Boolean).join(' · '))),
+        isElder() ? h('div', { class: 'row' },
+          h('button', { class: 'btn small', onclick: () => openAnnouncementDialog(a) }, 'Editar'),
+          h('button', { class: 'btn small danger', onclick: async () => {
+            if (!confirm(`¿Borrar el anuncio “${a.titulo}”?`)) return;
+            try { await F.deleteDoc(congRef('anuncios', a.id)); toast('Anuncio borrado'); } catch (e) { toast(errMsg(e)); }
+          } }, 'Borrar')) : null),
+      a.texto ? h('div', { style: { marginTop: '10px', whiteSpace: 'normal', overflowWrap: 'anywhere' } }, richText(a.texto)) : null);
+  };
+  return h('div', null,
+    h('div', { class: 'row spread', style: { marginBottom: '14px' } },
+      h('div', null, h('h1', null, 'Anuncios'),
+        h('p', { class: 'sub', style: { margin: 0 } }, isElder() ? 'Los ven todos los hermanos de la congregación.' : 'Avisos de los ancianos de la congregación.')),
+      isElder() ? h('button', { class: 'btn primary', onclick: () => openAnnouncementDialog(null) }, '+ Nuevo anuncio') : null),
+    list.length ? list.map(card) : h('div', { class: 'card empty' }, 'No hay anuncios por ahora.'));
+}
+
+// ---------- directorio (solo ancianos) ----------
+const telLink = t => 'tel:' + (t || '').replace(/[^\d+]/g, '');
+const waLink = t => 'https://wa.me/' + (t || '').replace(/\D/g, '');
+
+function openContactDialog(pr) {
+  const c = nube.contactos.get(pr.id) || {};
+  const field = (label, value, ph, type = 'text') => h('input', { type, value: value || '', placeholder: ph });
+  const tel = field('Teléfono', c.tel, 'Con lada del país, ej.: +52 55 1234 5678', 'tel');
+  const dir = h('textarea', { rows: 2, maxlength: 300, placeholder: 'Calle, número, colonia…' }, c.dir || '');
+  const em = field('Contacto de emergencia', c.emergencia, 'Nombre y parentesco');
+  const emTel = field('Teléfono de emergencia', c.emergenciaTel, '+52 …', 'tel');
+  const err = h('div', { class: 'err' });
+  const dlg = h('dialog', { class: 'dlg' },
+    h('div', { class: 'dlg-body' }, h('h3', null, pr.name),
+      h('label', { class: 'field' }, 'Teléfono', tel),
+      h('label', { class: 'field' }, 'Dirección', dir),
+      h('label', { class: 'field' }, 'Contacto de emergencia', em),
+      h('label', { class: 'field' }, 'Teléfono de emergencia', emTel),
+      h('p', { class: 'muted small-text' }, 'Solo los ancianos ven estos datos.'),
+      err),
+    h('div', { class: 'dlg-foot' },
+      h('button', { class: 'btn', onclick: () => dlg.close() }, 'Cancelar'),
+      h('button', { class: 'btn primary', onclick: async e => {
+        const data = { tel: squash(tel.value).slice(0, 60), dir: dir.value.trim().slice(0, 300), emergencia: squash(em.value).slice(0, 150), emergenciaTel: squash(emTel.value).slice(0, 60) };
+        e.target.disabled = true;
+        try {
+          if (Object.values(data).some(Boolean)) await F.setDoc(congRef('contactos', pr.id), data);
+          else await F.deleteDoc(congRef('contactos', pr.id));
+          toast('Datos guardados'); dlg.close(); dlg.remove();
+        } catch (ex) { err.textContent = errMsg(ex); e.target.disabled = false; }
+      } }, 'Guardar')));
+  dlg.addEventListener('close', () => dlg.remove());
+  document.body.append(dlg); dlg.showModal(); tel.focus();
+}
+
+function renderDirectory() {
+  const filter = h('input', { type: 'search', placeholder: 'Buscar…', style: { width: '100%', maxWidth: '360px' }, oninput: () => fill() });
+  const box = h('div', { class: 'card', style: { padding: '4px 14px' } });
+  const link = (href, text) => h('a', { href, target: href.startsWith('http') ? '_blank' : null, rel: 'noopener', class: 'btn small', style: { textDecoration: 'none' } }, text);
+  function fill() {
+    const f = norm(filter.value);
+    const rows = [...state.profiles].sort((a, b) => a.name.localeCompare(b.name, 'es'))
+      .filter(pr => !f || norm(pr.name).includes(f) || norm(Object.values(nube.contactos.get(pr.id) || {}).join(' ')).includes(f));
+    box.replaceChildren(...(rows.length ? rows.map(pr => {
+      const c = nube.contactos.get(pr.id) || {};
+      return h('div', { class: 'urow', style: { alignItems: 'flex-start' } },
+        h('div', { class: 'info' },
+          h('strong', null, pr.name),
+          c.tel ? h('div', null, c.tel) : h('div', { class: 'muted small-text' }, 'Sin teléfono'),
+          c.dir ? h('div', { class: 'small-text' }, h('a', { href: 'https://maps.google.com/?q=' + encodeURIComponent(c.dir), target: '_blank', rel: 'noopener' }, c.dir)) : null,
+          c.emergencia || c.emergenciaTel ? h('div', { class: 'small-text muted' }, '🚑 Emergencia: ', [c.emergencia, c.emergenciaTel].filter(Boolean).join(' · ')) : null),
+        h('div', { class: 'row' },
+          c.tel ? link(telLink(c.tel), '📞 Llamar') : null,
+          c.tel ? link(waLink(c.tel), '💬 WhatsApp') : null,
+          c.emergenciaTel ? link(telLink(c.emergenciaTel), '🚑 Llamar') : null,
+          h('button', { class: 'btn small', onclick: () => openContactDialog(pr) }, 'Editar')));
+    }) : [h('div', { class: 'empty' }, state.profiles.length ? 'Nadie coincide con la búsqueda.' : 'Todavía no hay perfiles. Se crean en Perfiles.')]));
+  }
+  fill();
+  const withPhone = state.profiles.filter(pr => (nube.contactos.get(pr.id) || {}).tel).length;
+  return h('div', null,
+    h('h1', null, 'Directorio'),
+    h('p', { class: 'sub' }, `Solo los ancianos ven esta sección. ${withPhone} de ${state.profiles.length} con teléfono.`),
+    h('div', { style: { marginBottom: '12px' } }, filter),
+    box);
+}
+
 // ---------- usuarios (solo admins) ----------
 function renderUsers() {
   const ms = [...nube.miembros].sort(byNombre);
@@ -1737,6 +1918,9 @@ function navItems() {
   }
   if (can('secretario')) items.push(['report', 'Informes']);
   else if (reportsByMembers()) items.push(['report', 'Informe']);
+  const unread = unreadAnnouncements();
+  items.push(['anuncios', unread ? `Anuncios (${unread})` : 'Anuncios']);
+  if (isElder()) items.push(['directorio', 'Directorio']);
   items.push(['settings', 'Ajustes']);
   return items;
 }
@@ -1755,6 +1939,8 @@ function render() {
   const program = !FB_CONFIG || can('programa');
   if (view.name === 'report') return app.replaceChildren(renderReport());
   if (view.name === 'users') return app.replaceChildren(renderUsers());
+  if (view.name === 'anuncios') { app.replaceChildren(renderAnnouncements()); return buildNav(); }
+  if (view.name === 'directorio') return app.replaceChildren(renderDirectory());
   if (view.name === 'settings') return app.replaceChildren(program ? renderSettings() : renderPubSettings());
   if (!program) return app.replaceChildren(renderPubList());
   refreshDatalist();
@@ -1794,6 +1980,7 @@ function renderList() {
     h('div', { class: 'row spread', style: { marginBottom: '14px' } },
       h('div', null, h('h1', null, 'Semanas'), h('p', { class: 'sub', style: { margin: 0 } }, 'Programas de la reunión con sus asignaciones.')),
       pdfBtn),
+    unreadBanner(),
     FB_CONFIG && nube.me.perfil ? nextAssignmentCard(publicWeeks()) : null,
     location.protocol === 'file:' ? h('div', { class: 'notice warn' },
       'Abriste la app directamente. Para que busque las guías en jw.org, ciérrala y ábrela con el archivo “Programas.bat”.') : null,

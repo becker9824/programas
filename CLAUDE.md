@@ -32,6 +32,11 @@ App para organizar las asignaciones de la reunión semanal Vida y Ministerio Cri
 - En pantallas angostas el panel de sugerencias se mueve debajo de la asignación con foco.
 - `savePDF()`: en el celular abre Compartir (WhatsApp…); en la PC descarga.
 
+## Anuncios y directorio (1.6.0)
+- Función `ancianos` ("Anciano"). `isElder()` = ancianos, programa o secretario (todas son de ancianos): publican anuncios y ven el directorio. Los demás solo leen anuncios.
+- `anuncios/{id}`: titulo, texto, fijado, vence (AAAA-MM-DD o null), autor, autorNombre, fecha. Los vencidos solo los ven los ancianos. Lo leído se guarda en localStorage (`anuncios-vistos-{uid}`).
+- `contactos/{perfilId}`: tel, dir, emergencia, emergenciaTel. Aparte de `perfiles` para que solo los ancianos los vean.
+
 ## Informes para el secretario (1.5.0)
 - `perfil.tipo`: `pub` (o vacío) publicador, `reg` precursor regular, `no` no es publicador (no sale en la lista de informes).
 - Cada informe guarda `grupo` (`pub`|`aux`|`reg`) del mes; se propone el del mes anterior. Las horas solo se piden a precursores.

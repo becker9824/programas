@@ -112,6 +112,38 @@ test('si la congregación elige "solo encargados", el publicador ya no envía in
   await assertSucceeds(updateDoc(cdoc(db('admin')), { modo: 'todos' }));
 });
 
+test('anuncios: los publica cualquier anciano (cualquier función) y los leen todos', async () => {
+  const anuncio = autor => ({ titulo: 'Asamblea', texto: 'Recuerden…', fijado: false, vence: null, autor, autorNombre: 'X', fecha: 1 });
+  await assertSucceeds(setDoc(cdoc(db('prog'), 'anuncios', 'a1'), anuncio('prog')));
+  await assertSucceeds(setDoc(cdoc(db('secre'), 'anuncios', 'a2'), anuncio('secre')));
+  await assertFails(setDoc(cdoc(db('pub'), 'anuncios', 'a3'), anuncio('pub')));
+  await assertFails(setDoc(cdoc(db('prog'), 'anuncios', 'a4'), { ...anuncio('prog'), titulo: '' }));
+  await assertFails(setDoc(cdoc(db('prog'), 'anuncios', 'a4'), { ...anuncio('prog'), vence: 'mañana' }));
+  await assertSucceeds(getDoc(cdoc(db('pub'), 'anuncios', 'a1')));
+  await assertSucceeds(getDocs(collection(db('pub'), 'congregaciones', C, 'anuncios')));
+  await assertFails(getDoc(cdoc(db('otro'), 'anuncios', 'a1')));
+  await assertFails(deleteDoc(cdoc(db('pub'), 'anuncios', 'a1')));
+  await assertSucceeds(deleteDoc(cdoc(db('secre'), 'anuncios', 'a1')));
+});
+
+test('directorio: lo ven los ancianos (cualquier función), no los publicadores', async () => {
+  const contacto = { tel: '555 123 4567', dir: 'Calle 1', emergencia: 'Mamá', emergenciaTel: '555 000 0000' };
+  await assertSucceeds(setDoc(cdoc(db('prog'), 'contactos', 'p1'), contacto));
+  await assertSucceeds(getDoc(cdoc(db('secre'), 'contactos', 'p1')));
+  await assertSucceeds(getDoc(cdoc(db('admin'), 'contactos', 'p1')));
+  await assertFails(getDoc(cdoc(db('pub'), 'contactos', 'p1')));
+  await assertFails(getDocs(collection(db('pub'), 'congregaciones', C, 'contactos')));
+  await assertFails(setDoc(cdoc(db('pub'), 'contactos', 'p2'), contacto));
+  await assertFails(setDoc(cdoc(db('prog'), 'contactos', 'p2'), { ...contacto, notas: 'x' }));
+  // Con la función "Anciano" sola también puede; sin funciones, ya no
+  await assertSucceeds(updateDoc(cdoc(db('admin'), 'miembros', 'pub'), { permisos: ['ancianos'] }));
+  await assertSucceeds(getDoc(cdoc(db('pub'), 'contactos', 'p1')));
+  await assertSucceeds(getDocs(collection(db('pub'), 'congregaciones', C, 'perfiles')));
+  await assertFails(setDoc(cdoc(db('pub'), 'perfiles', 'p1'), { name: 'Cambiado' }));
+  await assertSucceeds(updateDoc(cdoc(db('admin'), 'miembros', 'pub'), { permisos: [] }));
+  await assertFails(getDoc(cdoc(db('pub'), 'contactos', 'p1')));
+});
+
 test('el coordinador puede hacer coordinador a otro; alguien de fuera no ve nada', async () => {
   const a = db('admin'), o = db('otro');
   await assertSucceeds(updateDoc(cdoc(a, 'miembros', 'pub'), { admin: true }));

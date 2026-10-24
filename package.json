@@ -1,7 +1,7 @@
 {
   "name": "programas",
   "productName": "Programas",
-  "version": "1.5.2",
+  "version": "1.6.0",
   "description": "Programas y asignaciones de la reunión Vida y Ministerio Cristianos",
   "main": "main.js",
   "private": true,

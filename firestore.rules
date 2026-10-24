@@ -14,9 +14,11 @@ service cloud.firestore {
     function isAdmin(c) { return isActive(c) && member(c).admin == true; }
     function can(c, p) { return isActive(c) && (member(c).admin == true || p in member(c).get('permisos', [])); }
     function myProfile(c) { return member(c).get('perfil', null); }
+    // Todas las funciones son de ancianos: cualquiera de ellas da anuncios y directorio
+    function isElder(c) { return can(c, 'ancianos') || can(c, 'programa') || can(c, 'secretario'); }
     function cong(c) { return get(/databases/$(db)/documents/congregaciones/$(c)).data; }
     function only(keys) { return request.resource.data.keys().hasOnly(keys); }
-    function validPerms(d) { return !('permisos' in d) || (d.permisos is list && d.permisos.hasOnly(['programa', 'secretario'])); }
+    function validPerms(d) { return !('permisos' in d) || (d.permisos is list && d.permisos.hasOnly(['programa', 'secretario', 'ancianos'])); }
 
     // Qué congregación usa cada cuenta (solo la propia persona)
     match /usuarios/{uid} {
@@ -61,10 +63,32 @@ service cloud.firestore {
       }
 
       // Datos del programa: perfiles (con edad y notas), familias, semanas y ajustes.
-      // El secretario también lee los perfiles para llevar los informes.
+      // Los demás ancianos (secretario, función Anciano) también los leen: informes y directorio.
       match /perfiles/{id} {
-        allow read: if can(c, 'programa') || can(c, 'secretario');
+        allow read: if isElder(c);
         allow write: if can(c, 'programa');
+      }
+      // Directorio: teléfono, dirección y contacto de emergencia de cada perfil. Solo ancianos (cualquier función).
+      match /contactos/{id} {
+        allow read, delete: if isElder(c);
+        allow create, update: if isElder(c)
+          && only(['tel', 'dir', 'emergencia', 'emergenciaTel'])
+          && request.resource.data.get('tel', '') is string && request.resource.data.get('tel', '').size() <= 60
+          && request.resource.data.get('dir', '') is string && request.resource.data.get('dir', '').size() <= 300
+          && request.resource.data.get('emergencia', '') is string && request.resource.data.get('emergencia', '').size() <= 150
+          && request.resource.data.get('emergenciaTel', '') is string && request.resource.data.get('emergenciaTel', '').size() <= 60;
+      }
+      // Anuncios: los leen todos los miembros activos; los publican los ancianos.
+      match /anuncios/{id} {
+        allow read: if isActive(c);
+        allow delete: if isElder(c);
+        allow create, update: if isElder(c)
+          && only(['titulo', 'texto', 'fijado', 'vence', 'autor', 'autorNombre', 'fecha', 'editado'])
+          && request.resource.data.titulo is string && request.resource.data.titulo.size() > 0 && request.resource.data.titulo.size() <= 150
+          && request.resource.data.texto is string && request.resource.data.texto.size() <= 5000
+          && request.resource.data.fijado is bool
+          && (request.resource.data.vence == null || (request.resource.data.vence is string && request.resource.data.vence.matches('[0-9]{4}-[0-9]{2}-[0-9]{2}')))
+          && request.resource.data.autor is string;
       }
       match /familias/{id} {
         allow read, write: if can(c, 'programa');
