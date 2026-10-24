@@ -1,5 +1,8 @@
 Cuentas SOLO para el Firebase local de prueba (npm run nube-local, http://localhost:8765/?emu).
 No existen en el Firebase real. Se borran al cerrar el Firebase local.
+Contraseña de todas: prueba123
 
-Administrador:  admin@prueba.test  /  prueba123
-Publicador:     pub@prueba.test    /  prueba123
+Coordinador:   admin@prueba.test
+Programa VyM:  prog@prueba.test
+Secretario:    secre@prueba.test
+Publicador:    pub@prueba.test

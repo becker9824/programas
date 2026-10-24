@@ -894,15 +894,24 @@ function openProfileDialog(prof, opts = {}) {
 // Firestore: codigos/{código} → congregación; congregaciones/{id} con miembros/{uid},
 // privado/estado (todos los datos, solo admins), publico/programa (semanas con nombres,
 // para todos) e informes/{uid_AAAA-MM}. Quién puede qué lo deciden las reglas (firestore.rules).
-const nube = { user: null, cong: null, congData: null, me: null, rol: null, listo: false, publico: null,
-  miembros: [], ultimo: '', ultimoPub: '', registro: null, unsubMe: null, unsubDatos: [] };
+// Desde la 1.3 los datos van por partes (perfiles/, familias/, semanas/, config/ajustes) en vez de
+// un solo privado/estado (que tenía límite de 1 MB); privado/estado queda como copia de la 1.2.
+const nube = { user: null, cong: null, congData: null, me: null, acceso: '', listo: false, publico: null,
+  miembros: [], sent: {}, ultimoPub: '', registro: null, inicial: null, unsubMe: null, unsubDatos: [] };
+// Funciones que el coordinador puede dar a cada cuenta (el coordinador tiene todas)
+const PERMS = [
+  ['programa', 'Programa VyM', 'Semanas, perfiles, familias y ajustes de la reunión'],
+  ['secretario', 'Secretario', 'Informes de todos: verlos y capturarlos'],
+];
+// Colecciones que se guardan por documento: [colección, parte de state, permisos para leer]
+const COLLS = [['perfiles', 'profiles', ['programa', 'secretario']], ['familias', 'families', ['programa']], ['semanas', 'programs', ['programa']]];
 let F = null; // funciones de Firebase, cargadas al abrir
 
 async function loadFirebase() {
   const base = 'https://www.gstatic.com/firebasejs/13.1.0/firebase-';
   const [app, auth, fs] = await Promise.all(['app', 'auth', 'firestore'].map(m => import(base + m + '.js')));
   const a = app.initializeApp(FB_CONFIG);
-  F = { ...auth, ...fs, auth: auth.getAuth(a), db: fs.getFirestore(a) };
+  F = { ...auth, ...fs, auth: auth.getAuth(a), db: fs.initializeFirestore(a, { ignoreUndefinedProperties: true }) };
   if (EMU) {
     auth.connectAuthEmulator(F.auth, 'http://127.0.0.1:9099', { disableWarnings: true });
     fs.connectFirestoreEmulator(F.db, '127.0.0.1', 8080);
@@ -910,7 +919,15 @@ async function loadFirebase() {
 }
 const ref = (...path) => F.doc(F.db, ...path);
 const congRef = (...path) => ref('congregaciones', nube.cong, ...path);
-const isAdmin = () => nube.rol === 'admin';
+const isAdmin = () => !!(nube.me && nube.me.estado === 'activo' && nube.me.admin); // coordinador
+const can = p => isAdmin() || !!(nube.me && nube.me.estado === 'activo' && (nube.me.permisos || []).includes(p));
+const accessKey = () => nube.me ? JSON.stringify([!!nube.me.admin, [...(nube.me.permisos || [])].sort()]) : '';
+const reportsByMembers = () => !nube.congData || nube.congData.modo !== 'encargados';
+// JSON con las claves ordenadas, para saber si un documento cambió de verdad
+const stable = v => JSON.stringify(v, (k, x) => x && typeof x === 'object' && !Array.isArray(x)
+  ? Object.fromEntries(Object.keys(x).sort().map(key => [key, x[key]])) : x);
+const clean = v => JSON.parse(JSON.stringify(v));
+const configOf = s => ({ settings: s.settings, songs: s.songs, missing: s.missing, lastSync: s.lastSync });
 const byNombre = (a, b) => (a.nombre || '').localeCompare(b.nombre || '', 'es');
 const fmtStamp = t => t && t.toDate ? t.toDate().toLocaleString('es', { day: 'numeric', month: 'long', hour: 'numeric', minute: '2-digit' }) : '';
 const busy = () => !!document.querySelector('dialog[open]') || /^(INPUT|TEXTAREA|SELECT)$/.test((document.activeElement || {}).tagName);
@@ -948,24 +965,25 @@ async function joinCongregation(codigo, nombre) {
   if (!c || !c.exists()) throw { code: 'codigo' };
   const cid = c.data().cong, u = nube.user;
   await F.setDoc(ref('congregaciones', cid, 'miembros', u.uid), { nombre: squash(nombre), email: u.email, estado: 'pendiente',
-    admin: false, perfil: null, codigo: code, creado: F.serverTimestamp() });
+    admin: false, permisos: [], perfil: null, codigo: code, creado: F.serverTimestamp() });
   await F.setDoc(ref('usuarios', u.uid), { cong: cid });
   nube.cong = cid;
 }
 
 async function createCongregation(nombreCong, nombre) {
   const u = nube.user, cid = F.doc(F.collection(F.db, 'congregaciones')).id, code = await freeCode();
-  await F.setDoc(ref('congregaciones', cid), { nombre: squash(nombreCong), codigo: code, creador: u.uid });
+  await F.setDoc(ref('congregaciones', cid), { nombre: squash(nombreCong), codigo: code, creador: u.uid, modo: 'todos' });
   await F.setDoc(ref('codigos', code), { cong: cid });
   await F.setDoc(ref('congregaciones', cid, 'miembros', u.uid), { nombre: squash(nombre), email: u.email, estado: 'activo',
-    admin: true, perfil: null, codigo: code, creado: F.serverTimestamp() });
-  // Si esta PC ya tenía datos (versión anterior), se pueden llevar a la congregación nueva
+    admin: true, permisos: [], perfil: null, codigo: code, creado: F.serverTimestamp() });
+  // Si esta PC ya tenía datos (versión sin cuentas), se pueden llevar a la congregación nueva.
+  // Se suben al entrar (firstLoad), por el mismo camino que cualquier cambio.
   let datos = defaults();
   const local = load();
   if ((local.programs.length || local.profiles.length) &&
     confirm(`En este equipo hay ${local.profiles.length} perfiles y ${local.programs.length} semanas guardados. ¿Subirlos a la congregación nueva?`)) datos = local;
   datos.settings.congregation = squash(nombreCong);
-  await F.setDoc(ref('congregaciones', cid, 'privado', 'estado'), { datos: JSON.stringify(datos), actualizado: F.serverTimestamp(), por: u.uid });
+  nube.inicial = datos;
   await F.setDoc(ref('usuarios', u.uid), { cong: cid });
   nube.cong = cid;
 }
@@ -988,7 +1006,7 @@ async function startCloud() {
   catch (e) { return screenMessage('No se pudo conectar. Revisa tu internet y vuelve a abrir la app.'); }
   F.onAuthStateChanged(F.auth, async user => {
     stopListening(); if (nube.unsubMe) { nube.unsubMe(); nube.unsubMe = null; }
-    Object.assign(nube, { user, cong: null, congData: null, me: null, rol: null, listo: false, miembros: [], publico: null, ultimo: '', ultimoPub: '' });
+    Object.assign(nube, { user, cong: null, congData: null, me: null, acceso: '', listo: false, miembros: [], publico: null, sent: {}, ultimoPub: '' });
     if (!user) return renderAuth();
     screen(h('div', { class: 'card auth-card' }, h('p', { class: 'muted' }, 'Cargando tu cuenta…')));
     let joinErr = '';
@@ -1002,11 +1020,12 @@ async function startCloud() {
     nube.unsubMe = F.onSnapshot(congRef('miembros', user.uid), snap => {
       nube.me = snap.exists() ? snap.data() : null;
       if (!nube.me || nube.me.estado !== 'activo') {
-        stopListening(); nube.rol = null; nube.listo = false;
+        stopListening(); nube.acceso = ''; nube.listo = false;
         return nube.me ? renderWaiting() : renderJoin('Tu solicitud fue rechazada o se quitó tu cuenta de la congregación.');
       }
-      const rol = nube.me.admin ? 'admin' : 'pub';
-      if (rol !== nube.rol) { nube.rol = rol; enterCongregation(); }
+      // Si cambian sus funciones, se vuelve a cargar con lo que ahora puede ver
+      const key = accessKey();
+      if (key !== nube.acceso) { nube.acceso = key; enterCongregation(); }
       else if (nube.listo && !busy()) render();
     }, e => screenMessage(errMsg(e)));
   });
@@ -1014,58 +1033,112 @@ async function startCloud() {
 
 function stopListening() { nube.unsubDatos.forEach(f => f()); nube.unsubDatos = []; }
 
+// Escucha lo que esta cuenta puede ver según sus funciones. Los cambios de otros llegan solos.
 function enterCongregation() {
   stopListening();
-  nube.listo = false; view = { name: 'list' };
+  nube.listo = false; nube.sent = {}; nube.ultimoPub = ''; view = { name: 'list' };
+  state = defaults();
   screen(h('div', { class: 'card auth-card' }, h('p', { class: 'muted' }, 'Cargando la congregación…')));
-  const listen = (r, fn) => nube.unsubDatos.push(F.onSnapshot(r, fn, e => screenMessage(errMsg(e))));
-  listen(congRef(), s => { nube.congData = s.data() || {}; if (nube.listo && !busy()) render(); });
-  if (isAdmin()) {
-    listen(congRef('privado', 'estado'), receiveState);
-    listen(F.collection(F.db, 'congregaciones', nube.cong, 'miembros'), s => {
-      nube.miembros = s.docs.map(d => ({ id: d.id, ...d.data() }));
-      if (nube.listo && (view.name === 'users' || view.name === 'report') && !busy()) render(); else if (nube.listo) buildNav();
-    });
-  } else {
-    listen(congRef('publico', 'programa'), s => {
-      nube.publico = s.exists() ? s.data() : null;
-      const first = !nube.listo; nube.listo = true;
-      if (first || !busy()) render();
-    });
-  }
+  const waiting = new Set();
+  // fn devuelve true si cambió algo que hay que volver a dibujar
+  const listen = (name, r, fn) => {
+    waiting.add(name);
+    nube.unsubDatos.push(F.onSnapshot(r, s => {
+      const changed = fn(s);
+      if (waiting.delete(name) && !waiting.size) return firstLoad();
+      if (nube.listo && changed) { if (!busy()) render(); else if (name !== 'cong') toast('Otro hermano hizo cambios; se verán al terminar de editar.'); }
+    }, e => screenMessage(errMsg(e))));
+  };
+  listen('cong', congRef(), s => { nube.congData = s.data() || {}; return true; });
+  if (isAdmin()) listen('miembros', F.collection(F.db, 'congregaciones', nube.cong, 'miembros'), s => {
+    nube.miembros = s.docs.map(d => ({ id: d.id, ...d.data() }));
+    if (nube.listo && view.name !== 'users') buildNav();
+    return view.name === 'users';
+  });
+  for (const [col, key, perms] of COLLS) if (perms.some(can)) listen(col, F.collection(F.db, 'congregaciones', nube.cong, col), s => receiveDocs(col, key, s));
+  if (can('programa')) listen('config', congRef('config', 'ajustes'), receiveConfig);
+  else listen('publico', congRef('publico', 'programa'), s => { nube.publico = s.exists() ? s.data() : null; return true; });
 }
 
-// Datos completos (solo admins). Si otro admin cambia algo, llega aquí.
-function receiveState(snap) {
-  if (snap.metadata.hasPendingWrites) return;
-  const d = snap.data(), first = !nube.listo;
-  if (d && d.datos !== nube.ultimo) {
-    nube.ultimo = d.datos;
-    state = hydrate(JSON.parse(d.datos));
-    nube.ultimoPub = '';
-  } else if (!d && first) state = defaults();
-  else if (!first) return;
+// Cambios de otros en una colección (los propios ya están en state)
+function receiveDocs(col, key, snap) {
+  const sent = nube.sent[col] || (nube.sent[col] = new Map());
+  let changed = false;
+  for (const ch of snap.docChanges()) {
+    if (ch.doc.metadata.hasPendingWrites) continue;
+    const id = ch.doc.id, list = state[key], i = list.findIndex(o => o.id === id);
+    if (ch.type === 'removed') {
+      if (sent.has(id)) { sent.delete(id); if (i >= 0) list.splice(i, 1); changed = true; }
+      continue;
+    }
+    const data = { ...ch.doc.data(), id }, json = stable(data);
+    if (sent.get(id) === json) continue;
+    sent.set(id, json);
+    if (i >= 0) list[i] = data; else list.push(data);
+    changed = true;
+  }
+  if (changed && key !== 'programs') refreshDatalist();
+  return changed;
+}
+function receiveConfig(snap) {
+  if (!snap.exists() || snap.metadata.hasPendingWrites) return false;
+  const d = snap.data(), json = stable(d);
+  if (nube.sent.config === json) return false;
+  nube.sent.config = json;
+  Object.assign(state, hydrate({ ...configOf(state), ...d, profiles: [], families: [], programs: [] }), {
+    profiles: state.profiles, families: state.families, programs: state.programs });
+  return true;
+}
+
+// Ya llegó todo por primera vez: si la congregación está vacía, se suben los datos
+// iniciales (congregación nueva) o los de la versión 1.2 (privado/estado).
+async function firstLoad() {
+  if (can('programa') && !state.profiles.length && !state.programs.length && !nube.sent.config) {
+    let datos = nube.inicial; nube.inicial = null;
+    if (!datos && isAdmin()) {
+      try {
+        const old = await F.getDoc(congRef('privado', 'estado'));
+        if (old.exists() && !old.data().migrado) { datos = JSON.parse(old.data().datos); nube.migrar = true; }
+      } catch (e) {}
+    }
+    if (datos) {
+      const fresh = hydrate(datos);
+      state.profiles.push(...fresh.profiles); state.families.push(...fresh.families); state.programs.push(...fresh.programs);
+      Object.assign(state, configOf(fresh));
+      await uploadState();
+      if (nube.migrar) { await F.updateDoc(congRef('privado', 'estado'), { migrado: true }).catch(() => {}); nube.migrar = false; }
+    }
+  }
+  // El nombre de la congregación se cambia en Ajustes (coordinador); el PDF lo toma de aquí
+  if (can('programa') && nube.congData.nombre && state.settings.congregation !== nube.congData.nombre) {
+    state.settings.congregation = nube.congData.nombre; save();
+  }
   nube.listo = true;
-  if (first) { render(); startJw(); }
-  else if (!busy()) render(); else toast('Otro administrador hizo cambios; se verán al terminar de editar.');
+  render();
+  if (can('programa')) startJw();
 }
 
 function saveCloud() {
-  if (!isAdmin() || !nube.listo) return;
+  if (!can('programa') || !nube.listo) return;
   clearTimeout(saveCloud.t);
   saveCloud.t = setTimeout(uploadState, 800);
 }
+// Sube solo los documentos que cambiaron (y borra los que ya no están)
 async function uploadState() {
   clearTimeout(saveCloud.t); saveCloud.t = null;
-  const datos = JSON.stringify(state);
-  try {
-    if (datos !== nube.ultimo) {
-      if (datos.length > 900000) toast('Ya casi se llena el espacio de la congregación; borra semanas muy antiguas.');
-      nube.ultimo = datos;
-      await F.setDoc(congRef('privado', 'estado'), { datos, actualizado: F.serverTimestamp(), por: nube.user.uid });
+  const writes = [];
+  for (const [col, key] of COLLS) {
+    const sent = nube.sent[col] || (nube.sent[col] = new Map()), now = new Map(state[key].map(o => [o.id, o]));
+    for (const [id, o] of now) {
+      const json = stable(o);
+      if (sent.get(id) !== json) { sent.set(id, json); writes.push(F.setDoc(congRef(col, id), clean(o))); }
     }
-    await publishProgram();
-  } catch (e) { toast('No se pudo guardar en la nube: ' + errMsg(e)); }
+    for (const id of [...sent.keys()]) if (!now.has(id)) { sent.delete(id); writes.push(F.deleteDoc(congRef(col, id))); }
+  }
+  const config = clean(configOf(state)), json = stable(config);
+  if (nube.sent.config !== json) { nube.sent.config = json; writes.push(F.setDoc(congRef('config', 'ajustes'), config)); }
+  try { await Promise.all(writes); await publishProgram(); }
+  catch (e) { toast('No se pudo guardar en la nube: ' + errMsg(e)); }
 }
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden' && saveCloud.t) uploadState(); });
 
@@ -1082,15 +1155,13 @@ function publicWeeks() {
   });
 }
 async function publishProgram() {
-  const pub = { semanas: JSON.stringify(publicWeeks()), congregacion: state.settings.congregation || '' };
-  const key = pub.semanas + '|' + pub.congregacion;
-  if (key === nube.ultimoPub) return;
-  nube.ultimoPub = key;
-  await F.setDoc(congRef('publico', 'programa'), { ...pub, actualizado: F.serverTimestamp() });
-  if (pub.congregacion && nube.congData && pub.congregacion !== nube.congData.nombre) await F.updateDoc(congRef(), { nombre: pub.congregacion });
+  const semanas = JSON.stringify(publicWeeks());
+  if (semanas === nube.ultimoPub) return;
+  nube.ultimoPub = semanas;
+  await F.setDoc(congRef('publico', 'programa'), { semanas, actualizado: F.serverTimestamp() });
 }
 
-const congName = () => (isAdmin() ? state.settings.congregation : nube.publico && nube.publico.congregacion) || (nube.congData && nube.congData.nombre) || '';
+const congName = () => (nube.congData && nube.congData.nombre) || '';
 const signOutBtn = () => h('button', { class: 'btn', onclick: () => F.signOut(F.auth) }, 'Cerrar sesión');
 
 // ---------- pantallas de acceso ----------
@@ -1245,11 +1316,47 @@ function renderPubList() {
       : h('div', { class: 'card empty' }, 'Todavía no hay programas publicados.'));
 }
 
+// Tu cuenta: nombre, correo y funciones (cada quien ve solo las suyas)
+function accountCard() {
+  const roles = isAdmin() ? ['Coordinador'] : PERMS.filter(([k]) => can(k)).map(([, label]) => label);
+  return h('div', { class: 'card settings', style: { marginBottom: '14px' } },
+    h('div', null, h('strong', null, nube.me.nombre),
+      h('div', { class: 'muted small-text' }, nube.user.email + (roles.length ? ' · ' + roles.join(', ') : ''))),
+    h('div', { class: 'row' }, signOutBtn()));
+}
+
+// Solo el coordinador: nombre de la congregación y quién usa la app
+function congregationSettings() {
+  const c = nube.congData || {};
+  const update = async (data, msg) => {
+    try { await F.updateDoc(congRef(), data); toast(msg); } catch (e) { toast(errMsg(e)); }
+  };
+  const nameI = h('input', { type: 'text', value: c.nombre || '', onchange: e => {
+    const v = squash(e.target.value);
+    if (!v) { e.target.value = c.nombre || ''; return; }
+    state.settings.congregation = v; uploadState();
+    update({ nombre: v }, 'Nombre actualizado');
+  } });
+  const mode = c.modo === 'encargados' ? 'encargados' : 'todos';
+  const radio = (value, label, desc) => h('label', { class: 'row', style: { alignItems: 'flex-start', gap: '8px', color: 'var(--text)', fontSize: '14px' } },
+    h('input', { type: 'radio', name: 'modo', checked: mode === value, style: { marginTop: '3px' }, onchange: () =>
+      update({ modo: value }, value === 'todos' ? 'Los publicadores ya pueden enviar su informe' : 'Ahora solo el secretario registra los informes') }),
+    h('span', null, h('strong', null, label), h('div', { class: 'muted small-text' }, desc)));
+  return [
+    h('h2', { class: 'group' }, 'Congregación'),
+    h('div', { class: 'card settings', style: { marginBottom: '14px' } },
+      h('label', { class: 'field' }, 'Nombre de la congregación', nameI),
+      h('div', { class: 'field' }, h('span', null, '¿Quién usa la app?'),
+        radio('todos', 'Todos los publicadores', 'Cada hermano tiene su cuenta, ve su asignación y envía su informe.'),
+        radio('encargados', 'Solo los encargados', 'Los publicadores pueden ver el programa, pero los informes los registra el secretario.')))];
+}
+
 function renderPubSettings() {
   const version = h('div');
   if (location.protocol === 'app:') fetch('/version').then(r => r.text()).then(v => { version.textContent = 'Versión ' + v; }).catch(() => {});
   else version.textContent = 'Versión web';
   const item = (label, value) => h('div', { class: 'field' }, h('span', null, label), h('div', { style: { color: 'var(--text)', fontSize: '15px' } }, value));
+  const roles = PERMS.filter(([k]) => can(k)).map(([, label]) => label);
   return h('div', null,
     h('h1', null, 'Ajustes'),
     h('p', { class: 'sub' }, 'Estos datos los administra tu congregación.'),
@@ -1257,6 +1364,7 @@ function renderPubSettings() {
       item('Congregación', congName() || '—'),
       item('Tu nombre', nube.me.nombre),
       item('Correo', nube.user.email),
+      roles.length ? item('Tus funciones', roles.join(', ')) : null,
       item('Aplicación', version),
       h('div', { class: 'row' }, signOutBtn())));
 }
@@ -1273,20 +1381,12 @@ const defaultMonth = () => recentMonths(2)[new Date().getDate() <= 20 ? 1 : 0];
 const monthSelect = (months, value, onchange) => h('select', { onchange: e => onchange(e.target.value) },
   months.map(m => h('option', { value: m, selected: m === value ? true : null }, fmtMonth(m))));
 
-function renderReport() {
-  let month = defaultMonth();
-  const box = h('div');
-  const admin = isAdmin() ? congregationReports() : null;
-
-  async function load() {
-    box.replaceChildren(h('div', { class: 'card settings muted' }, 'Cargando…'));
-    const id = `${nube.user.uid}_${month}`;
-    let prev = null;
-    try { const s = await F.getDoc(congRef('informes', id)); prev = s.exists() ? s.data() : null; }
-    catch (e) { return box.replaceChildren(h('div', { class: 'card settings err' }, errMsg(e))); }
+// Formulario de un informe (el propio, o el de otro si lo captura el secretario)
+function reportForm(perfil, nombre, month, prev, onSaved, own) {
+    const id = `${perfil}_${month}`;
     let part = prev ? prev.participo : null;
-    const yes = h('input', { type: 'radio', name: 'participo', checked: part === true, onchange: () => { part = true; } });
-    const no = h('input', { type: 'radio', name: 'participo', checked: part === false, onchange: () => { part = false; } });
+    const yes = h('input', { type: 'radio', name: 'participo-' + id, checked: part === true, onchange: () => { part = true; } });
+    const no = h('input', { type: 'radio', name: 'participo-' + id, checked: part === false, onchange: () => { part = false; } });
     const hours = h('input', { type: 'number', min: 0, max: 744, step: 'any', placeholder: 'Opcional', style: { width: '140px' },
       value: prev && prev.horas != null ? prev.horas : '' });
     const studies = h('input', { type: 'number', min: 0, max: 99, step: 1, style: { width: '100px' }, value: prev ? prev.cursos : 0 });
@@ -1294,40 +1394,60 @@ function renderReport() {
     const err = h('div', { class: 'err' });
     const btn = h('button', { class: 'btn primary', onclick: async () => {
       err.textContent = '';
-      if (part === null) return err.textContent = 'Indica si participaste en la predicación.';
+      if (part === null) return err.textContent = own ? 'Indica si participaste en la predicación.' : 'Indica si participó en la predicación.';
       const hv = hours.value.trim() === '' ? null : Math.round(Number(hours.value) * 100) / 100;
       if (hv != null && !(hv >= 0 && hv <= 744)) return err.textContent = 'Revisa las horas.';
       const cv = Math.round(Number(studies.value) || 0);
       if (cv < 0 || cv > 99) return err.textContent = 'Revisa los cursos bíblicos.';
       btn.disabled = true;
       try {
-        await F.setDoc(congRef('informes', id), { uid: nube.user.uid, nombre: nube.me.nombre, mes: month, participo: part,
-          horas: hv, cursos: cv, notas: notes.value.trim().slice(0, 1000), enviado: F.serverTimestamp() });
-        toast('Informe enviado. ¡Gracias!');
-        load(); if (admin) admin.reload();
+        await F.setDoc(congRef('informes', id), { perfil, nombre, mes: month, participo: part, horas: hv, cursos: cv,
+          notas: notes.value.trim().slice(0, 1000), enviado: F.serverTimestamp(), por: nube.user.uid });
+        toast(own ? 'Informe enviado. ¡Gracias!' : `Informe de ${nombre} guardado`);
+        onSaved();
       } catch (e) { err.textContent = errMsg(e); btn.disabled = false; }
-    } }, prev ? 'Actualizar informe' : 'Enviar informe');
-    box.replaceChildren(h('div', { class: 'card settings' },
-      h('div', { class: 'field' }, h('span', null, '¿Participaste en alguna forma de la predicación este mes?'),
+    } }, prev ? 'Actualizar informe' : own ? 'Enviar informe' : 'Guardar informe');
+    return h('div', { class: 'settings' },
+      h('div', { class: 'field' }, h('span', null, own ? '¿Participaste en alguna forma de la predicación este mes?' : '¿Participó en alguna forma de la predicación este mes?'),
         h('div', { class: 'radios' }, h('label', null, yes, 'Sí'), h('label', null, no, 'No'))),
       h('div', { class: 'row', style: { gap: '20px', alignItems: 'flex-end' } },
         h('label', { class: 'field' }, 'Horas (precursores)', hours),
         h('label', { class: 'field' }, 'Cursos bíblicos', studies)),
       h('label', { class: 'field' }, 'Notas', notes),
-      prev ? h('div', { class: 'small-text muted' }, `Enviado ${prev.enviado ? 'el ' + fmtStamp(prev.enviado) : ''}. Puedes corregirlo y volver a enviarlo.`) : null,
-      err, h('div', { class: 'row' }, btn)));
+      prev ? h('div', { class: 'small-text muted' }, `Enviado ${prev.enviado ? 'el ' + fmtStamp(prev.enviado) : ''}. Se puede corregir y volver a guardar.`) : null,
+      err, h('div', { class: 'row' }, btn));
+}
+
+function renderReport() {
+  let month = defaultMonth();
+  const box = h('div');
+  const secre = can('secretario') ? congregationReports() : null;
+  const perfil = nube.me.perfil, ownAllowed = reportsByMembers() && perfil;
+
+  async function load() {
+    if (!ownAllowed) return box.replaceChildren(h('div', { class: 'card settings muted' }, !reportsByMembers()
+      ? 'En tu congregación los informes los registra el secretario.'
+      : 'Un encargado todavía no ha unido tu cuenta con tu perfil. Cuando lo haga, podrás enviar tu informe aquí.'));
+    box.replaceChildren(h('div', { class: 'card settings muted' }, 'Cargando…'));
+    let prev = null;
+    try { const s = await F.getDoc(congRef('informes', `${perfil}_${month}`)); prev = s.exists() ? s.data() : null; }
+    catch (e) { return box.replaceChildren(h('div', { class: 'card settings err' }, errMsg(e))); }
+    const name = (profById(perfil) || {}).name || nube.me.nombre;
+    box.replaceChildren(h('div', { class: 'card' }, reportForm(perfil, name, month, prev, () => { load(); if (secre) secre.reload(); }, true)));
   }
   load();
   return h('div', null,
-    h('h1', null, isAdmin() ? 'Informes' : 'Informe mensual'),
-    h('p', { class: 'sub' }, 'Llena lo que te corresponda: los precursores también anotan sus horas.'),
-    h('div', { class: 'row', style: { marginBottom: '12px' } },
-      h('label', { class: 'field' }, 'Mes del informe', monthSelect(recentMonths(6), month, m => { month = m; load(); }))),
-    box,
-    admin ? admin.el : null);
+    h('h1', null, secre ? 'Informes' : 'Informe mensual'),
+    ownAllowed || !secre ? [
+      h('p', { class: 'sub' }, 'Llena lo que te corresponda: los precursores también anotan sus horas.'),
+      ownAllowed ? h('div', { class: 'row', style: { marginBottom: '12px' } },
+        h('label', { class: 'field' }, 'Mes de tu informe', monthSelect(recentMonths(6), month, m => { month = m; load(); }))) : null,
+      box] : null,
+    secre ? secre.el : null);
 }
 
-// Solo admins: los informes de todos para un mes
+// Secretario (o coordinador): los informes de todos los perfiles para un mes. Tocar una
+// fila abre el informe para capturarlo o corregirlo.
 function congregationReports() {
   let month = defaultMonth();
   const box = h('div');
@@ -1338,31 +1458,39 @@ function congregationReports() {
       const q = F.query(F.collection(F.db, 'congregaciones', nube.cong, 'informes'), F.where('mes', '==', month));
       docs = (await F.getDocs(q)).docs.map(d => d.data());
     } catch (e) { return box.replaceChildren(h('div', { class: 'err' }, errMsg(e))); }
-    const byUid = new Map(docs.map(d => [d.uid, d]));
-    const people = nube.miembros.filter(m => m.estado === 'activo').map(m => ({ nombre: m.nombre, r: byUid.get(m.id) }));
-    for (const d of docs) if (!people.some(p => p.r === d)) people.push({ nombre: d.nombre + ' (ya no está)', r: d });
+    const byProfile = new Map(docs.map(d => [d.perfil, d]));
+    const people = state.profiles.map(p => ({ id: p.id, nombre: p.name, r: byProfile.get(p.id) }));
+    for (const d of docs) if (!people.some(p => p.r === d)) people.push({ id: d.perfil, nombre: d.nombre + ' (perfil eliminado)', r: d });
     people.sort(byNombre);
     const sent = docs.length, joined = docs.filter(d => d.participo).length;
     const hours = docs.reduce((a, d) => a + (d.horas || 0), 0), studies = docs.reduce((a, d) => a + (d.cursos || 0), 0);
+    const open = p => {
+      const dlg = h('dialog', { class: 'dlg' },
+        h('div', { class: 'dlg-body' }, h('h3', null, `${p.nombre} · ${fmtMonth(month)}`),
+          reportForm(p.id, p.nombre, month, p.r || null, () => { dlg.close(); reload(); }, false)),
+        h('div', { class: 'dlg-foot' }, h('button', { class: 'btn', onclick: () => dlg.close() }, 'Cerrar')));
+      dlg.addEventListener('close', () => dlg.remove());
+      document.body.append(dlg); dlg.showModal();
+    };
     box.replaceChildren(
       h('div', { class: 'totals' },
-        h('span', null, h('strong', null, `${sent} de ${people.length}`), ' enviados'),
+        h('span', null, h('strong', null, `${sent} de ${people.length}`), ' con informe'),
         h('span', null, h('strong', null, joined), ' participaron'),
         h('span', null, h('strong', null, Math.round(hours * 100) / 100), ' horas'),
         h('span', null, h('strong', null, studies), ' cursos')),
       h('div', { class: 'tablewrap' }, h('table', { class: 'stats' },
         h('thead', null, h('tr', null, ['Nombre', '¿Participó?', 'Horas', 'Cursos', 'Notas'].map(t => h('th', null, t)))),
-        h('tbody', null, people.length ? people.map(({ nombre, r }) => h('tr', { style: { cursor: 'default' } },
-          h('td', null, h('strong', null, nombre)),
-          r ? [h('td', null, r.participo ? 'Sí' : 'No'), h('td', null, r.horas ?? '—'), h('td', null, r.cursos || 0),
-            h('td', { class: 'small-text' }, r.notas || '')]
-            : h('td', { colspan: 4 }, h('span', { class: 'badge s-warn' }, 'Sin enviar'))))
-          : h('tr', null, h('td', { colspan: 5, class: 'empty' }, 'Todavía no hay miembros aprobados.'))))));
+        h('tbody', null, people.length ? people.map(p => h('tr', { onclick: () => open(p), title: 'Tocar para capturar o corregir' },
+          h('td', null, h('strong', null, p.nombre)),
+          p.r ? [h('td', null, p.r.participo ? 'Sí' : 'No'), h('td', null, p.r.horas ?? '—'), h('td', null, p.r.cursos || 0),
+            h('td', { class: 'small-text' }, p.r.notas || '')]
+            : h('td', { colspan: 4 }, h('span', { class: 'badge s-warn' }, 'Sin informe'))))
+          : h('tr', null, h('td', { colspan: 5, class: 'empty' }, 'Todavía no hay perfiles. Se crean en Perfiles.'))))));
   }
   reload();
   const el = h('div', { style: { marginTop: '28px' } },
     h('h2', { style: { fontSize: '18px', margin: '0 0 4px' } }, 'Informes de la congregación'),
-    h('p', { class: 'sub' }, 'Solo los administradores ven esta parte.'),
+    h('p', { class: 'sub' }, 'Solo el secretario y el coordinador ven esta parte. Toca un nombre para capturar o corregir su informe.'),
     h('div', { class: 'card', style: { padding: '14px' } },
       h('div', { class: 'row', style: { marginBottom: '10px' } },
         monthSelect(recentMonths(12), month, m => { month = m; reload(); }),
@@ -1404,17 +1532,25 @@ function renderUsers() {
   };
 
   const activeRow = m => {
-    const self = m.id === nube.user.uid;
+    const self = m.id === nube.user.uid, perms = m.permisos || [];
     const adminBox = h('input', { type: 'checkbox', checked: !!m.admin, disabled: self && admins <= 1 ? true : null, onchange: e => {
       const on = e.target.checked;
-      if (on && !confirm(`${m.nombre} podrá ver y cambiar todo, incluidos los informes y los usuarios. ¿Hacerlo administrador?`)) return e.target.checked = false;
-      if (!on && self && !confirm('Dejarás de ser administrador y ya no verás estas opciones. ¿Continuar?')) return e.target.checked = true;
-      update(m, { admin: on }, on ? `${m.nombre} ahora es administrador` : `${m.nombre} ya no es administrador`);
+      if (on && !confirm(`${m.nombre} podrá ver y cambiar todo, incluidos los informes, las cuentas de usuario y quién tiene cada función. ¿Hacerlo coordinador?`)) return e.target.checked = false;
+      if (!on && self && !confirm('Dejarás de ser coordinador y ya no verás estas opciones. ¿Continuar?')) return e.target.checked = true;
+      update(m, { admin: on }, on ? `${m.nombre} ahora es coordinador` : `${m.nombre} ya no es coordinador`);
     } });
+    const permBox = ([key, label, desc]) => h('label', { class: 'row', title: desc, style: { gap: '6px' } },
+      h('input', { type: 'checkbox', checked: m.admin || perms.includes(key), disabled: m.admin ? true : null, onchange: e => {
+        const next = e.target.checked ? [...new Set([...perms, key])] : perms.filter(p => p !== key);
+        update(m, { permisos: next }, e.target.checked ? `${m.nombre}: ahora tiene “${label}”` : `${m.nombre}: ya no tiene “${label}”`);
+      } }), label);
     return h('div', { class: 'urow' },
       h('div', { class: 'info' }, h('strong', null, m.nombre, self ? ' (tú)' : ''), h('div', { class: 'muted small-text' }, m.email)),
       h('label', { class: 'field' }, 'Perfil', profileSelect(m, m.perfil, v => update(m, { perfil: v }, 'Perfil actualizado'))),
-      h('label', { class: 'row', title: self && admins <= 1 ? 'La congregación necesita al menos un administrador' : null }, adminBox, 'Administrador'),
+      h('div', { class: 'field' }, h('span', null, 'Funciones'),
+        h('div', { class: 'row', style: { gap: '14px', color: 'var(--text)', fontSize: '14px' } },
+          h('label', { class: 'row', style: { gap: '6px' }, title: self && admins <= 1 ? 'La congregación necesita al menos un coordinador' : 'Puede todo' }, adminBox, h('strong', null, 'Coordinador')),
+          PERMS.map(permBox))),
       self ? null : h('button', { class: 'btn small danger', onclick: async () => {
         if (!confirm(`¿Quitar a ${m.nombre} de la congregación? Ya no podrá entrar.`)) return;
         try { await F.deleteDoc(congRef('miembros', m.id)); toast('Se quitó la cuenta'); } catch (e) { toast(errMsg(e)); }
@@ -1424,31 +1560,42 @@ function renderUsers() {
   const code = (nube.congData && nube.congData.codigo) || '';
   return h('div', null,
     h('h1', null, 'Usuarios'),
-    h('p', { class: 'sub' }, 'Aprueba cuentas nuevas, únelas a su perfil y elige quién es administrador. Solo los administradores ven esta sección.'),
+    h('p', { class: 'sub' }, 'Aprueba cuentas nuevas, únelas a su perfil y elige qué función tiene cada quien. Solo el coordinador ve esta sección.'),
     h('div', { class: 'card', style: { padding: '14px', marginBottom: '14px' } },
       h('div', { class: 'row spread' },
         h('div', null, h('div', { class: 'muted small-text' }, 'Código para crear cuenta'), h('div', { class: 'code' }, code || '—')),
         h('div', { class: 'row' },
           h('button', { class: 'btn small', onclick: () => navigator.clipboard.writeText(code).then(() => toast('Código copiado')) }, 'Copiar'),
           h('button', { class: 'btn small', onclick: changeCode }, 'Cambiar código'))),
-      h('p', { class: 'muted small-text', style: { margin: '8px 0 0' } }, 'Compártelo solo con hermanos de la congregación. Aunque alguien lo tenga, no entra hasta que un administrador lo apruebe.')),
+      h('p', { class: 'muted small-text', style: { margin: '8px 0 0' } }, 'Compártelo solo con hermanos de la congregación. Aunque alguien lo tenga, no entra hasta que el coordinador lo apruebe.')),
     h('h2', { class: 'group' }, `Esperando aprobación (${pending.length})`),
     h('div', { class: 'card', style: { padding: '4px 14px' } },
       pending.length ? pending.map(pendingRow) : h('div', { class: 'empty' }, 'No hay cuentas esperando.')),
     h('h2', { class: 'group' }, `Cuentas activas (${active.length})`),
-    h('div', { class: 'card', style: { padding: '4px 14px' } }, active.map(activeRow)));
+    h('div', { class: 'card', style: { padding: '4px 14px' } }, active.map(activeRow)),
+    h('p', { class: 'muted small-text', style: { marginTop: '10px' } },
+      'Sin funciones, la persona solo ve el programa, su próxima asignación y su informe. ',
+      PERMS.map(([, label, desc]) => `${label}: ${desc.toLowerCase()}. `).join(''),
+      'El coordinador puede todo.'));
 }
 
 // ---------- vistas ----------
 function go(v) { view = v; render(); window.scrollTo(0, 0); }
 
+// Cada quien ve solo las secciones de sus funciones
 function navItems() {
   if (!FB_CONFIG) return [['list', 'Semanas'], ['people', 'Perfiles'], ['families', 'Familias'], ['settings', 'Ajustes']];
-  if (nube.rol === 'pub') return [['list', 'Semanas'], ['report', 'Informe'], ['settings', 'Ajustes']];
-  if (nube.rol !== 'admin') return [];
-  const waiting = nube.miembros.filter(m => m.estado !== 'activo').length;
-  return [['list', 'Semanas'], ['people', 'Perfiles'], ['families', 'Familias'], ['users', waiting ? `Usuarios (${waiting})` : 'Usuarios'],
-    ['report', 'Informes'], ['settings', 'Ajustes']];
+  if (!nube.acceso) return [];
+  const items = [['list', 'Semanas']];
+  if (can('programa')) items.push(['people', 'Perfiles'], ['families', 'Familias']);
+  if (isAdmin()) {
+    const waiting = nube.miembros.filter(m => m.estado !== 'activo').length;
+    items.push(['users', waiting ? `Usuarios (${waiting})` : 'Usuarios']);
+  }
+  if (can('secretario')) items.push(['report', 'Informes']);
+  else if (reportsByMembers()) items.push(['report', 'Informe']);
+  items.push(['settings', 'Ajustes']);
+  return items;
 }
 function buildNav(items = navItems()) {
   document.querySelector('nav').replaceChildren(...items.map(([v, t]) =>
@@ -1458,17 +1605,19 @@ function buildNav(items = navItems()) {
 }
 
 function render() {
-  if (FB_CONFIG && !(nube.rol && nube.listo)) return; // las pantallas de acceso se dibujan aparte
+  if (FB_CONFIG && !(nube.acceso && nube.listo)) return; // las pantallas de acceso se dibujan aparte
+  if (!navItems().some(([v]) => v === view.name || (view.name === 'edit' && v === 'list'))) view = { name: 'list' };
   buildNav();
   const app = document.getElementById('app');
-  if (nube.rol === 'pub') return app.replaceChildren(
-    view.name === 'report' ? renderReport() : view.name === 'settings' ? renderPubSettings() : renderPubList());
+  const program = !FB_CONFIG || can('programa');
+  if (view.name === 'report') return app.replaceChildren(renderReport());
+  if (view.name === 'users') return app.replaceChildren(renderUsers());
+  if (view.name === 'settings') return app.replaceChildren(program ? renderSettings() : renderPubSettings());
+  if (!program) return app.replaceChildren(renderPubList());
   refreshDatalist();
   const p = view.name === 'edit' && state.programs.find(x => x.id === view.id);
   app.replaceChildren(
-    p ? renderEditor(p) : view.name === 'people' ? renderPeople() : view.name === 'families' ? renderFamilies()
-      : view.name === 'users' && isAdmin() ? renderUsers() : view.name === 'report' && isAdmin() ? renderReport()
-        : view.name === 'settings' ? renderSettings() : renderList());
+    p ? renderEditor(p) : view.name === 'people' ? renderPeople() : view.name === 'families' ? renderFamilies() : renderList());
 }
 
 function renderList() {
@@ -1502,7 +1651,7 @@ function renderList() {
     h('div', { class: 'row spread', style: { marginBottom: '14px' } },
       h('div', null, h('h1', null, 'Semanas'), h('p', { class: 'sub', style: { margin: 0 } }, 'Programas de la reunión con sus asignaciones.')),
       pdfBtn),
-    isAdmin() && nube.me.perfil ? nextAssignmentCard(publicWeeks()) : null,
+    FB_CONFIG && nube.me.perfil ? nextAssignmentCard(publicWeeks()) : null,
     location.protocol === 'file:' ? h('div', { class: 'notice warn' },
       'Abriste la app directamente. Para que busque las guías en jw.org, ciérrala y ábrela con el archivo “Programas.bat”.') : null,
     h('div', { class: 'card sync' },
@@ -1901,12 +2050,12 @@ function renderSettings() {
     h('h1', null, 'Ajustes'),
     h('p', { class: 'sub' }, FB_CONFIG ? 'Los datos se guardan en la nube de la congregación; solo los administradores los ven completos.'
       : 'Los datos se guardan en este navegador. Descarga un respaldo de vez en cuando.'),
-    FB_CONFIG ? h('div', { class: 'card settings', style: { marginBottom: '14px' } },
-      h('div', null, h('strong', null, nube.me.nombre), h('div', { class: 'muted small-text' }, nube.user.email + ' · Administrador')),
-      h('div', { class: 'row' }, signOutBtn())) : null,
+    FB_CONFIG ? accountCard() : null,
+    FB_CONFIG && isAdmin() ? congregationSettings() : null,
+    FB_CONFIG ? h('h2', { class: 'group' }, 'Reunión y PDF') : null,
     h('div', { class: 'card settings' },
       text('Título del programa', 'pdfTitle', 'Programa para la reunión de entre semana'),
-      text('Nombre de la congregación', 'congregation', 'Opcional'),
+      FB_CONFIG ? null : text('Nombre de la congregación', 'congregation', 'Opcional'),
       h('div', { class: 'row', style: { gap: '20px', alignItems: 'flex-end' } },
         h('label', { class: 'field' }, 'Día de la reunión',
           h('select', { onchange: e => { s.meetingDay = +e.target.value; save(); } },

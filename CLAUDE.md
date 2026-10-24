@@ -31,8 +31,10 @@ App para organizar las asignaciones de la reunión semanal Vida y Ministerio Cri
 - Web para celulares: https://becker9824.github.io/programas/ (GitHub Pages desde `main`; se actualiza sola al hacer push). Si cambia `index.html`, subir `CACHE` en `sw.js`.
 - Con `window.FIREBASE_CONFIG` (`firebase-config.js`) la app usa Firebase: cuentas con correo, roles y datos compartidos. Si es `null`, funciona como antes (solo esta PC, `localStorage`).
 - Registro: código de la congregación + nombre + correo + contraseña → queda `pendiente` hasta que un admin lo aprueba y lo une a su perfil (sección Usuarios). El primer admin usa “Nueva congregación”.
-- Firestore: `codigos/{código}`, `usuarios/{uid}`, `congregaciones/{id}` con `miembros/{uid}`, `privado/estado` (todo el `state` como JSON, solo admins), `publico/programa` (semanas con nombres, lo genera `publishProgram()` al guardar) e `informes/{uid}_{AAAA-MM}`.
-- Publicador: Semanas (solo lectura + “Tu próxima asignación”), Informe, Ajustes de solo lectura. Admin: todo + Usuarios + Informes de la congregación.
+- Firestore: `codigos/{código}`, `usuarios/{uid}`, `congregaciones/{id}` (`nombre`, `codigo`, `creador`, `modo`: `todos`|`encargados`) con `miembros/{uid}`, `perfiles/{id}`, `familias/{id}`, `semanas/{id}`, `config/ajustes` (settings, canciones…), `publico/programa` (semanas con nombres, lo genera `publishProgram()` al guardar) e `informes/{perfil}_{AAAA-MM}`. `privado/estado` es la copia de la 1.2; se pasa sola al formato nuevo (`firstLoad`) y queda con `migrado: true`.
+- En la app, `state` sigue teniendo la misma forma; `uploadState()` sube solo los documentos que cambiaron y `receiveDocs()` mete los cambios de otros.
+- Funciones (`miembros.permisos`, lista `PERMS`): `programa` (semanas, perfiles, familias, ajustes de la reunión) y `secretario` (informes de todos). `admin: true` = coordinador: todo + Usuarios + ajustes de la congregación. Al agregar una función nueva: `PERMS`, `validPerms()` en las reglas y pruebas.
+- Sin funciones: Semanas (solo lectura + “Tu próxima asignación”), Informe (si `modo` es `todos` y tiene perfil) y Ajustes de solo lectura.
 - La seguridad está en `firestore.rules`, no en la interfaz. Pruebas: `npm run prueba-reglas` (proyecto `demo-reglas`).
 - Prueba local sin tocar el Firebase real: `npm run nube-local` y abrir `http://localhost:8765/?emu` (con `servidor.ps1`) o `npx electron . --emu`. Cuentas en `pruebas/cuentas-prueba.txt`.
 - La versión web (https) no puede leer jw.org (CORS): las semanas se importan desde el programa de PC.
