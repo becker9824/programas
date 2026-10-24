@@ -228,7 +228,7 @@
 
 <script>
 const KEY = 'programas-app-v2';
-const APP_VERSION = '1.5.1'; // igual que "version" en package.json (publicar.ps1 lo revisa)
+const APP_VERSION = '1.5.2'; // igual que "version" en package.json (publicar.ps1 lo revisa)
 // Con FIREBASE_CONFIG (firebase-config.js) los datos viven en la nube de la congregación;
 // sin él, la app funciona como antes, solo en esta PC. "?emu" usa el Firebase local de prueba.
 const EMU = /[?&]emu\b/.test(location.search);
@@ -1012,7 +1012,13 @@ const clean = v => JSON.parse(JSON.stringify(v));
 const configOf = s => ({ settings: s.settings, songs: s.songs, missing: s.missing, lastSync: s.lastSync });
 const byNombre = (a, b) => (a.nombre || '').localeCompare(b.nombre || '', 'es');
 const fmtStamp = t => t && t.toDate ? t.toDate().toLocaleString('es', { day: 'numeric', month: 'long', hour: 'numeric', minute: '2-digit' }) : '';
-const busy = () => !!document.querySelector('dialog[open]') || /^(INPUT|TEXTAREA|SELECT)$/.test((document.activeElement || {}).tagName);
+// ¿Está escribiendo o con un diálogo abierto? Entonces no se vuelve a dibujar la pantalla.
+// Las casillas y opciones no cuentan: no se pierde nada al redibujar.
+const busy = () => {
+  const a = document.activeElement || {};
+  return !!document.querySelector('dialog[open]') || a.tagName === 'TEXTAREA' || a.tagName === 'SELECT'
+    || (a.tagName === 'INPUT' && !['checkbox', 'radio', 'button'].includes(a.type));
+};
 
 function errMsg(e) {
   const c = (e && e.code) || '';
@@ -1675,10 +1681,11 @@ function renderUsers() {
       if (!on && self && !confirm('Dejarás de ser coordinador y ya no verás estas opciones. ¿Continuar?')) return e.target.checked = true;
       update(m, { admin: on }, on ? `${m.nombre} ahora es coordinador` : `${m.nombre} ya no es coordinador`);
     } });
+    // Agrega o quita solo esta función en el servidor, sin tocar las demás
     const permBox = ([key, label, desc]) => h('label', { class: 'row', title: desc, style: { gap: '6px' } },
       h('input', { type: 'checkbox', checked: m.admin || perms.includes(key), disabled: m.admin ? true : null, onchange: e => {
-        const next = e.target.checked ? [...new Set([...perms, key])] : perms.filter(p => p !== key);
-        update(m, { permisos: next }, e.target.checked ? `${m.nombre}: ahora tiene “${label}”` : `${m.nombre}: ya no tiene “${label}”`);
+        const on = e.target.checked;
+        update(m, { permisos: on ? F.arrayUnion(key) : F.arrayRemove(key) }, on ? `${m.nombre}: ahora tiene “${label}”` : `${m.nombre}: ya no tiene “${label}”`);
       } }), label);
     return h('div', { class: 'urow' },
       h('div', { class: 'info' }, h('strong', null, m.nombre, self ? ' (tú)' : ''), h('div', { class: 'muted small-text' }, m.email)),
