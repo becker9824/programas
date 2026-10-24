@@ -14,8 +14,10 @@ $archivos = "dist\Programas-Setup-$version.exe", "dist\Programas-Setup-$version.
 # La subida del instalador (~110 MB) a veces se corta: se reintenta hasta 3 veces.
 # Si la versión ya quedó creada a medias, se vuelven a subir sus archivos.
 $listo = $false
+$ErrorActionPreference = 'Continue' # que un aviso de gh no corte los reintentos
 for ($i = 1; $i -le 3 -and -not $listo; $i++) {
-  gh release view "v$version" *> $null
+  # Por cmd: en PowerShell 5.1, el aviso "release not found" de gh detendría el script
+  cmd /c "gh release view v$version >nul 2>nul"
   if ($LASTEXITCODE) { gh release create "v$version" @archivos --title "Programas $version" --notes $notas }
   else { gh release upload "v$version" @archivos --clobber }
   $listo = -not $LASTEXITCODE
