@@ -11,6 +11,15 @@ npm.cmd run instalador
 if ($LASTEXITCODE) { throw 'No se pudo crear el instalador' }
 
 $archivos = "dist\Programas-Setup-$version.exe", "dist\Programas-Setup-$version.exe.blockmap", 'dist\latest.yml'
-gh release create "v$version" @archivos --title "Programas $version" --notes $notas
-if ($LASTEXITCODE) { throw 'No se pudo publicar en GitHub' }
+# La subida del instalador (~110 MB) a veces se corta: se reintenta hasta 3 veces.
+# Si la versión ya quedó creada a medias, se vuelven a subir sus archivos.
+$listo = $false
+for ($i = 1; $i -le 3 -and -not $listo; $i++) {
+  gh release view "v$version" *> $null
+  if ($LASTEXITCODE) { gh release create "v$version" @archivos --title "Programas $version" --notes $notas }
+  else { gh release upload "v$version" @archivos --clobber }
+  $listo = -not $LASTEXITCODE
+  if (-not $listo -and $i -lt 3) { Write-Host "Falló la subida, reintentando ($i)..."; Start-Sleep 10 }
+}
+if (-not $listo) { throw 'No se pudo publicar en GitHub' }
 Write-Host "Listo: version $version publicada."
