@@ -26,7 +26,9 @@ App para organizar las asignaciones de la reunión semanal Vida y Ministerio Cri
 - Familias: sugieren y validan parejas estudiante/ayudante.
 - PDF del programa (una semana por hoja, diseño basado en un PDF de ejemplo del usuario) y hojas de asignación (una por hoja, copiando las medidas de la hoja de asignación de ejemplo; nota y pie editables en Ajustes).
 
-## Congregación en la nube (rama `congregacion`, en prueba)
+## Congregación en la nube (desde la versión 1.2.0)
+- Proyecto Firebase `programas-congregacion`. Reglas: `npx.cmd firebase deploy --only firestore:rules` (después de cambiar `firestore.rules`).
+- Web para celulares: https://becker9824.github.io/programas/ (GitHub Pages desde `main`; se actualiza sola al hacer push). Si cambia `index.html`, subir `CACHE` en `sw.js`.
 - Con `window.FIREBASE_CONFIG` (`firebase-config.js`) la app usa Firebase: cuentas con correo, roles y datos compartidos. Si es `null`, funciona como antes (solo esta PC, `localStorage`).
 - Registro: código de la congregación + nombre + correo + contraseña → queda `pendiente` hasta que un admin lo aprueba y lo une a su perfil (sección Usuarios). El primer admin usa “Nueva congregación”.
 - Firestore: `codigos/{código}`, `usuarios/{uid}`, `congregaciones/{id}` con `miembros/{uid}`, `privado/estado` (todo el `state` como JSON, solo admins), `publico/programa` (semanas con nombres, lo genera `publishProgram()` al guardar) e `informes/{uid}_{AAAA-MM}`.
@@ -36,5 +38,5 @@ App para organizar las asignaciones de la reunión semanal Vida y Ministerio Cri
 - La versión web (https) no puede leer jw.org (CORS): las semanas se importan desde el programa de PC.
 
 ## Pendiente / ideas
-- Versión para celular Android (APK).
+- Traer semanas de jw.org también desde la web (necesita un proxy, p. ej. Cloudflare Worker).
 - Opción para elegir sala auxiliar en las hojas de asignación.
