@@ -2,12 +2,24 @@
 
 App para organizar las asignaciones de la reunión semanal Vida y Ministerio Cristianos. El usuario no es técnico: explicar en español sencillo, paso a paso.
 
+## Cómo trabajar aquí
+- Probar todo en el Firebase local antes de publicar (ver "Prueba local" abajo). En el Firebase real, Claude no crea cuentas: las crea el usuario.
+- Para publicar una versión: subir `APP_VERSION` (index.html), `version` (package.json) y `CACHE` (sw.js); `npx electron . --prueba`; commit; si cambiaron las reglas, `npx.cmd firebase deploy --only firestore:rules --project programas-congregacion`; `git push` (actualiza la web); `npm run publicar -- "qué cambió"`.
+- Windows PowerShell 5.1: no poner comillas dobles dentro de mensajes de commit ni de `npm run publicar` (rompen los argumentos). Revisar que el commit salió bien antes de dar por publicada una versión.
+- Al probar en el navegador integrado, cerrar pestañas viejas de la app: muchas conexiones al Firebase local hacen que se cuelgue.
+- Los datos que hay en Firebase todavía son de prueba; el usuario avisará cuándo borrarlos para empezar con los reales.
+
+## Diseño (1.9.0)
+- Azul sobrio (`--accent` #1d5fd0, `--accent-2` para fondos suaves). Íconos de línea en `ICONS` / `icon()`; logo en `logo()`.
+- Menú: `navItems()` devuelve [vista, nombre, número de avisos]. En la PC va arriba; en el celular (≤760 px), `.tabbar` abajo con Inicio, Semanas, Informe y Anuncios, y el resto en "Más" (`openMoreSheet`).
+- Vista `inicio` (`renderHome`): saludo, próxima asignación y tarjetas según las funciones.
+
 ## Archivos
-- `index.html`: toda la app (HTML + CSS + JS en un solo archivo). Datos en `localStorage`, clave `programas-app-v2`.
+- `index.html`: toda la app (HTML + CSS + JS en un solo archivo). Sin `firebase-config.js` guarda en `localStorage` (`programas-app-v2`); con él, en Firebase.
 - `main.js` + `package.json`: programa de escritorio con Electron. El protocolo `app://programas` sirve la carpeta y responde `/jw/ping`, `/jw/semana?y=&w=` (semana ISO) y `/jw/titulo?path=` consultando wol.jw.org con `net.fetch`.
 - `servidor.ps1` + `Programas.bat`: versión anterior para abrir en el navegador (http://localhost:8765). Hace lo mismo que `main.js` con PowerShell.
 - `vendor/jspdf.umd.min.js`: jsPDF 2.5.1 local (copiado de `node_modules/jspdf/dist`).
-- `manifest.webmanifest`, `sw.js`, `icon.svg`: inicio de una versión instalable para celular, sin conectar todavía.
+- `manifest.webmanifest`, `sw.js`, `icon.svg`: la versión web se instala en el celular como app (GitHub Pages).
 
 ## Comandos
 - `npm install`: instala Electron y electron-builder (no se guardan `node_modules` ni `dist`).
@@ -65,5 +77,8 @@ App para organizar las asignaciones de la reunión semanal Vida y Ministerio Cri
 - La versión web (https) no puede leer jw.org (CORS): las semanas se importan desde el programa de PC.
 
 ## Pendiente / ideas
+- Pulir detalles mínimos del diseño que el usuario vaya encontrando.
+- Ajustar Cuentas si el usuario manda sus hojas S-26/S-30.
 - Traer semanas de jw.org también desde la web (necesita un proxy, p. ej. Cloudflare Worker).
 - Opción para elegir sala auxiliar en las hojas de asignación.
+- Borrar los datos de prueba de Firebase cuando el usuario lo pida.
