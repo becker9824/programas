@@ -1293,7 +1293,7 @@ function renderSettings() {
   if (location.protocol === 'app:') fetch('/version').then(r => r.text()).then(v => { version.textContent = `Versión ${v} · se actualiza sola al abrir el programa`; }).catch(() => {});
   return h('div', null,
     h('h1', null, 'Ajustes'),
-    h('p', { class: 'sub' }, 'Los datos se guardan en este navegador. Hey esta es una prueba siuu.'),
+    h('p', { class: 'sub' }, 'Los datos se guardan en este navegador. Descarga un respaldo de vez en cuando.'),
     h('div', { class: 'card settings' },
       text('Título del programa', 'pdfTitle', 'Programa para la reunión de entre semana'),
       text('Nombre de la congregación', 'congregation', 'Opcional'),
