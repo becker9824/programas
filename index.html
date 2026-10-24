@@ -224,6 +224,7 @@
 
 <script>
 const KEY = 'programas-app-v2';
+const APP_VERSION = '1.3.1'; // igual que "version" en package.json (publicar.ps1 lo revisa)
 // Con FIREBASE_CONFIG (firebase-config.js) los datos viven en la nube de la congregación;
 // sin él, la app funciona como antes, solo en esta PC. "?emu" usa el Firebase local de prueba.
 const EMU = /[?&]emu\b/.test(location.search);
@@ -1354,7 +1355,7 @@ function congregationSettings() {
 function renderPubSettings() {
   const version = h('div');
   if (location.protocol === 'app:') fetch('/version').then(r => r.text()).then(v => { version.textContent = 'Versión ' + v; }).catch(() => {});
-  else version.textContent = 'Versión web';
+  else version.textContent = `Versión ${APP_VERSION} (web)`;
   const item = (label, value) => h('div', { class: 'field' }, h('span', null, label), h('div', { style: { color: 'var(--text)', fontSize: '15px' } }, value));
   const roles = PERMS.filter(([k]) => can(k)).map(([, label]) => label);
   return h('div', null,
@@ -2045,7 +2046,7 @@ function renderSettings() {
   // Versión del programa de escritorio (se actualiza solo desde GitHub)
   const version = h('p', { class: 'sub' });
   if (location.protocol === 'app:') fetch('/version').then(r => r.text()).then(v => { version.textContent = `Versión ${v} · se actualiza sola al abrir el programa`; }).catch(() => {});
-  else if (FB_CONFIG) version.textContent = 'Versión web';
+  else if (FB_CONFIG) version.textContent = `Versión ${APP_VERSION} (web)`;
   return h('div', null,
     h('h1', null, 'Ajustes'),
     h('p', { class: 'sub' }, FB_CONFIG ? 'Los datos se guardan en la nube de la congregación; solo los administradores los ven completos.'
@@ -2091,7 +2092,12 @@ function startJw() {
 }
 if (FB_CONFIG) startCloud();
 else { render(); startJw(); }
-if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => {});
+if ('serviceWorker' in navigator && location.protocol === 'https:') {
+  // Cuando llega una versión nueva de la web, se recarga una vez para usarla
+  const hadController = !!navigator.serviceWorker.controller;
+  navigator.serviceWorker.addEventListener('controllerchange', () => { if (hadController && !busy()) location.reload(); });
+  navigator.serviceWorker.register('sw.js').catch(() => {});
+}
 </script>
 </body>
 </html>

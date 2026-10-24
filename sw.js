@@ -1,6 +1,6 @@
 // Guarda la app en el celular para que abra rápido y funcione sin internet.
 // Sube el número de versión cada vez que cambies index.html.
-const CACHE = 'programas-v4';
+const CACHE = 'programas-v5';
 const FILES = [
   './',
   './index.html',
@@ -22,11 +22,12 @@ self.addEventListener('activate', e => {
 });
 
 // Primero intenta la red (para recibir actualizaciones); si no hay conexión, usa lo guardado.
-// Solo los archivos de la app: Firebase maneja sus propias conexiones.
+// "no-cache" pregunta siempre al servidor: sin eso el navegador puede dar una copia de hasta
+// 10 minutos y alguien seguiría con la versión anterior. Firebase maneja sus propias conexiones.
 self.addEventListener('fetch', e => {
   if (e.request.method !== 'GET' || new URL(e.request.url).origin !== location.origin) return;
   e.respondWith(
-    fetch(e.request)
+    fetch(e.request, { cache: 'no-cache' })
       .then(res => {
         if (res.ok) { const copy = res.clone(); caches.open(CACHE).then(c => c.put(e.request, copy)); }
         return res;

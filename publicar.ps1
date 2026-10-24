@@ -4,6 +4,7 @@ $ErrorActionPreference = 'Stop'
 Set-Location $PSScriptRoot
 $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
 $notas = if ($args.Count) { $args -join ' ' } else { "Version $version" }
+if ((Get-Content index.html -Raw) -notmatch "APP_VERSION = '$([regex]::Escape($version))'") { throw "APP_VERSION en index.html no es $version" }
 
 Remove-Item dist\latest.yml, "dist\Programas-Setup-$version.*" -ErrorAction SilentlyContinue
 npm.cmd run instalador
