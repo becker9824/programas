@@ -147,7 +147,7 @@
   dialog.dlg { border: 1px solid var(--border); border-radius: 14px; padding: 0; width: min(520px, calc(100vw - 32px));
     background: var(--surface); color: var(--text); }
   dialog.dlg::backdrop { background: rgba(0,0,0,.4); }
-  .dlg-body { padding: 18px; display: grid; gap: 12px; }
+  .dlg-body { padding: 18px; display: grid; gap: 12px; max-height: calc(100vh - 150px); overflow-y: auto; }
   .dlg-body h3 { margin: 0; }
   .dlg-foot { padding: 12px 18px; border-top: 1px solid var(--border); display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; }
   .radios { display: flex; gap: 16px; color: var(--text); font-size: 15px; }
@@ -183,7 +183,11 @@
   .tag-fam { font-size: 11px; padding: 1px 6px; border-radius: 999px; background: var(--surface-2); color: var(--accent); margin-left: 4px; }
 
   /* ---- Congregación: acceso, publicadores, usuarios e informes ---- */
-  nav { overflow-x: auto; max-width: 100%; }
+  nav { overflow-x: auto; max-width: 100%; scrollbar-width: none; }
+  nav::-webkit-scrollbar { display: none; }
+  /* En pantallas angostas las sugerencias se muestran debajo de la asignación que se está llenando */
+  .side.inline { position: static; margin: 4px 0 12px; border-color: var(--accent); }
+  .side.inline .sugg { max-height: 45vh; }
   @media (max-width: 640px) { .brand { width: 100%; } nav button { padding: 8px 9px; } }
   .auth { min-height: 70vh; display: grid; place-items: center; }
   .auth-card { width: min(440px, 100%); padding: 22px; display: grid; gap: 14px; }
@@ -224,7 +228,7 @@
 
 <script>
 const KEY = 'programas-app-v2';
-const APP_VERSION = '1.3.1'; // igual que "version" en package.json (publicar.ps1 lo revisa)
+const APP_VERSION = '1.4.0'; // igual que "version" en package.json (publicar.ps1 lo revisa)
 // Con FIREBASE_CONFIG (firebase-config.js) los datos viven en la nube de la congregación;
 // sin él, la app funciona como antes, solo en esta PC. "?emu" usa el Firebase local de prueba.
 const EMU = /[?&]emu\b/.test(location.search);
@@ -233,7 +237,7 @@ const OLD_PDF_TITLE = 'Reunión Vida y Ministerio Cristianos';
 const defaults = () => ({
   profiles: [], families: [], programs: [], songs: {}, missing: {}, lastSync: 0,
   settings: {
-    staleDays: 60, recentCount: 2, weeksAhead: 8, congregation: '',
+    staleDays: 60, restDays: 28, weeksAhead: 8, congregation: '',
     pdfTitle: 'Programa para la reunión de entre semana', meetingDay: 2, startTime: '19:00', paper: 'letter',
     slipNote: 'En la Guía de actividades está la información para preparar su intervención. Repase también las indicaciones para la reunión Vida y Ministerio Cristianos.',
     slipFooter: '',
@@ -366,6 +370,37 @@ function slotNeedsMen(r, slot) {
 const roleLabel = (r, slot) => slot === 'b' ? `${r.helper}: ${displayTitle(r)}`
   : r.kind === 'prayer' ? 'Oración' : r.kind === 'chair' ? 'Presidente' : displayTitle(r);
 
+// Privilegios: qué asignaciones puede recibir cada perfil (perfil.puede). Un perfil sin
+// privilegios marcados todavía (perfil.puede no existe) sale para todo, como antes.
+const PRIVS = [
+  ['presidente', 'Presidente'],
+  ['oracion', 'Oraciones'],
+  ['tesoros', 'Discurso y Perlas escondidas'],
+  ['lectura', 'Lectura de la Biblia'],
+  ['estudiante', 'Seamos mejores maestros'],
+  ['vida', 'Nuestra vida cristiana'],
+  ['conductor', 'Conductor del estudio bíblico'],
+  ['lector', 'Lector del estudio bíblico'],
+];
+// Para marcar varios de un jalón en el perfil
+const PRIV_PRESETS = [
+  ['Anciano', ['presidente', 'oracion', 'tesoros', 'lectura', 'vida', 'conductor', 'lector']],
+  ['Siervo ministerial', ['oracion', 'tesoros', 'lectura', 'vida', 'lector']],
+  ['Varón bautizado', ['oracion', 'lectura', 'estudiante', 'lector']],
+  ['Estudiante', ['estudiante']],
+];
+const privLabel = k => (PRIVS.find(([key]) => key === k) || [k, k])[1];
+function privFor(row, slot) {
+  if (row.kind === 'prayer') return 'oracion';
+  if (row.kind === 'chair') return 'presidente';
+  if (row.helper === 'Lector') return slot === 'b' ? 'lector' : 'conductor';
+  if (/lectura de la biblia/i.test(row.title || '')) return 'lectura';
+  if (row.section === SECTIONS[1].name) return 'estudiante';
+  if (row.section === SECTIONS[0].name) return 'tesoros';
+  return 'vida';
+}
+const canDo = (prof, priv) => !Array.isArray(prof.puede) || prof.puede.includes(priv);
+
 // Horario: canción y oración inicial 5 min, canción intermedia 4 min, 1 min de consejo tras cada
 // intervención de estudiante; la canción final queda a los 100 minutos del inicio.
 function timesFor(p) {
@@ -422,22 +457,35 @@ function contextFor(p) {
   const priors = sortedPrograms().filter(q => q !== p && q.date <= p.date);
   const last = new Map();
   for (const q of priors) for (const x of assignmentsOf(q)) if (!last.has(x.pid)) last.set(x.pid, { q, ...x });
-  const recent = new Map();
-  for (const q of priors.slice(0, state.settings.recentCount)) for (const x of assignmentsOf(q)) if (!recent.has(x.pid)) recent.set(x.pid, { q, ...x });
+  // "Descansando": tiene otra asignación a menos de restDays días, antes o después de esta semana
+  const recent = new Map(), rest = state.settings.restDays || 28;
+  for (const q of state.programs) {
+    const d = Math.abs(daysBetween(q.date, p.date));
+    if (q === p || d >= rest) continue;
+    for (const x of assignmentsOf(q)) {
+      const prev = recent.get(x.pid);
+      if (!prev || Math.abs(daysBetween(prev.q.date, p.date)) > d) recent.set(x.pid, { q, ...x });
+    }
+  }
   return { last, recent };
 }
+const restText = (r, p) => {
+  const d = daysBetween(p.date, r.q.date);
+  return d < 0 ? `↻ Participó hace ${-d} días: ${roleLabel(r.row, r.slot)}` : `↻ Tiene asignación en ${d} días: ${roleLabel(r.row, r.slot)}`;
+};
 
 function statusFor(pid, p, ctx, counts, row, slot) {
   const prof = profById(pid);
   if (!prof) return { cls: 's-warn', text: 'Perfil eliminado' };
   if (counts[pid] > 1) return { cls: 's-dup', text: '⚠ Ya tiene otra intervención en esta semana' };
   if (slotNeedsMen(row, slot) && prof.sex === 'F') return { cls: 's-warn', text: '⚠ Normalmente la asigna un varón' };
+  if (!canDo(prof, privFor(row, slot))) return { cls: 's-warn', text: `⚠ No tiene marcado el privilegio “${privLabel(privFor(row, slot))}”` };
   if (row.helper === 'Ayudante') {
     const other = profById(row[slot === 'a' ? 'b' : 'a']);
     if (other && other.sex !== prof.sex && !sameFamily(prof.id, other.id)) return { cls: 's-warn', text: '⚠ Pareja de distinto sexo que no es de la misma familia' };
   }
   const r = ctx.recent.get(pid);
-  if (r) return { cls: 's-recent', text: `↻ Participó el ${fmtShort(r.q.date)}: ${roleLabel(r.row, r.slot)}` };
+  if (r) return { cls: 's-recent', text: restText(r, p) };
   const l = ctx.last.get(pid);
   if (!l) return { cls: 's-never', text: '★ Nunca ha participado' };
   const d = daysBetween(l.q.date, p.date);
@@ -628,6 +676,15 @@ async function addWeek(dateISO) {
 }
 
 // ---------- PDF ----------
+// En el celular abre "Compartir" (WhatsApp, Drive, guardar…); en la PC lo descarga.
+function savePDF(doc, fname) {
+  const name = fname.replace(/[\\/:*?"<>|]+/g, '') + '.pdf';
+  const file = typeof File === 'function' ? new File([doc.output('blob')], name, { type: 'application/pdf' }) : null;
+  if (file && navigator.canShare && matchMedia('(pointer: coarse)').matches && navigator.canShare({ files: [file] })) {
+    return navigator.share({ files: [file], title: name }).catch(e => { if (e.name !== 'AbortError') doc.save(name); });
+  }
+  doc.save(name);
+}
 function downloadPDF(programs) {
   programs = [...programs].sort((a, b) => a.date.localeCompare(b.date));
   const J = window.jspdf && window.jspdf.jsPDF;
@@ -702,7 +759,7 @@ function downloadPDF(programs) {
     doc.text('Impreso ' + printed, W - M, H - 22, { align: 'right' });
   });
   const fname = programs.length === 1 ? `Programa ${programs[0].title}` : `Programas ${programs[0].title} a ${programs[programs.length - 1].title}`;
-  doc.save(fname.replace(/[\\/:*?"<>|]+/g, '') + '.pdf');
+  savePDF(doc, fname);
 }
 
 // ---------- Hojas de asignación (una por hoja) ----------
@@ -795,7 +852,7 @@ function downloadSlips(items) {
   const fname = items.length === 1
     ? `Asignación ${name(first.row.a) || 'sin nombre'} - ${first.p.title}`
     : `Asignaciones ${[...new Set(items.map(x => x.p.title))].join(', ')}`;
-  doc.save(fname.replace(/[\\/:*?"<>|]+/g, '') + '.pdf');
+  savePDF(doc, fname);
 }
 
 // Elegir qué hojas de asignación descargar
@@ -840,6 +897,21 @@ function openProfileDialog(prof, opts = {}) {
   const famSel = h('select', null, h('option', { value: '' }, '(Sin familia)'),
     [...state.families].sort((a, b) => a.name.localeCompare(b.name, 'es')).map(f =>
       h('option', { value: f.id, selected: prof && prof.familyId === f.id ? true : null }, f.name)));
+  // Privilegios: casillas, con botones para marcar varios a la vez
+  const has = prof && Array.isArray(prof.puede) ? new Set(prof.puede) : new Set();
+  const privBoxes = PRIVS.map(([k, label]) => {
+    const box = h('input', { type: 'checkbox', checked: has.has(k), 'data-priv': k });
+    return { k, box, el: h('label', { class: 'row', style: { gap: '6px', color: 'var(--text)', fontSize: '14px' } }, box, label) };
+  });
+  const privField = h('div', { class: 'field' },
+    h('span', null, 'Puede recibir'),
+    h('div', { class: 'row', style: { gap: '6px', margin: '2px 0 4px' } },
+      PRIV_PRESETS.map(([name, keys]) => h('button', { class: 'btn small', type: 'button', onclick: () => {
+        privBoxes.forEach(p => { p.box.checked = keys.includes(p.k); });
+      } }, name)),
+      h('button', { class: 'btn small', type: 'button', onclick: () => privBoxes.forEach(p => { p.box.checked = false; }) }, 'Ninguno')),
+    h('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(210px, 1fr))', gap: '4px 12px' } }, privBoxes.map(p => p.el)),
+    prof && !Array.isArray(prof.puede) ? h('span', { class: 'small-text' }, 'Todavía no se marcan: mientras tanto sale en las sugerencias para todo.') : null);
   const err = h('div', { class: 'err' });
 
   const hist = [];
@@ -854,6 +926,7 @@ function openProfileDialog(prof, opts = {}) {
         h('div', { class: 'field' }, h('span', { class: 'muted', style: { fontSize: '13px' } }, 'Sexo'),
           h('div', { class: 'radios' }, h('label', null, sexM, 'Masculino'), h('label', null, sexF, 'Femenino')))),
       state.families.length ? h('label', { class: 'field' }, 'Familia', famSel) : null,
+      privField,
       h('label', { class: 'field' }, 'Notas', notesI),
       err,
       prof ? h('div', { class: 'hist' },
@@ -880,6 +953,9 @@ function openProfileDialog(prof, opts = {}) {
     const age = ageI.value === '' ? null : Math.max(0, Math.round(+ageI.value));
     const p = prof || { id: uid() };
     Object.assign(p, { name, sex: sexV, age, notes: squash(notesI.value), familyId: famSel.value || null });
+    // Si nunca se marcaron y se deja todo en blanco, sigue "sin configurar" (sale para todo)
+    const puede = privBoxes.filter(x => x.box.checked).map(x => x.k);
+    if (puede.length || Array.isArray(p.puede)) p.puede = puede;
     if (!prof) state.profiles.push(p);
     save(); refreshDatalist(); saved = true; dlg.close();
     if (opts.onSave) opts.onSave(p); else render();
@@ -1675,7 +1751,9 @@ function renderList() {
 function renderEditor(p) {
   let focus = null;              // { rowId, slot }
   let sexFilter = 'all';
+  let privOnly = true;           // sugerir solo a quien tiene el privilegio de la asignación
   let editing = false;
+  const privToggle = h('div');
   const s = state.settings;
   const body = h('div');
   const metaBox = h('div');
@@ -1706,25 +1784,46 @@ function renderEditor(p) {
     updateSide(ctx);
   }
 
+  // Sugerencias para la asignación seleccionada: primero quien puede hacerla y lleva más
+  // tiempo sin participar; abajo, aparte, quien está "descansando" (regla de los 28 días).
   function updateSide(ctx = contextFor(p)) {
     const used = new Set(slotsOf(p).map(x => x.pid).filter(Boolean));
     const f = norm(suggFilter.value);
     chips.replaceChildren(...[['all', 'Todos'], ['M', 'Hombres'], ['F', 'Mujeres']].map(([v, t]) =>
       h('button', { class: sexFilter === v ? 'on' : '', onclick: () => { sexFilter = v; updateSide(); } }, t)));
-    // En una pareja de estudiantes, los familiares de la otra persona salen primero
     const fr = focus && p.rows.find(r => r.id === focus.rowId);
+    const priv = fr ? privFor(fr, focus.slot) : null;
+    privToggle.replaceChildren(priv ? h('label', { class: 'row small-text muted', style: { gap: '6px', margin: '0 0 8px' } },
+      h('input', { type: 'checkbox', checked: privOnly, onchange: e => { privOnly = e.target.checked; updateSide(); } }),
+      `Solo quien tiene “${privLabel(priv)}”`) : '');
+    // En una pareja de estudiantes, los familiares de la otra persona salen primero
     const partner = fr && fr.helper === 'Ayudante' ? fr[focus.slot === 'a' ? 'b' : 'a'] : null;
     const items = state.profiles
       .filter(pr => !used.has(pr.id) && (!f || norm(pr.name).includes(f)))
-      .map(pr => { const l = ctx.last.get(pr.id); return { pr, fam: !!partner && sameFamily(partner, pr.id), days: l ? daysBetween(l.q.date, p.date) : Infinity, recent: ctx.recent.has(pr.id) }; })
-      .filter(it => it.fam || sexFilter === 'all' || it.pr.sex === sexFilter)
-      .sort((a, b) => b.fam - a.fam || b.days - a.days || a.pr.name.localeCompare(b.pr.name, 'es'));
-    suggList.replaceChildren(...(items.length ? items.map(it => h('button', { onclick: () => insertProfile(it.pr) },
+      .map(pr => {
+        const l = ctx.last.get(pr.id);
+        return { pr, fam: !!partner && sameFamily(partner, pr.id), days: l ? daysBetween(l.q.date, p.date) : Infinity,
+          rest: ctx.recent.get(pr.id), able: !priv || canDo(pr, priv) };
+      })
+      .filter(it => (it.fam || sexFilter === 'all' || it.pr.sex === sexFilter) && (!privOnly || it.able))
+      .sort((a, b) => b.fam - a.fam || b.able - a.able || b.days - a.days || a.pr.name.localeCompare(b.pr.name, 'es'));
+    const item = it => h('button', { onclick: () => insertProfile(it.pr), title: it.rest ? restText(it.rest, p).slice(2) : null },
       h('span', { class: 'nm' }, it.pr.name, ' ', h('small', null, `${it.pr.sex === 'M' ? '♂' : '♀'}${it.pr.age != null ? ' ' + it.pr.age : ''}`),
-        it.fam ? h('span', { class: 'tag-fam' }, 'Familia') : null),
-      h('span', { class: 'hint ' + (it.days === Infinity || it.days >= s.staleDays ? 's-stale' : it.recent ? 's-recent' : 's-ok') },
-        it.days === Infinity ? 'nunca' : `hace ${it.days} d`)))
-      : [h('p', null, state.profiles.length ? 'No hay perfiles disponibles con este filtro.' : 'Aún no hay perfiles. Créalos en la pestaña “Perfiles” o escribiendo un nombre nuevo en el programa.')]));
+        it.fam ? h('span', { class: 'tag-fam' }, 'Familia') : null,
+        it.able ? null : h('span', { class: 'tag-fam', style: { color: 'var(--orange)' } }, 'Sin privilegio')),
+      h('span', { class: 'hint ' + (it.rest ? 's-recent' : it.days === Infinity || it.days >= s.staleDays ? 's-stale' : 's-ok') },
+        it.days === Infinity ? 'nunca' : `hace ${it.days} d`));
+    const ready = items.filter(it => !it.rest), resting = items.filter(it => it.rest);
+    const unset = state.profiles.filter(pr => !Array.isArray(pr.puede)).length;
+    suggList.replaceChildren(...(items.length ? [
+      ...ready.map(item),
+      resting.length ? h('div', { class: 'small-text muted', style: { padding: '8px 8px 2px', borderTop: ready.length ? '1px solid var(--border)' : null } },
+        `Descansando (menos de ${s.restDays} días)`) : null,
+      ...resting.map(it => { const b = item(it); b.style.opacity = '.6'; return b; }),
+      priv && unset ? h('div', { class: 'small-text muted', style: { padding: '8px' } },
+        `${unset} perfil${unset > 1 ? 'es' : ''} sin privilegios marcados sale${unset > 1 ? 'n' : ''} para todo. Márcalos en Perfiles.`) : null,
+    ].filter(Boolean)
+      : [h('p', null, state.profiles.length ? 'Nadie disponible con estos filtros.' : 'Aún no hay perfiles. Créalos en la pestaña “Perfiles” o escribiendo un nombre nuevo en el programa.')]));
   }
 
   function setFocus(row, slot) {
@@ -1733,9 +1832,12 @@ function renderEditor(p) {
     sexFilter = slotNeedsMen(row, slot) ? 'M' : partner ? partner.sex : 'all';
     const lb = slotLabels(row);
     suggFor.textContent = `Para: ${slot === 'b' ? lb.b : lb.a && !lb.soft ? lb.a : displayTitle(row)}`;
+    privOnly = true;
     body.querySelectorAll('input.focused').forEach(i => i.classList.remove('focused'));
     const inp = body.querySelector(`input[data-row="${row.id}"][data-slot="${slot}"]`);
     if (inp) inp.classList.add('focused');
+    if (inp && matchMedia('(max-width: 1000px)').matches) { inp.closest('.prow').after(side); side.classList.add('inline'); }
+    else if (side.parentNode !== grid) { grid.append(side); side.classList.remove('inline'); }
     updateSide();
   }
 
@@ -1752,7 +1854,9 @@ function renderEditor(p) {
     if (!target || target.row[target.slot]) target = slotsOf(p).find(x => !x.pid);
     if (!target) return toast('Todas las asignaciones ya están cubiertas');
     assign(target.row, target.slot, prof.id);
-    const next = slotsOf(p).find(x => !x.pid);
+    // Sigue con la siguiente vacía hacia abajo; si ya no hay, la primera vacía
+    const all = slotsOf(p), at = all.findIndex(x => x.row === target.row && x.slot === target.slot);
+    const next = all.slice(at + 1).find(x => !x.pid) || all.find(x => !x.pid);
     if (next) setFocus(next.row, next.slot);
   }
 
@@ -1881,11 +1985,12 @@ function renderEditor(p) {
     ensureSongTitles([p]);
   });
 
-  return h('div', null,
-    h('div', { class: 'row spread', style: { marginBottom: '14px' } },
-      h('button', { class: 'btn', onclick: () => go({ name: 'list' }) }, '← Semanas'),
-      toolbar),
-    h('div', { class: 'editor' },
+  const side = h('aside', { class: 'card side' },
+    h('h3', null, 'Sugerencias'),
+    suggFor,
+    chips, privToggle, suggFilter, suggList,
+    h('button', { class: 'btn small', style: { marginTop: '10px', width: '100%' }, onclick: () => openProfileDialog(null, { onSave: () => updateSide() }) }, '+ Nuevo perfil'));
+  const grid = h('div', { class: 'editor' },
       h('div', { class: 'card sheet' },
         h('div', { class: 'ph1' }, h('span', null, s.pdfTitle || 'Programa'), s.congregation ? h('span', null, s.congregation) : null),
         heading,
@@ -1894,14 +1999,15 @@ function renderEditor(p) {
         h('div', { class: 'pfoot' },
           h('button', { class: 'btn small', onclick: addRow }, '+ Agregar intervención'), totalEl),
         h('div', { class: 'legend' },
-          h('span', { class: 'hint s-recent' }, `↻ participó en las últimas ${s.recentCount} semanas`),
+          h('span', { class: 'hint s-recent' }, `↻ tiene otra asignación a menos de ${s.restDays} días`),
           h('span', { class: 'hint s-dup' }, '⚠ repetido en esta semana o revisar'),
           h('span', { class: 'hint s-stale' }, `★ ${s.staleDays}+ días sin participar o nunca`))),
-      h('aside', { class: 'card side' },
-        h('h3', null, 'Quién lleva más tiempo sin participar'),
-        suggFor,
-        chips, suggFilter, suggList,
-        h('button', { class: 'btn small', style: { marginTop: '10px', width: '100%' }, onclick: () => openProfileDialog(null, { onSave: () => updateSide() }) }, '+ Nuevo perfil'))));
+      side);
+  return h('div', null,
+    h('div', { class: 'row spread', style: { marginBottom: '14px' } },
+      h('button', { class: 'btn', onclick: () => go({ name: 'list' }) }, '← Semanas'),
+      toolbar),
+    grid);
 }
 
 function renderPeople() {
@@ -1912,7 +2018,7 @@ function renderPeople() {
 
   function stats() {
     const progs = sortedPrograms();
-    const recentPids = new Set(progs.filter(q => q.date <= today).slice(0, state.settings.recentCount).flatMap(q => assignmentsOf(q).map(x => x.pid)));
+    const recentPids = new Set(progs.filter(q => Math.abs(daysBetween(q.date, mondayOf(today))) < state.settings.restDays).flatMap(q => assignmentsOf(q).map(x => x.pid)));
     return state.profiles.map(pr => {
       let count = 0, last = null, next = null;
       for (const q of progs) for (const x of assignmentsOf(q)) {
@@ -1935,7 +2041,11 @@ function renderPeople() {
       const badge = x.days === Infinity ? ['s-never', x.next ? 'Programado' : 'Nunca']
         : x.days >= state.settings.staleDays ? ['s-stale', 'Hace mucho'] : x.recent ? ['s-recent', 'Reciente'] : ['s-ok', 'Normal'];
       return h('tr', { onclick: () => openProfileDialog(x.pr) },
-        h('td', null, h('strong', null, x.pr.name), x.pr.notes ? h('div', { class: 'muted small-text' }, x.pr.notes) : null),
+        h('td', null, h('strong', null, x.pr.name),
+          Array.isArray(x.pr.puede)
+            ? h('div', { class: 'muted small-text' }, x.pr.puede.length ? x.pr.puede.map(privLabel).join(' · ') : 'Sin asignaciones')
+            : h('div', { class: 'small-text', style: { color: 'var(--orange)' } }, 'Privilegios sin marcar'),
+          x.pr.notes ? h('div', { class: 'muted small-text' }, x.pr.notes) : null),
         h('td', null, x.pr.sex === 'M' ? 'Masculino' : 'Femenino'),
         h('td', null, x.pr.age ?? '—'),
         h('td', { class: 'small-text' }, (famOf(x.pr.id) || {}).name || '—'),
@@ -2070,7 +2180,7 @@ function renderSettings() {
       h('label', { class: 'field' }, 'Nota al estudiante (en las hojas de asignación)',
         h('textarea', { rows: 3, oninput: e => { s.slipNote = e.target.value; save(); } }, s.slipNote)),
       text('Texto al pie de las hojas de asignación', 'slipFooter', 'Opcional (por ejemplo, el código del formulario)'),
-      num('Marcar como “reciente” si participó en las últimas … semanas', 'recentCount', 1, 20),
+      num('No repetir a nadie en … días (antes o después de su asignación)', 'restDays', 7, 120),
       num('Marcar como “hace mucho” después de … días', 'staleDays', 1, 3650),
       num('Cuántas semanas hacia adelante buscar en jw.org', 'weeksAhead', 1, 16),
       h('div', { class: 'row' },

@@ -26,6 +26,12 @@ App para organizar las asignaciones de la reunión semanal Vida y Ministerio Cri
 - Familias: sugieren y validan parejas estudiante/ayudante.
 - PDF del programa (una semana por hoja, diseño basado en un PDF de ejemplo del usuario) y hojas de asignación (una por hoja, copiando las medidas de la hoja de asignación de ejemplo; nota y pie editables en Ajustes).
 
+## Asignaciones asistidas (1.4.0)
+- `perfil.puede`: lista de privilegios (`PRIVS`: presidente, oracion, tesoros, lectura, estudiante, vida, conductor, lector). Si no existe, el perfil está "sin marcar" y sale para todo. `privFor(row, slot)` dice cuál pide cada asignación.
+- Regla de descanso: `settings.restDays` (28) días antes o después de otra asignación (`contextFor().recent`); en las sugerencias salen aparte como “Descansando”.
+- En pantallas angostas el panel de sugerencias se mueve debajo de la asignación con foco.
+- `savePDF()`: en el celular abre Compartir (WhatsApp…); en la PC descarga.
+
 ## Congregación en la nube (desde la versión 1.2.0)
 - Proyecto Firebase `programas-congregacion`. Reglas: `npx.cmd firebase deploy --only firestore:rules` (después de cambiar `firestore.rules`).
 - Web para celulares: https://becker9824.github.io/programas/ (GitHub Pages desde `main`; se actualiza sola al hacer push). Si cambia `index.html`, subir `CACHE` en `sw.js`.
