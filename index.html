@@ -228,7 +228,7 @@
 
 <script>
 const KEY = 'programas-app-v2';
-const APP_VERSION = '1.5.0'; // igual que "version" en package.json (publicar.ps1 lo revisa)
+const APP_VERSION = '1.5.1'; // igual que "version" en package.json (publicar.ps1 lo revisa)
 // Con FIREBASE_CONFIG (firebase-config.js) los datos viven en la nube de la congregación;
 // sin él, la app funciona como antes, solo en esta PC. "?emu" usa el Firebase local de prueba.
 const EMU = /[?&]emu\b/.test(location.search);
@@ -2266,7 +2266,13 @@ if ('serviceWorker' in navigator && location.protocol === 'https:') {
   // Cuando llega una versión nueva de la web, se recarga una vez para usarla
   const hadController = !!navigator.serviceWorker.controller;
   navigator.serviceWorker.addEventListener('controllerchange', () => { if (hadController && !busy()) location.reload(); });
-  navigator.serviceWorker.register('sw.js').catch(() => {});
+  // Si la página se queda abierta (o la app del celular en segundo plano), revisa al volver a ella
+  // y cada 15 minutos; si hay versión nueva, el evento de arriba la recarga.
+  navigator.serviceWorker.register('sw.js').then(reg => {
+    const check = () => reg.update().catch(() => {});
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') check(); });
+    setInterval(check, 15 * 6e4);
+  }).catch(() => {});
 }
 </script>
 </body>
