@@ -229,7 +229,7 @@
 
 <script>
 const KEY = 'programas-app-v2';
-const APP_VERSION = '1.6.0'; // igual que "version" en package.json (publicar.ps1 lo revisa)
+const APP_VERSION = '1.7.0'; // igual que "version" en package.json (publicar.ps1 lo revisa)
 // Con FIREBASE_CONFIG (firebase-config.js) los datos viven en la nube de la congregación;
 // sin él, la app funciona como antes, solo en esta PC. "?emu" usa el Firebase local de prueba.
 const EMU = /[?&]emu\b/.test(location.search);
@@ -980,12 +980,13 @@ function openProfileDialog(prof, opts = {}) {
 // Desde la 1.3 los datos van por partes (perfiles/, familias/, semanas/, config/ajustes) en vez de
 // un solo privado/estado (que tenía límite de 1 MB); privado/estado queda como copia de la 1.2.
 const nube = { user: null, cong: null, congData: null, me: null, acceso: '', listo: false, publico: null,
-  miembros: [], anuncios: [], contactos: new Map(), sent: {}, ultimoPub: '', registro: null, inicial: null, unsubMe: null, unsubDatos: [] };
+  miembros: [], anuncios: [], contactos: new Map(), cuentas: [], cuentasIni: null, sent: {}, ultimoPub: '', registro: null, inicial: null, unsubMe: null, unsubDatos: [] };
 // Funciones que el coordinador puede dar a cada cuenta (el coordinador tiene todas)
 const PERMS = [
   ['programa', 'Programa VyM', 'Semanas, perfiles, familias y ajustes de la reunión'],
   ['secretario', 'Secretario', 'Informes de todos: verlos y capturarlos'],
   ['ancianos', 'Anciano', 'Anuncios y directorio (las otras funciones ya los incluyen)'],
+  ['cuentas', 'Cuentas', 'Entradas, salidas y saldos de la congregación'],
 ];
 // Colecciones que se guardan por documento: [colección, parte de state, permisos para leer]
 const COLLS = [['perfiles', 'profiles', ['programa', 'secretario', 'ancianos']], ['familias', 'families', ['programa']], ['semanas', 'programs', ['programa']]];
@@ -1099,7 +1100,7 @@ async function startCloud() {
   F.onAuthStateChanged(F.auth, async user => {
     stopListening(); if (nube.unsubMe) { nube.unsubMe(); nube.unsubMe = null; }
     Object.assign(nube, { user, cong: null, congData: null, me: null, acceso: '', listo: false, miembros: [], anuncios: [],
-      contactos: new Map(), publico: null, sent: {}, ultimoPub: '' });
+      contactos: new Map(), cuentas: [], cuentasIni: null, publico: null, sent: {}, ultimoPub: '' });
     if (!user) return renderAuth();
     screen(h('div', { class: 'card auth-card' }, h('p', { class: 'muted' }, 'Cargando tu cuenta…')));
     let joinErr = '';
@@ -1161,6 +1162,13 @@ function enterCongregation() {
     nube.contactos = new Map(s.docs.map(d => [d.id, d.data()]));
     return view.name === 'directorio';
   });
+  if (can('cuentas')) {
+    listen('cuentas', F.collection(F.db, 'congregaciones', nube.cong, 'cuentas'), s => {
+      nube.cuentas = s.docs.map(d => ({ id: d.id, ...d.data() }));
+      return view.name === 'cuentas';
+    });
+    listen('cuentasIni', congRef('cuentasConfig', 'inicial'), s => { nube.cuentasIni = s.exists() ? s.data() : null; return view.name === 'cuentas'; });
+  }
   if (can('programa')) listen('config', congRef('config', 'ajustes'), receiveConfig);
   else listen('publico', congRef('publico', 'programa'), s => { nube.publico = s.exists() ? s.data() : null; return true; });
 }
@@ -1822,6 +1830,171 @@ function renderDirectory() {
     box);
 }
 
+// ---------- cuentas de la congregación (función "Cuentas") ----------
+// Movimientos en cuentas/{id}: entrada o salida de un fondo (efectivo o banco), o transferencia
+// entre los dos. El saldo inicial (cuentasConfig/inicial) cuenta desde su fecha.
+const FONDOS = { caja: 'Efectivo', banco: 'Banco' };
+const CATS = {
+  entrada: [['donacion_cong', 'Donaciones para la congregación'], ['donacion_mundial', 'Donaciones para la obra mundial'], ['otra_entrada', 'Otra entrada']],
+  salida: [['gasto', 'Gastos de la congregación'], ['envio_mundial', 'Envío a la sucursal (obra mundial)'], ['resolucion', 'Resolución'], ['otra_salida', 'Otra salida']],
+  transferencia: [['deposito', 'Depósito de efectivo al banco'], ['retiro', 'Retiro del banco a efectivo']],
+};
+const catLabel = (tipo, k) => ((CATS[tipo] || []).find(([x]) => x === k) || [k, k])[1];
+const round2 = n => Math.round(n * 100) / 100;
+const money = n => (n < 0 ? '-$' : '$') + Math.abs(round2(n)).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+// Cuánto cambia cada fondo con un movimiento
+function effect(m) {
+  const d = { caja: 0, banco: 0 };
+  if (m.tipo === 'entrada') d[m.fondo] += m.monto;
+  else if (m.tipo === 'salida') d[m.fondo] -= m.monto;
+  else { d[m.fondo] -= m.monto; d[m.fondo === 'caja' ? 'banco' : 'caja'] += m.monto; }
+  return d;
+}
+const byDate = (a, b) => a.fecha.localeCompare(b.fecha) || stampMs(a.creado) - stampMs(b.creado);
+
+function openMovementDialog(tipo, m, month) {
+  const today = todayISO();
+  const fecha = h('input', { type: 'date', value: m ? m.fecha : (today.startsWith(month) ? today : month + '-01') });
+  const cat = h('select', null, CATS[tipo].map(([k, label]) => h('option', { value: k, selected: m && m.categoria === k ? true : null }, label)));
+  const fondo = h('select', null, Object.entries(FONDOS).map(([k, label]) => h('option', { value: k, selected: m && m.fondo === k ? true : null }, label)));
+  const monto = h('input', { type: 'number', min: 0.01, step: 0.01, value: m ? m.monto : '', placeholder: '0.00', style: { width: '160px' } });
+  const desc = h('input', { type: 'text', maxlength: 300, value: m ? m.descripcion : '', placeholder: tipo === 'salida' ? 'Ej.: Recibo de luz de octubre' : 'Ej.: Cajas de contribuciones' });
+  const err = h('div', { class: 'err' });
+  const close = () => { dlg.close(); dlg.remove(); };
+  const title = { entrada: 'Entrada', salida: 'Salida', transferencia: 'Transferencia' }[tipo];
+  const dlg = h('dialog', { class: 'dlg' },
+    h('div', { class: 'dlg-body' }, h('h3', null, (m ? 'Editar ' : 'Nueva ') + title.toLowerCase()),
+      h('div', { class: 'row', style: { gap: '16px', alignItems: 'flex-end' } },
+        h('label', { class: 'field' }, 'Fecha', fecha),
+        h('label', { class: 'field' }, 'Monto', monto),
+        tipo === 'transferencia' ? null : h('label', { class: 'field' }, tipo === 'entrada' ? 'Entra a' : 'Sale de', fondo)),
+      h('label', { class: 'field' }, tipo === 'transferencia' ? 'Tipo' : 'Categoría', cat),
+      h('label', { class: 'field' }, 'Descripción', desc),
+      err),
+    h('div', { class: 'dlg-foot' },
+      m ? h('button', { class: 'btn danger', style: { marginRight: 'auto' }, onclick: async () => {
+        if (!confirm(`¿Borrar “${m.descripcion || catLabel(m.tipo, m.categoria)}” por ${money(m.monto)}?`)) return;
+        try { await F.deleteDoc(congRef('cuentas', m.id)); toast('Movimiento borrado'); close(); } catch (e) { err.textContent = errMsg(e); }
+      } }, 'Borrar') : null,
+      h('button', { class: 'btn', onclick: close }, 'Cancelar'),
+      h('button', { class: 'btn primary', onclick: async e => {
+        const amount = round2(Number(monto.value));
+        if (!fecha.value) return err.textContent = 'Elige la fecha.';
+        if (!(amount > 0)) return err.textContent = 'Escribe el monto.';
+        const data = { fecha: fecha.value, tipo, categoria: cat.value, descripcion: squash(desc.value), monto: amount,
+          fondo: tipo === 'transferencia' ? (cat.value === 'deposito' ? 'caja' : 'banco') : fondo.value, por: nube.user.uid };
+        e.target.disabled = true;
+        try {
+          if (m) await F.setDoc(congRef('cuentas', m.id), { ...data, creado: m.creado || F.serverTimestamp() });
+          else await F.addDoc(F.collection(F.db, 'congregaciones', nube.cong, 'cuentas'), { ...data, creado: F.serverTimestamp() });
+          toast('Guardado'); close();
+        } catch (ex) { err.textContent = errMsg(ex); e.target.disabled = false; }
+      } }, 'Guardar')));
+  document.body.append(dlg); dlg.showModal(); monto.focus();
+}
+
+function openInitialDialog() {
+  const ini = nube.cuentasIni || {};
+  const d = new Date(); d.setDate(1);
+  const fecha = h('input', { type: 'date', value: ini.fecha || isoOf(d) });
+  const caja = h('input', { type: 'number', step: 0.01, value: ini.caja ?? 0, style: { width: '160px' } });
+  const banco = h('input', { type: 'number', step: 0.01, value: ini.banco ?? 0, style: { width: '160px' } });
+  const close = () => { dlg.close(); dlg.remove(); };
+  const dlg = h('dialog', { class: 'dlg' },
+    h('div', { class: 'dlg-body' }, h('h3', null, 'Saldo inicial'),
+      h('p', { class: 'muted small-text' }, 'Lo que había en efectivo y en el banco el día en que empiezas a llevar las cuentas en la app. Los movimientos anteriores a esa fecha no cuentan.'),
+      h('label', { class: 'field' }, 'Fecha', fecha),
+      h('div', { class: 'row', style: { gap: '16px' } }, h('label', { class: 'field' }, 'Efectivo', caja), h('label', { class: 'field' }, 'Banco', banco))),
+    h('div', { class: 'dlg-foot' },
+      h('button', { class: 'btn', onclick: close }, 'Cancelar'),
+      h('button', { class: 'btn primary', onclick: async () => {
+        if (!fecha.value) return;
+        try {
+          await F.setDoc(congRef('cuentasConfig', 'inicial'), { fecha: fecha.value, caja: round2(Number(caja.value) || 0), banco: round2(Number(banco.value) || 0) });
+          toast('Saldo inicial guardado'); close();
+        } catch (e) { toast(errMsg(e)); }
+      } }, 'Guardar')));
+  document.body.append(dlg); dlg.showModal();
+}
+
+function renderAccounts() {
+  const ini = nube.cuentasIni;
+  if (!ini) return h('div', null, h('h1', null, 'Cuentas'),
+    h('div', { class: 'card settings' },
+      h('p', null, 'Para empezar, anota cuánto hay hoy en efectivo y en el banco.'),
+      h('div', { class: 'row' }, h('button', { class: 'btn primary', onclick: openInitialDialog }, 'Poner saldo inicial'))));
+  let month = renderAccounts.month || todayISO().slice(0, 7);
+  const months = [...new Set([...recentMonths(12), month])].sort().reverse();
+  const counted = nube.cuentas.filter(m => m.fecha >= ini.fecha).sort(byDate);
+  const add = (a, b) => ({ caja: a.caja + b.caja, banco: a.banco + b.banco });
+  const sum = list => list.reduce((acc, m) => add(acc, effect(m)), { caja: 0, banco: 0 });
+  const start = add({ caja: ini.caja, banco: ini.banco }, sum(counted.filter(m => m.fecha < month + '-01')));
+  const inMonth = counted.filter(m => m.fecha.startsWith(month));
+  const end = add(start, sum(inMonth));
+  const total = (tipo, fondo) => round2(inMonth.filter(m => m.tipo === tipo && (!fondo || m.fondo === fondo)).reduce((a, m) => a + m.monto, 0));
+  const byCat = tipo => CATS[tipo].map(([k, label]) => [label, round2(inMonth.filter(m => m.tipo === tipo && m.categoria === k).reduce((a, m) => a + m.monto, 0))]).filter(([, v]) => v);
+  // Donaciones para la obra mundial recibidas y aún no enviadas a la sucursal (hasta el fin del mes)
+  const upTo = counted.filter(m => m.fecha.slice(0, 7) <= month);
+  const pendingWorld = round2(upTo.filter(m => m.categoria === 'donacion_mundial').reduce((a, m) => a + m.monto, 0)
+    - upTo.filter(m => m.categoria === 'envio_mundial').reduce((a, m) => a + m.monto, 0));
+  const before = nube.cuentas.length - counted.length;
+
+  let run = start.caja + start.banco;
+  const rows = inMonth.map(m => {
+    const d = effect(m); run += d.caja + d.banco;
+    const cell = v => h('td', { style: { color: v > 0 ? 'var(--green)' : v < 0 ? 'var(--red)' : 'var(--muted)', whiteSpace: 'nowrap' } }, v ? (v > 0 ? '+' : '') + money(v) : '—');
+    return h('tr', { onclick: () => openMovementDialog(m.tipo, m, month), title: 'Tocar para editar o borrar' },
+      h('td', { style: { whiteSpace: 'nowrap' } }, fmtShort(m.fecha)),
+      h('td', null, h('strong', null, m.descripcion || catLabel(m.tipo, m.categoria)), h('div', { class: 'muted small-text' }, catLabel(m.tipo, m.categoria))),
+      cell(d.caja), cell(d.banco), h('td', { style: { whiteSpace: 'nowrap' } }, money(run)));
+  });
+
+  const summary = [`Cuentas de la congregación · ${fmtMonth(month)}`,
+    `Saldo inicial: efectivo ${money(start.caja)}, banco ${money(start.banco)}, total ${money(start.caja + start.banco)}`,
+    `Entradas: ${money(total('entrada'))}`, ...byCat('entrada').map(([l, v]) => `  · ${l}: ${money(v)}`),
+    `Salidas: ${money(total('salida'))}`, ...byCat('salida').map(([l, v]) => `  · ${l}: ${money(v)}`),
+    `Saldo final: efectivo ${money(end.caja)}, banco ${money(end.banco)}, total ${money(end.caja + end.banco)}`,
+    pendingWorld ? `Obra mundial por enviar a la sucursal: ${money(pendingWorld)}` : 'Obra mundial: todo enviado a la sucursal.'].join('\n');
+  const csv = () => {
+    const q = v => `"${String(v ?? '').replace(/"/g, '""')}"`;
+    const lines = [['Fecha', 'Tipo', 'Categoría', 'Descripción', 'Efectivo', 'Banco'],
+      ...inMonth.map(m => { const d = effect(m); return [m.fecha, m.tipo, catLabel(m.tipo, m.categoria), m.descripcion, round2(d.caja), round2(d.banco)]; })];
+    const a = h('a', { href: URL.createObjectURL(new Blob(['﻿' + lines.map(r => r.map(q).join(',')).join('\r\n')], { type: 'text/csv' })),
+      download: `Cuentas ${fmtMonth(month)}.csv` });
+    a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  };
+  const box = (label, a, b, strong) => h('div', { class: 'card', style: { padding: '12px 14px', flex: '1', minWidth: '150px' } },
+    h('div', { class: 'muted small-text' }, label),
+    h('div', { style: { fontSize: '20px', fontWeight: 700 } }, money(b)),
+    h('div', { class: 'small-text muted' }, `Al inicio del mes: ${money(a)}`), strong);
+
+  return h('div', null,
+    h('div', { class: 'row spread', style: { marginBottom: '12px' } },
+      h('div', null, h('h1', null, 'Cuentas'),
+        h('p', { class: 'sub', style: { margin: 0 } }, 'Solo quien lleva las cuentas y el coordinador ven esta sección.')),
+      h('label', { class: 'field' }, 'Mes', monthSelect(months, month, v => { renderAccounts.month = v; render(); }))),
+    h('div', { class: 'row', style: { gap: '10px', alignItems: 'stretch', marginBottom: '12px' } },
+      box('Efectivo', start.caja, end.caja), box('Banco', start.banco, end.banco), box('Total', start.caja + start.banco, end.caja + end.banco)),
+    pendingWorld > 0 ? h('div', { class: 'notice warn' }, `🌎 Donaciones para la obra mundial por enviar a la sucursal: ${money(pendingWorld)}`) : null,
+    before ? h('div', { class: 'notice warn' }, `Hay ${before} movimiento${before > 1 ? 's' : ''} con fecha anterior al saldo inicial (${fmtShort(ini.fecha)}); no se cuentan.`) : null,
+    h('div', { class: 'row', style: { marginBottom: '12px' } },
+      h('button', { class: 'btn primary', onclick: () => openMovementDialog('entrada', null, month) }, '+ Entrada'),
+      h('button', { class: 'btn primary', onclick: () => openMovementDialog('salida', null, month) }, '− Salida'),
+      h('button', { class: 'btn', onclick: () => openMovementDialog('transferencia', null, month) }, '⇄ Depósito o retiro')),
+    h('div', { class: 'card', style: { padding: '14px', marginBottom: '12px' } },
+      h('div', { class: 'totals' },
+        h('span', null, 'Entradas ', h('strong', { style: { color: 'var(--green)' } }, money(total('entrada')))),
+        h('span', null, 'Salidas ', h('strong', { style: { color: 'var(--red)' } }, money(total('salida')))),
+        h('span', null, 'Diferencia ', h('strong', null, money(total('entrada') - total('salida'))))),
+      h('div', { class: 'tablewrap' }, h('table', { class: 'stats' },
+        h('thead', null, h('tr', null, ['Fecha', 'Concepto', 'Efectivo', 'Banco', 'Saldo total'].map(t => h('th', null, t)))),
+        h('tbody', null, rows.length ? rows : h('tr', null, h('td', { colspan: 5, class: 'empty' }, 'No hay movimientos este mes.'))))),
+      h('div', { class: 'row', style: { marginTop: '12px' } },
+        h('button', { class: 'btn small', onclick: () => navigator.clipboard.writeText(summary).then(() => toast('Resumen copiado')) }, '📋 Copiar resumen'),
+        h('button', { class: 'btn small', onclick: csv }, '⬇ Descargar en Excel'),
+        h('button', { class: 'btn small', onclick: openInitialDialog }, `Saldo inicial (${fmtShort(ini.fecha)})`))));
+}
+
 // ---------- usuarios (solo admins) ----------
 function renderUsers() {
   const ms = [...nube.miembros].sort(byNombre);
@@ -1921,6 +2094,7 @@ function navItems() {
   const unread = unreadAnnouncements();
   items.push(['anuncios', unread ? `Anuncios (${unread})` : 'Anuncios']);
   if (isElder()) items.push(['directorio', 'Directorio']);
+  if (can('cuentas')) items.push(['cuentas', 'Cuentas']);
   items.push(['settings', 'Ajustes']);
   return items;
 }
@@ -1941,6 +2115,7 @@ function render() {
   if (view.name === 'users') return app.replaceChildren(renderUsers());
   if (view.name === 'anuncios') { app.replaceChildren(renderAnnouncements()); return buildNav(); }
   if (view.name === 'directorio') return app.replaceChildren(renderDirectory());
+  if (view.name === 'cuentas') return app.replaceChildren(renderAccounts());
   if (view.name === 'settings') return app.replaceChildren(program ? renderSettings() : renderPubSettings());
   if (!program) return app.replaceChildren(renderPubList());
   refreshDatalist();

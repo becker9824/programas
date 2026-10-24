@@ -144,6 +144,23 @@ test('directorio: lo ven los ancianos (cualquier función), no los publicadores'
   await assertFails(getDoc(cdoc(db('pub'), 'contactos', 'p1')));
 });
 
+test('cuentas: solo la función "Cuentas" y el coordinador', async () => {
+  await assertSucceeds(updateDoc(cdoc(db('admin'), 'miembros', 'pub'), { permisos: ['cuentas'] }));
+  const mov = por => ({ fecha: '2026-10-05', tipo: 'entrada', categoria: 'donacion_cong', descripcion: 'Caja de contribuciones', monto: 1250.5, fondo: 'caja', por, creado: 1 });
+  await assertSucceeds(setDoc(cdoc(db('pub'), 'cuentas', 'm1'), mov('pub')));
+  await assertSucceeds(setDoc(cdoc(db('pub'), 'cuentasConfig', 'inicial'), { fecha: '2026-10-01', caja: 100, banco: 5000 }));
+  await assertSucceeds(getDocs(collection(db('admin'), 'congregaciones', C, 'cuentas')));
+  await assertFails(getDocs(collection(db('secre'), 'congregaciones', C, 'cuentas')));
+  await assertFails(getDoc(cdoc(db('prog'), 'cuentasConfig', 'inicial')));
+  await assertFails(setDoc(cdoc(db('secre'), 'cuentas', 'm2'), mov('secre')));
+  await assertFails(setDoc(cdoc(db('pub'), 'cuentas', 'm2'), { ...mov('pub'), monto: -5 }));
+  await assertFails(setDoc(cdoc(db('pub'), 'cuentas', 'm2'), { ...mov('pub'), fondo: 'bolsillo' }));
+  await assertFails(setDoc(cdoc(db('pub'), 'cuentas', 'm2'), { ...mov('pub'), por: 'otro' }));
+  await assertFails(getDoc(cdoc(db('pub'), 'contactos', 'p1'))); // "Cuentas" no da el directorio
+  await assertSucceeds(updateDoc(cdoc(db('admin'), 'miembros', 'pub'), { permisos: [] }));
+  await assertFails(getDoc(cdoc(db('pub'), 'cuentas', 'm1')));
+});
+
 test('el coordinador puede hacer coordinador a otro; alguien de fuera no ve nada', async () => {
   const a = db('admin'), o = db('otro');
   await assertSucceeds(updateDoc(cdoc(a, 'miembros', 'pub'), { admin: true }));

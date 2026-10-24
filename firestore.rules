@@ -18,7 +18,7 @@ service cloud.firestore {
     function isElder(c) { return can(c, 'ancianos') || can(c, 'programa') || can(c, 'secretario'); }
     function cong(c) { return get(/databases/$(db)/documents/congregaciones/$(c)).data; }
     function only(keys) { return request.resource.data.keys().hasOnly(keys); }
-    function validPerms(d) { return !('permisos' in d) || (d.permisos is list && d.permisos.hasOnly(['programa', 'secretario', 'ancianos'])); }
+    function validPerms(d) { return !('permisos' in d) || (d.permisos is list && d.permisos.hasOnly(['programa', 'secretario', 'ancianos', 'cuentas'])); }
 
     // Qué congregación usa cada cuenta (solo la propia persona)
     match /usuarios/{uid} {
@@ -77,6 +77,23 @@ service cloud.firestore {
           && request.resource.data.get('dir', '') is string && request.resource.data.get('dir', '').size() <= 300
           && request.resource.data.get('emergencia', '') is string && request.resource.data.get('emergencia', '').size() <= 150
           && request.resource.data.get('emergenciaTel', '') is string && request.resource.data.get('emergenciaTel', '').size() <= 60;
+      }
+      // Cuentas de la congregación: movimientos (entradas, salidas, transferencias) y saldo inicial.
+      // Solo quien tiene la función "Cuentas" y el coordinador.
+      match /cuentas/{id} {
+        allow read, delete: if can(c, 'cuentas');
+        allow create, update: if can(c, 'cuentas')
+          && only(['fecha', 'tipo', 'categoria', 'descripcion', 'monto', 'fondo', 'por', 'creado'])
+          && request.resource.data.fecha is string && request.resource.data.fecha.matches('[0-9]{4}-[0-9]{2}-[0-9]{2}')
+          && request.resource.data.tipo in ['entrada', 'salida', 'transferencia']
+          && request.resource.data.fondo in ['caja', 'banco']
+          && request.resource.data.monto is number && request.resource.data.monto > 0 && request.resource.data.monto < 100000000
+          && request.resource.data.categoria is string && request.resource.data.categoria.size() <= 40
+          && request.resource.data.descripcion is string && request.resource.data.descripcion.size() <= 300
+          && request.resource.data.por == me();
+      }
+      match /cuentasConfig/{doc} {
+        allow read, write: if can(c, 'cuentas');
       }
       // Anuncios: los leen todos los miembros activos; los publican los ancianos.
       match /anuncios/{id} {

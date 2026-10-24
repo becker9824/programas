@@ -32,6 +32,10 @@ App para organizar las asignaciones de la reunión semanal Vida y Ministerio Cri
 - En pantallas angostas el panel de sugerencias se mueve debajo de la asignación con foco.
 - `savePDF()`: en el celular abre Compartir (WhatsApp…); en la PC descarga.
 
+## Cuentas de la congregación (1.7.0)
+- Función `cuentas` (no da anuncios ni directorio). `cuentas/{id}`: fecha, tipo (entrada|salida|transferencia), categoria (`CATS`), descripcion, monto, fondo (caja|banco; en transferencias es el de origen), por, creado. `cuentasConfig/inicial`: fecha, caja, banco.
+- Saldos = inicial + movimientos desde su fecha (`effect()`). Avisa lo de la obra mundial recibido y no enviado. Hecho sin ver las hojas S-26/S-30 de la congregación: ajustar categorías si usan otras.
+
 ## Anuncios y directorio (1.6.0)
 - Función `ancianos` ("Anciano"). `isElder()` = ancianos, programa o secretario (todas son de ancianos): publican anuncios y ven el directorio. Los demás solo leen anuncios.
 - `anuncios/{id}`: titulo, texto, fijado, vence (AAAA-MM-DD o null), autor, autorNombre, fecha. Los vencidos solo los ven los ancianos. Lo leído se guarda en localStorage (`anuncios-vistos-{uid}`).
