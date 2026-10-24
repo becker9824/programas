@@ -92,7 +92,8 @@ service cloud.firestore {
       match /informes/{id} {
         function validReport() {
           let d = request.resource.data;
-          return only(['perfil', 'nombre', 'mes', 'participo', 'horas', 'cursos', 'notas', 'enviado', 'por'])
+          return only(['perfil', 'nombre', 'mes', 'grupo', 'participo', 'horas', 'cursos', 'notas', 'enviado', 'por'])
+            && (!('grupo' in d) || d.grupo in ['pub', 'aux', 'reg'])
             && id == d.perfil + '_' + d.mes && d.mes.matches('[0-9]{4}-[0-9]{2}')
             && d.por == me()
             && d.participo is bool

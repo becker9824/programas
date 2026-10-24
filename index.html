@@ -228,7 +228,7 @@
 
 <script>
 const KEY = 'programas-app-v2';
-const APP_VERSION = '1.4.0'; // igual que "version" en package.json (publicar.ps1 lo revisa)
+const APP_VERSION = '1.5.0'; // igual que "version" en package.json (publicar.ps1 lo revisa)
 // Con FIREBASE_CONFIG (firebase-config.js) los datos viven en la nube de la congregación;
 // sin él, la app funciona como antes, solo en esta PC. "?emu" usa el Firebase local de prueba.
 const EMU = /[?&]emu\b/.test(location.search);
@@ -894,6 +894,9 @@ function openProfileDialog(prof, opts = {}) {
   const sexM = h('input', { type: 'radio', name: 'sexo', value: 'M', checked: sex === 'M' });
   const sexF = h('input', { type: 'radio', name: 'sexo', value: 'F', checked: sex === 'F' });
   const notesI = h('input', { type: 'text', value: prof ? (prof.notes || '') : '', placeholder: 'Opcional' });
+  const tipo = prof && prof.tipo || 'pub';
+  const tipoSel = h('select', null, [['pub', 'Publicador'], ['reg', 'Precursor regular'], ['no', 'No es publicador']].map(([v, t]) =>
+    h('option', { value: v, selected: tipo === v ? true : null }, t)));
   const famSel = h('select', null, h('option', { value: '' }, '(Sin familia)'),
     [...state.families].sort((a, b) => a.name.localeCompare(b.name, 'es')).map(f =>
       h('option', { value: f.id, selected: prof && prof.familyId === f.id ? true : null }, f.name)));
@@ -925,7 +928,9 @@ function openProfileDialog(prof, opts = {}) {
         h('label', { class: 'field' }, 'Edad', ageI),
         h('div', { class: 'field' }, h('span', { class: 'muted', style: { fontSize: '13px' } }, 'Sexo'),
           h('div', { class: 'radios' }, h('label', null, sexM, 'Masculino'), h('label', null, sexF, 'Femenino')))),
-      state.families.length ? h('label', { class: 'field' }, 'Familia', famSel) : null,
+      h('div', { class: 'row', style: { gap: '20px', alignItems: 'flex-end' } },
+        h('label', { class: 'field' }, 'Informe mensual', tipoSel),
+        state.families.length ? h('label', { class: 'field' }, 'Familia', famSel) : null),
       privField,
       h('label', { class: 'field' }, 'Notas', notesI),
       err,
@@ -952,7 +957,7 @@ function openProfileDialog(prof, opts = {}) {
     if (other && other !== prof) return err.textContent = 'Ya existe un perfil con ese nombre.';
     const age = ageI.value === '' ? null : Math.max(0, Math.round(+ageI.value));
     const p = prof || { id: uid() };
-    Object.assign(p, { name, sex: sexV, age, notes: squash(notesI.value), familyId: famSel.value || null });
+    Object.assign(p, { name, sex: sexV, age, notes: squash(notesI.value), familyId: famSel.value || null, tipo: tipoSel.value });
     // Si nunca se marcaron y se deja todo en blanco, sigue "sin configurar" (sale para todo)
     const puede = privBoxes.filter(x => x.box.checked).map(x => x.k);
     if (puede.length || Array.isArray(p.puede)) p.puede = puede;
@@ -1458,41 +1463,61 @@ const defaultMonth = () => recentMonths(2)[new Date().getDate() <= 20 ? 1 : 0];
 const monthSelect = (months, value, onchange) => h('select', { onchange: e => onchange(e.target.value) },
   months.map(m => h('option', { value: m, selected: m === value ? true : null }, fmtMonth(m))));
 
-// Formulario de un informe (el propio, o el de otro si lo captura el secretario)
-function reportForm(perfil, nombre, month, prev, onSaved, own) {
-    const id = `${perfil}_${month}`;
-    let part = prev ? prev.participo : null;
-    const yes = h('input', { type: 'radio', name: 'participo-' + id, checked: part === true, onchange: () => { part = true; } });
-    const no = h('input', { type: 'radio', name: 'participo-' + id, checked: part === false, onchange: () => { part = false; } });
-    const hours = h('input', { type: 'number', min: 0, max: 744, step: 'any', placeholder: 'Opcional', style: { width: '140px' },
-      value: prev && prev.horas != null ? prev.horas : '' });
-    const studies = h('input', { type: 'number', min: 0, max: 99, step: 1, style: { width: '100px' }, value: prev ? prev.cursos : 0 });
-    const notes = h('textarea', { rows: 3, maxlength: 1000, placeholder: 'Opcional' }, prev ? prev.notas : '');
-    const err = h('div', { class: 'err' });
-    const btn = h('button', { class: 'btn primary', onclick: async () => {
-      err.textContent = '';
-      if (part === null) return err.textContent = own ? 'Indica si participaste en la predicación.' : 'Indica si participó en la predicación.';
-      const hv = hours.value.trim() === '' ? null : Math.round(Number(hours.value) * 100) / 100;
-      if (hv != null && !(hv >= 0 && hv <= 744)) return err.textContent = 'Revisa las horas.';
-      const cv = Math.round(Number(studies.value) || 0);
-      if (cv < 0 || cv > 99) return err.textContent = 'Revisa los cursos bíblicos.';
-      btn.disabled = true;
-      try {
-        await F.setDoc(congRef('informes', id), { perfil, nombre, mes: month, participo: part, horas: hv, cursos: cv,
-          notas: notes.value.trim().slice(0, 1000), enviado: F.serverTimestamp(), por: nube.user.uid });
-        toast(own ? 'Informe enviado. ¡Gracias!' : `Informe de ${nombre} guardado`);
-        onSaved();
-      } catch (e) { err.textContent = errMsg(e); btn.disabled = false; }
-    } }, prev ? 'Actualizar informe' : own ? 'Enviar informe' : 'Guardar informe');
-    return h('div', { class: 'settings' },
-      h('div', { class: 'field' }, h('span', null, own ? '¿Participaste en alguna forma de la predicación este mes?' : '¿Participó en alguna forma de la predicación este mes?'),
-        h('div', { class: 'radios' }, h('label', null, yes, 'Sí'), h('label', null, no, 'No'))),
-      h('div', { class: 'row', style: { gap: '20px', alignItems: 'flex-end' } },
-        h('label', { class: 'field' }, 'Horas (precursores)', hours),
-        h('label', { class: 'field' }, 'Cursos bíblicos', studies)),
-      h('label', { class: 'field' }, 'Notas', notes),
-      prev ? h('div', { class: 'small-text muted' }, `Enviado ${prev.enviado ? 'el ' + fmtStamp(prev.enviado) : ''}. Se puede corregir y volver a guardar.`) : null,
-      err, h('div', { class: 'row' }, btn));
+// Grupo del informe de cada mes (el precursor auxiliar puede cambiar de un mes a otro).
+// En el perfil, tipo: 'pub' (o sin poner) publicador, 'reg' precursor regular, 'no' no es publicador.
+const GRUPOS = [['pub', 'Publicador', 'Publicadores'], ['aux', 'Precursor auxiliar', 'Precursores auxiliares'],
+  ['reg', 'Precursor regular', 'Precursores regulares']];
+const grupoLabel = g => (GRUPOS.find(([k]) => k === g) || GRUPOS[0])[1];
+const isPublisher = pr => pr.tipo !== 'no';
+function monthsBefore(m, n) {
+  const out = [], d = new Date(m + '-15T12:00:00');
+  for (let i = 0; i < n; i++) { out.push(`${d.getFullYear()}-${pad(d.getMonth() + 1)}`); d.setMonth(d.getMonth() - 1); }
+  return out;
+}
+
+// Formulario de un informe (el propio, o el de otro si lo captura el secretario).
+// grupoDefault: el que se propone si todavía no hay informe de ese mes.
+function reportForm(perfil, nombre, month, prev, onSaved, own, grupoDefault) {
+  const id = `${perfil}_${month}`;
+  let part = prev ? prev.participo : null, grupo = (prev && prev.grupo) || grupoDefault || 'pub';
+  const yes = h('input', { type: 'radio', name: 'participo-' + id, checked: part === true, onchange: () => { part = true; } });
+  const no = h('input', { type: 'radio', name: 'participo-' + id, checked: part === false, onchange: () => { part = false; } });
+  const hours = h('input', { type: 'number', min: 0, max: 744, step: 'any', style: { width: '140px' },
+    value: prev && prev.horas != null ? prev.horas : '' });
+  const hoursField = h('label', { class: 'field' }, 'Horas', hours);
+  const showHours = () => { hoursField.style.display = grupo === 'pub' ? 'none' : ''; };
+  showHours();
+  const grupos = GRUPOS.map(([k, label]) => h('label', null,
+    h('input', { type: 'radio', name: 'grupo-' + id, checked: grupo === k, onchange: () => { grupo = k; showHours(); } }), label));
+  const studies = h('input', { type: 'number', min: 0, max: 99, step: 1, style: { width: '100px' }, value: prev ? prev.cursos : 0 });
+  const notes = h('textarea', { rows: 3, maxlength: 1000, placeholder: 'Opcional' }, prev ? prev.notas : '');
+  const err = h('div', { class: 'err' });
+  const btn = h('button', { class: 'btn primary', onclick: async () => {
+    err.textContent = '';
+    if (part === null) return err.textContent = own ? 'Indica si participaste en la predicación.' : 'Indica si participó en la predicación.';
+    const hv = grupo === 'pub' || hours.value.trim() === '' ? null : Math.round(Number(hours.value) * 100) / 100;
+    if (hv != null && !(hv >= 0 && hv <= 744)) return err.textContent = 'Revisa las horas.';
+    if (grupo !== 'pub' && part && hv == null) return err.textContent = 'Los precursores anotan sus horas del mes.';
+    const cv = Math.round(Number(studies.value) || 0);
+    if (cv < 0 || cv > 99) return err.textContent = 'Revisa los cursos bíblicos.';
+    btn.disabled = true;
+    try {
+      await F.setDoc(congRef('informes', id), { perfil, nombre, mes: month, grupo, participo: part, horas: hv, cursos: cv,
+        notas: notes.value.trim().slice(0, 1000), enviado: F.serverTimestamp(), por: nube.user.uid });
+      toast(own ? 'Informe enviado. ¡Gracias!' : `Informe de ${nombre} guardado`);
+      onSaved();
+    } catch (e) { err.textContent = errMsg(e); btn.disabled = false; }
+  } }, prev ? 'Actualizar informe' : own ? 'Enviar informe' : 'Guardar informe');
+  return h('div', { class: 'settings' },
+    h('div', { class: 'field' }, h('span', null, own ? 'Este mes fuiste' : 'Este mes fue'),
+      h('div', { class: 'radios', style: { flexWrap: 'wrap', gap: '6px 16px' } }, grupos)),
+    h('div', { class: 'field' }, h('span', null, own ? '¿Participaste en alguna forma de la predicación este mes?' : '¿Participó en alguna forma de la predicación este mes?'),
+      h('div', { class: 'radios' }, h('label', null, yes, 'Sí'), h('label', null, no, 'No'))),
+    h('div', { class: 'row', style: { gap: '20px', alignItems: 'flex-end' } }, hoursField,
+      h('label', { class: 'field' }, 'Cursos bíblicos', studies)),
+    h('label', { class: 'field' }, 'Notas', notes),
+    prev ? h('div', { class: 'small-text muted' }, `Enviado ${prev.enviado ? 'el ' + fmtStamp(prev.enviado) : ''}. Se puede corregir y volver a guardar.`) : null,
+    err, h('div', { class: 'row' }, btn));
 }
 
 function renderReport() {
@@ -1506,11 +1531,15 @@ function renderReport() {
       ? 'En tu congregación los informes los registra el secretario.'
       : 'Un encargado todavía no ha unido tu cuenta con tu perfil. Cuando lo haga, podrás enviar tu informe aquí.'));
     box.replaceChildren(h('div', { class: 'card settings muted' }, 'Cargando…'));
-    let prev = null;
-    try { const s = await F.getDoc(congRef('informes', `${perfil}_${month}`)); prev = s.exists() ? s.data() : null; }
-    catch (e) { return box.replaceChildren(h('div', { class: 'card settings err' }, errMsg(e))); }
+    let prev = null, last = null;
+    try {
+      const [s, l] = await Promise.all([month, monthsBefore(month, 2)[1]].map(m => F.getDoc(congRef('informes', `${perfil}_${m}`))));
+      prev = s.exists() ? s.data() : null; last = l.exists() ? l.data() : null;
+    } catch (e) { return box.replaceChildren(h('div', { class: 'card settings err' }, errMsg(e))); }
     const name = (profById(perfil) || {}).name || nube.me.nombre;
-    box.replaceChildren(h('div', { class: 'card' }, reportForm(perfil, name, month, prev, () => { load(); if (secre) secre.reload(); }, true)));
+    // Si no hay informe de este mes, se propone el grupo del mes anterior
+    box.replaceChildren(h('div', { class: 'card' },
+      reportForm(perfil, name, month, prev, () => { load(); if (secre) secre.reload(); }, true, last && last.grupo)));
   }
   load();
   return h('div', null,
@@ -1523,46 +1552,76 @@ function renderReport() {
     secre ? secre.el : null);
 }
 
-// Secretario (o coordinador): los informes de todos los perfiles para un mes. Tocar una
-// fila abre el informe para capturarlo o corregirlo.
+// Secretario (o coordinador): resumen del mes por grupo y los informes de cada publicador.
+// Tocar una fila abre el informe para capturarlo o corregirlo.
 function congregationReports() {
   let month = defaultMonth();
   const box = h('div');
   async function reload() {
     box.replaceChildren(h('div', { class: 'muted' }, 'Cargando…'));
+    // Este mes y los 5 anteriores: los "publicadores activos" informaron en los últimos 6 meses
+    const months = monthsBefore(month, 6);
     let docs;
     try {
-      const q = F.query(F.collection(F.db, 'congregaciones', nube.cong, 'informes'), F.where('mes', '==', month));
+      const q = F.query(F.collection(F.db, 'congregaciones', nube.cong, 'informes'), F.where('mes', 'in', months));
       docs = (await F.getDocs(q)).docs.map(d => d.data());
     } catch (e) { return box.replaceChildren(h('div', { class: 'err' }, errMsg(e))); }
-    const byProfile = new Map(docs.map(d => [d.perfil, d]));
-    const people = state.profiles.map(p => ({ id: p.id, nombre: p.name, r: byProfile.get(p.id) }));
-    for (const d of docs) if (!people.some(p => p.r === d)) people.push({ id: d.perfil, nombre: d.nombre + ' (perfil eliminado)', r: d });
+    const cur = docs.filter(d => d.mes === month);
+    const byProfile = new Map(cur.map(d => [d.perfil, d]));
+    const lastGroup = new Map(docs.filter(d => d.mes === months[1]).map(d => [d.perfil, d.grupo]));
+    const people = state.profiles.filter(isPublisher).map(p => ({ id: p.id, nombre: p.name, tipo: p.tipo, r: byProfile.get(p.id) }));
+    for (const d of cur) if (!people.some(p => p.r === d)) {
+      const pr = profById(d.perfil);
+      people.push({ id: d.perfil, nombre: pr ? pr.name : d.nombre + ' (perfil eliminado)', tipo: pr && pr.tipo, r: d });
+    }
     people.sort(byNombre);
-    const sent = docs.length, joined = docs.filter(d => d.participo).length;
-    const hours = docs.reduce((a, d) => a + (d.horas || 0), 0), studies = docs.reduce((a, d) => a + (d.cursos || 0), 0);
+    const active = new Set(docs.filter(d => d.participo).map(d => d.perfil)).size;
+    const groups = GRUPOS.map(([k, , label]) => {
+      const rs = cur.filter(d => d.participo && (d.grupo || 'pub') === k);
+      return { k, label, n: rs.length, hours: Math.round(rs.reduce((a, d) => a + (d.horas || 0), 0) * 100) / 100,
+        studies: rs.reduce((a, d) => a + (d.cursos || 0), 0) };
+    });
+    const missing = people.filter(p => !p.r);
+    const summary = [`Informe de la congregación · ${fmtMonth(month)}`, `Publicadores activos: ${active}`,
+      ...groups.map(g => `${g.label}: ${g.n} informaron${g.k !== 'pub' ? `, ${g.hours} horas` : ''}, ${g.studies} cursos bíblicos`),
+      missing.length ? `Sin informe (${missing.length}): ${missing.map(p => p.nombre).join(', ')}` : 'Todos informaron.'].join('\n');
+    const csv = () => {
+      const q = v => `"${String(v ?? '').replace(/"/g, '""')}"`;
+      const rows = [['Nombre', 'Grupo', 'Participó', 'Horas', 'Cursos', 'Notas'],
+        ...people.map(p => p.r ? [p.nombre, grupoLabel(p.r.grupo), p.r.participo ? 'Sí' : 'No', p.r.horas ?? '', p.r.cursos || 0, p.r.notas || '']
+          : [p.nombre, '', 'Sin informe', '', '', ''])];
+      const a = h('a', { href: URL.createObjectURL(new Blob(['﻿' + rows.map(r => r.map(q).join(',')).join('\r\n')], { type: 'text/csv' })),
+        download: `Informes ${fmtMonth(month)}.csv` });
+      a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    };
     const open = p => {
       const dlg = h('dialog', { class: 'dlg' },
         h('div', { class: 'dlg-body' }, h('h3', null, `${p.nombre} · ${fmtMonth(month)}`),
-          reportForm(p.id, p.nombre, month, p.r || null, () => { dlg.close(); reload(); }, false)),
+          reportForm(p.id, p.nombre, month, p.r || null, () => { dlg.close(); reload(); }, false,
+            p.tipo === 'reg' ? 'reg' : lastGroup.get(p.id))),
         h('div', { class: 'dlg-foot' }, h('button', { class: 'btn', onclick: () => dlg.close() }, 'Cerrar')));
       dlg.addEventListener('close', () => dlg.remove());
       document.body.append(dlg); dlg.showModal();
     };
     box.replaceChildren(
       h('div', { class: 'totals' },
-        h('span', null, h('strong', null, `${sent} de ${people.length}`), ' con informe'),
-        h('span', null, h('strong', null, joined), ' participaron'),
-        h('span', null, h('strong', null, Math.round(hours * 100) / 100), ' horas'),
-        h('span', null, h('strong', null, studies), ' cursos')),
+        h('span', null, h('strong', null, `${people.length - missing.length} de ${people.length}`), ' con informe'),
+        h('span', null, h('strong', null, active), ' publicadores activos')),
+      h('div', { class: 'tablewrap', style: { marginBottom: '12px' } }, h('table', { class: 'stats' },
+        h('thead', null, h('tr', null, ['Grupo', 'Informaron', 'Horas', 'Cursos bíblicos'].map(t => h('th', null, t)))),
+        h('tbody', null, groups.map(g => h('tr', { style: { cursor: 'default' } },
+          h('td', null, h('strong', null, g.label)), h('td', null, g.n), h('td', null, g.k === 'pub' ? '—' : g.hours), h('td', null, g.studies)))))),
+      h('div', { class: 'row', style: { marginBottom: '14px' } },
+        h('button', { class: 'btn small', onclick: () => navigator.clipboard.writeText(summary).then(() => toast('Resumen copiado')) }, '📋 Copiar resumen'),
+        h('button', { class: 'btn small', onclick: csv }, '⬇ Descargar en Excel')),
       h('div', { class: 'tablewrap' }, h('table', { class: 'stats' },
-        h('thead', null, h('tr', null, ['Nombre', '¿Participó?', 'Horas', 'Cursos', 'Notas'].map(t => h('th', null, t)))),
+        h('thead', null, h('tr', null, ['Nombre', 'Grupo', '¿Participó?', 'Horas', 'Cursos', 'Notas'].map(t => h('th', null, t)))),
         h('tbody', null, people.length ? people.map(p => h('tr', { onclick: () => open(p), title: 'Tocar para capturar o corregir' },
           h('td', null, h('strong', null, p.nombre)),
-          p.r ? [h('td', null, p.r.participo ? 'Sí' : 'No'), h('td', null, p.r.horas ?? '—'), h('td', null, p.r.cursos || 0),
-            h('td', { class: 'small-text' }, p.r.notas || '')]
-            : h('td', { colspan: 4 }, h('span', { class: 'badge s-warn' }, 'Sin informe'))))
-          : h('tr', null, h('td', { colspan: 5, class: 'empty' }, 'Todavía no hay perfiles. Se crean en Perfiles.'))))));
+          p.r ? [h('td', { class: 'small-text' }, grupoLabel(p.r.grupo)), h('td', null, p.r.participo ? 'Sí' : 'No'),
+            h('td', null, p.r.horas ?? '—'), h('td', null, p.r.cursos || 0), h('td', { class: 'small-text' }, p.r.notas || '')]
+            : h('td', { colspan: 5 }, h('span', { class: 'badge s-warn' }, 'Sin informe'))))
+          : h('tr', null, h('td', { colspan: 6, class: 'empty' }, 'Todavía no hay publicadores. Se crean en Perfiles.'))))));
   }
   reload();
   const el = h('div', { style: { marginTop: '28px' } },
@@ -2042,6 +2101,7 @@ function renderPeople() {
         : x.days >= state.settings.staleDays ? ['s-stale', 'Hace mucho'] : x.recent ? ['s-recent', 'Reciente'] : ['s-ok', 'Normal'];
       return h('tr', { onclick: () => openProfileDialog(x.pr) },
         h('td', null, h('strong', null, x.pr.name),
+          x.pr.tipo === 'reg' || x.pr.tipo === 'no' ? h('span', { class: 'tag-fam' }, x.pr.tipo === 'reg' ? 'Precursor regular' : 'No publicador') : null,
           Array.isArray(x.pr.puede)
             ? h('div', { class: 'muted small-text' }, x.pr.puede.length ? x.pr.puede.map(privLabel).join(' · ') : 'Sin asignaciones')
             : h('div', { class: 'small-text', style: { color: 'var(--orange)' } }, 'Privilegios sin marcar'),

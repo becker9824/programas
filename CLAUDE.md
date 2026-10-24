@@ -32,6 +32,11 @@ App para organizar las asignaciones de la reunión semanal Vida y Ministerio Cri
 - En pantallas angostas el panel de sugerencias se mueve debajo de la asignación con foco.
 - `savePDF()`: en el celular abre Compartir (WhatsApp…); en la PC descarga.
 
+## Informes para el secretario (1.5.0)
+- `perfil.tipo`: `pub` (o vacío) publicador, `reg` precursor regular, `no` no es publicador (no sale en la lista de informes).
+- Cada informe guarda `grupo` (`pub`|`aux`|`reg`) del mes; se propone el del mes anterior. Las horas solo se piden a precursores.
+- Resumen: por grupo (informaron con participó = sí, horas, cursos), publicadores activos (participaron en los últimos 6 meses), sin informe, copiar resumen y CSV.
+
 ## Congregación en la nube (desde la versión 1.2.0)
 - Proyecto Firebase `programas-congregacion`. Reglas: `npx.cmd firebase deploy --only firestore:rules` (después de cambiar `firestore.rules`).
 - Web para celulares: https://becker9824.github.io/programas/ (GitHub Pages desde `main`; se actualiza sola al hacer push). Si cambia `index.html`, subir `CACHE` en `sw.js`.

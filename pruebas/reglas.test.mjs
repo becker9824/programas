@@ -85,6 +85,8 @@ test('publicador: ve el programa, no los datos; envía solo su informe', async (
   await assertFails(setDoc(mine, informe('p1', 'otro')));
   await assertFails(setDoc(mine, informe('p1', 'pub', { cursos: -1 })));
   await assertFails(setDoc(mine, informe('p1', 'pub', { extra: 1 })));
+  await assertSucceeds(setDoc(mine, informe('p1', 'pub', { grupo: 'aux', horas: 30 })));
+  await assertFails(setDoc(mine, informe('p1', 'pub', { grupo: 'especial' })));
   await assertFails(setDoc(cdoc(p, 'informes', 'p2_2026-10'), informe('p2', 'pub')));
   await assertFails(getDoc(cdoc(p, 'informes', 'p2_2026-10')));
   await assertSucceeds(getDocs(query(collection(p, 'congregaciones', C, 'informes'), where('perfil', '==', 'p1'))));
