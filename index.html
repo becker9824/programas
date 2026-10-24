@@ -2,27 +2,28 @@
 <html lang="es">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Programas y Asignaciones</title>
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="icon.png">
-<meta name="theme-color" content="#0070c0">
+<meta name="theme-color" content="#1d5fd0">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <script src="vendor/jspdf.umd.min.js"></script>
 <script src="firebase-config.js"></script>
 <style>
   :root {
-    --bg: #f4f5f7; --surface: #ffffff; --surface-2: #f0f2f5; --border: #e2e5ea;
-    --text: #1d2330; --muted: #6b7380; --accent: #0070c0; --accent-text: #ffffff;
+    --bg: #f3f6fa; --surface: #ffffff; --surface-2: #eef2f7; --border: #dfe5ee;
+    --text: #172036; --muted: #5f6b7d; --accent: #1d5fd0; --accent-2: #e8f0fd; --accent-text: #ffffff;
     --red: #c62828; --red-bg: #fdecec; --orange: #b45309; --orange-bg: #fff4e0;
-    --green: #1b7a3d; --green-bg: #e7f6ec; --shadow: 0 1px 3px rgba(0,0,0,.07);
+    --green: #1b7a3d; --green-bg: #e7f6ec;
+    --shadow: 0 1px 2px rgba(16,24,40,.05), 0 2px 10px rgba(16,24,40,.04);
     --sec-none: #575a5d; --sec-tesoros: #3c7f8b; --sec-maestros: #be8900; --sec-vida: #7e0024;
   }
   @media (prefers-color-scheme: dark) {
     :root:not([data-theme="light"]) {
-      --bg: #12151b; --surface: #1b1f27; --surface-2: #232834; --border: #303746;
-      --text: #e7eaf0; --muted: #98a2b3; --accent: #4ea3e6; --accent-text: #0b1020;
+      --bg: #0f1320; --surface: #171c2a; --surface-2: #1f2637; --border: #2a3247;
+      --text: #e6eaf2; --muted: #96a1b5; --accent: #5b9cf5; --accent-2: #1b2a46; --accent-text: #0b1020;
       --red: #ff8a80; --red-bg: #3a1d1d; --orange: #ffc266; --orange-bg: #3a2c14;
       --green: #7ddc9b; --green-bg: #173123; --shadow: none;
       --sec-none: #9aa1a8; --sec-tesoros: #5fb3c1; --sec-maestros: #e0aa2e; --sec-vida: #e0607e;
@@ -30,33 +31,43 @@
   }
   * { box-sizing: border-box; }
   a { color: var(--accent); }
-  body { margin: 0; background: var(--bg); color: var(--text);
+  body { margin: 0; background: var(--bg); color: var(--text); -webkit-font-smoothing: antialiased;
     font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
-  header { background: var(--surface); border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 5; }
+  header { background: color-mix(in srgb, var(--surface) 92%, transparent); backdrop-filter: blur(8px);
+    border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 5; }
   .bar { max-width: 1240px; margin: 0 auto; padding: 10px 16px; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
-  .brand { font-weight: 700; font-size: 17px; margin-right: auto; }
-  nav { display: flex; gap: 4px; }
-  nav button { background: none; border: 0; color: var(--muted); padding: 8px 12px; border-radius: 8px; font: inherit; cursor: pointer; }
-  nav button.active { background: var(--surface-2); color: var(--text); font-weight: 600; }
-  main { max-width: 1240px; margin: 0 auto; padding: 20px 16px 60px; }
-  h1 { font-size: 22px; margin: 0 0 4px; }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 17px; margin-right: auto; min-width: 0; }
+  .brand-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ic { display: inline-flex; flex: none; }
+  nav { display: flex; gap: 2px; }
+  nav button { display: inline-flex; align-items: center; gap: 7px; background: none; border: 0; color: var(--muted);
+    padding: 8px 11px; border-radius: 10px; font: inherit; font-size: 14px; cursor: pointer; white-space: nowrap; }
+  nav button:hover { background: var(--surface-2); color: var(--text); }
+  nav button.active { background: var(--accent-2); color: var(--accent); font-weight: 600; }
+  .nbadge { background: var(--red); color: #fff; border-radius: 999px; font-size: 11px; font-weight: 700; line-height: 17px;
+    min-width: 17px; padding: 0 5px; text-align: center; }
+  main { max-width: 1240px; margin: 0 auto; padding: 22px 16px 60px; }
+  h1 { font-size: 24px; margin: 0 0 4px; letter-spacing: -.01em; }
   h2.group { font-size: 15px; color: var(--muted); margin: 22px 0 8px; font-weight: 600; }
   .sub { color: var(--muted); margin: 0 0 18px; }
   .btn { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--border); background: var(--surface);
-    color: var(--text); padding: 7px 12px; border-radius: 8px; font: inherit; cursor: pointer; white-space: nowrap; }
+    color: var(--text); padding: 8px 14px; border-radius: 10px; font: inherit; cursor: pointer; white-space: nowrap;
+    transition: background .15s, border-color .15s, filter .15s; }
   .btn:hover { background: var(--surface-2); }
+  .btn:focus-visible, nav button:focus-visible, .tile:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   .btn:disabled { opacity: .5; cursor: default; }
   .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); font-weight: 600; }
+  .btn.primary:hover { filter: brightness(1.08); }
   .btn.danger { color: var(--red); }
-  .btn.small { padding: 3px 8px; font-size: 13px; }
+  .btn.small { padding: 4px 10px; font-size: 13px; border-radius: 8px; }
   .btn.icon { padding: 3px 7px; min-width: 28px; justify-content: center; }
   .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
   .spread { justify-content: space-between; }
-  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--shadow); }
-  input[type=text], input[type=email], input[type=password], input[type=date], input[type=time], input[type=number], input[type=search], select, textarea {
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; box-shadow: var(--shadow); }
+  input[type=text], input[type=email], input[type=password], input[type=date], input[type=time], input[type=number], input[type=search], input[type=tel], select, textarea {
     font: inherit; color: var(--text); background: var(--surface); border: 1px solid var(--border);
-    border-radius: 8px; padding: 7px 10px; min-width: 0; }
-  input:focus, select:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+    border-radius: 10px; padding: 8px 11px; min-width: 0; }
+  input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
   label.field { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--muted); }
   .muted { color: var(--muted); }
   .small-text { font-size: 12px; }
@@ -186,11 +197,58 @@
   /* ---- Congregación: acceso, publicadores, usuarios e informes ---- */
   nav { overflow-x: auto; max-width: 100%; scrollbar-width: none; }
   nav::-webkit-scrollbar { display: none; }
+  /* En el celular el menú va abajo, con íconos, como en las apps */
+  .tabbar { display: none; }
+  @media (max-width: 760px) {
+    header nav { display: none; }
+    .tabbar { display: flex; position: fixed; left: 0; right: 0; bottom: 0; z-index: 6;
+      background: color-mix(in srgb, var(--surface) 94%, transparent); backdrop-filter: blur(8px);
+      border-top: 1px solid var(--border); padding: 6px 4px calc(6px + env(safe-area-inset-bottom)); }
+    .tabbar button { flex: 1; position: relative; display: flex; flex-direction: column; align-items: center; gap: 3px;
+      background: none; border: 0; color: var(--muted); font: inherit; font-size: 11px; padding: 4px 0; cursor: pointer; }
+    .tabbar button.active { color: var(--accent); font-weight: 600; }
+    .tabbar:empty { display: none; }
+    .tabbar .nbadge { position: absolute; top: -2px; left: calc(50% + 6px); }
+    .toast { bottom: calc(84px + env(safe-area-inset-bottom)); }
+    main { padding-bottom: calc(96px + env(safe-area-inset-bottom)); }
+    h1 { font-size: 22px; }
+  }
+  dialog.sheet { margin: auto auto 0; width: 100%; max-width: 520px; border: 0; border-radius: 20px 20px 0 0;
+    padding: 8px 10px calc(14px + env(safe-area-inset-bottom)); background: var(--surface); color: var(--text); }
+  dialog.sheet::backdrop { background: rgba(0,0,0,.4); }
+  .sheet .grab { width: 40px; height: 4px; border-radius: 4px; background: var(--border); margin: 4px auto 10px; }
+  .sheet .item { display: flex; align-items: center; gap: 14px; width: 100%; padding: 13px 12px; background: none; border: 0;
+    border-radius: 12px; font: inherit; font-size: 16px; color: var(--text); cursor: pointer; text-align: left; }
+  .sheet .item:hover, .sheet .item.active { background: var(--accent-2); color: var(--accent); }
+  .sheet .item .nbadge { margin-left: auto; }
+
+  /* Pantalla de inicio */
+  .hello { padding: 20px; margin-bottom: 14px; border: 0; color: #fff;
+    background: linear-gradient(135deg, #1d5fd0, #3b82f6 60%, #60a5fa); }
+  .hello h1 { color: #fff; }
+  .hello p { margin: 2px 0 0; opacity: .9; }
+  .tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 12px; margin-bottom: 14px; }
+  .tile { display: flex; align-items: center; gap: 12px; text-align: left; padding: 14px; cursor: pointer; font: inherit;
+    color: var(--text); background: var(--surface); border: 1px solid var(--border); border-radius: 14px; box-shadow: var(--shadow);
+    transition: border-color .15s, transform .15s; }
+  .tile:hover { border-color: var(--accent); }
+  .tile:active { transform: scale(.99); }
+  .tile-ic { width: 42px; height: 42px; border-radius: 12px; display: grid; place-items: center; flex: none;
+    background: var(--accent-2); color: var(--accent); }
+  .tile.warn .tile-ic { background: var(--orange-bg); color: var(--orange); }
+  .tile.ok .tile-ic { background: var(--green-bg); color: var(--green); }
+  .tile-body { flex: 1; min-width: 0; display: grid; gap: 1px; }
+  .tile-t { font-size: 12px; color: var(--muted); }
+  .tile-v { font-size: 16px; }
+  .tile-s { font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tile > .ic:last-child { color: var(--muted); }
   /* En pantallas angostas las sugerencias se muestran debajo de la asignación que se está llenando */
   .side.inline { position: static; margin: 4px 0 12px; border-color: var(--accent); }
   .side.inline .sugg { max-height: 45vh; }
-  @media (max-width: 640px) { .brand { width: 100%; } nav button { padding: 8px 9px; } }
-  .auth { min-height: 70vh; display: grid; place-items: center; }
+  .auth { min-height: 72vh; display: grid; place-items: center; align-content: center; gap: 18px; }
+  .auth-hero { text-align: center; display: grid; justify-items: center; gap: 6px; }
+  .auth-hero h2 { margin: 6px 0 0; font-size: 26px; letter-spacing: -.01em; }
+  .auth-hero p { margin: 0; color: var(--muted); max-width: 340px; }
   .auth-card { width: min(440px, 100%); padding: 22px; display: grid; gap: 14px; }
   .auth-card h2 { margin: 0; font-size: 20px; }
   .auth-card p { margin: 0; }
@@ -199,7 +257,7 @@
   .tabs { display: flex; gap: 4px; background: var(--surface-2); padding: 4px; border-radius: 10px; }
   .tabs button { flex: 1; border: 0; background: none; padding: 7px 6px; border-radius: 8px; font: inherit; font-size: 13px; color: var(--muted); cursor: pointer; }
   .tabs button.on { background: var(--surface); color: var(--text); font-weight: 600; box-shadow: var(--shadow); }
-  .mine { padding: 16px; margin-bottom: 16px; border-left: 4px solid var(--accent); display: grid; gap: 4px; }
+  .mine { padding: 16px; margin-bottom: 14px; border-left: 4px solid var(--accent); display: grid; gap: 4px; }
   .mine-t { font-size: 18px; font-weight: 700; }
   .vweek { margin-bottom: 10px; }
   .vweek summary { padding: 12px 14px; cursor: pointer; }
@@ -223,17 +281,18 @@
 <body>
 <header>
   <div class="bar">
-    <div class="brand">📋 Programas</div>
+    <div class="brand"><span class="logo"></span><span class="brand-name">Programas</span></div>
     <nav></nav>
   </div>
 </header>
 <main id="app"></main>
+<nav class="tabbar"></nav>
 <datalist id="profiles-list"></datalist>
 <div class="toast" id="toast"></div>
 
 <script>
 const KEY = 'programas-app-v2';
-const APP_VERSION = '1.8.0'; // igual que "version" en package.json (publicar.ps1 lo revisa)
+const APP_VERSION = '1.9.0'; // igual que "version" en package.json (publicar.ps1 lo revisa)
 // Con FIREBASE_CONFIG (firebase-config.js) los datos viven en la nube de la congregación;
 // sin él, la app funciona como antes, solo en esta PC. "?emu" usa el Firebase local de prueba.
 const EMU = /[?&]emu\b/.test(location.search);
@@ -312,6 +371,38 @@ function h(tag, props, ...kids) {
   }
   return el;
 }
+// Íconos de línea (24×24, toman el color del texto)
+const ICONS = {
+  inicio: '<path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/><path d="M10 20v-6h4v6"/>',
+  list: '<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/>',
+  people: '<circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/>',
+  families: '<circle cx="9" cy="8" r="3.5"/><circle cx="17" cy="9" r="2.5"/><path d="M2 20c0-3.5 3-5.5 7-5.5s7 2 7 5.5"/><path d="M16 14.5c3 0 6 1.5 6 4.5"/>',
+  users: '<path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/><path d="M9 12l2 2 4-4"/>',
+  report: '<rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4h6v3H9zM9 12h6M9 16h4"/>',
+  anuncios: '<path d="M3 11v2a1 1 0 001 1h3l7 4V6l-7 4H4a1 1 0 00-1 1z"/><path d="M18 9a3 3 0 010 6"/>',
+  directorio: '<path d="M5 4h12a2 2 0 012 2v14H7a2 2 0 01-2-2z"/><path d="M5 18a2 2 0 012-2h12"/><circle cx="12" cy="9" r="2"/>',
+  cuentas: '<rect x="3" y="6" width="18" height="14" rx="2"/><path d="M3 10h18"/><circle cx="16" cy="15" r="1.3"/>',
+  territorios: '<path d="M9 4L3 6v14l6-2 6 2 6-2V4l-6 2z"/><path d="M9 4v14M15 6v14"/>',
+  settings: '<path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/>',
+  mas: '<circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/>',
+  chev: '<path d="M9 6l6 6-6 6"/>',
+  person: '<circle cx="12" cy="8" r="4"/><path d="M5 21v-1a7 7 0 0114 0v1"/><path d="M16 4l2-2"/>',
+};
+function icon(name, size = 20) {
+  const el = document.createElement('span');
+  el.className = 'ic';
+  el.innerHTML = `<svg viewBox="0 0 24 24" width="${size}" height="${size}" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[name] || ''}</svg>`;
+  return el;
+}
+// El logo de la app (el mismo de icon.svg)
+function logo(size = 28) {
+  const el = document.createElement('span');
+  el.className = 'ic';
+  el.innerHTML = `<svg viewBox="0 0 512 512" width="${size}" height="${size}" aria-hidden="true"><rect width="512" height="512" rx="112" fill="#1d5fd0"/><rect x="136" y="96" width="240" height="320" rx="24" fill="#fff"/><rect x="196" y="72" width="120" height="56" rx="16" fill="#123f91"/><rect x="172" y="176" width="168" height="20" rx="10" fill="#9dbcf3"/><rect x="172" y="236" width="168" height="20" rx="10" fill="#9dbcf3"/><rect x="172" y="296" width="120" height="20" rx="10" fill="#9dbcf3"/></svg>`;
+  return el;
+}
+document.querySelector('.logo').replaceWith(logo());
+const setBrand = text => { document.querySelector('.brand-name').textContent = text; };
 const uid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
 const pad = n => String(n).padStart(2, '0');
 const isoOf = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
@@ -1135,7 +1226,7 @@ function stopListening() { nube.unsubDatos.forEach(f => f()); nube.unsubDatos = 
 // Escucha lo que esta cuenta puede ver según sus funciones. Los cambios de otros llegan solos.
 function enterCongregation() {
   stopListening();
-  nube.listo = false; nube.sent = {}; nube.ultimoPub = ''; view = { name: 'list' };
+  nube.listo = false; nube.sent = {}; nube.ultimoPub = ''; view = { name: 'inicio' };
   state = defaults();
   screen(h('div', { class: 'card auth-card' }, h('p', { class: 'muted' }, 'Cargando la congregación…')));
   const waiting = new Set();
@@ -1161,7 +1252,7 @@ function enterCongregation() {
   listen('anuncios', F.collection(F.db, 'congregaciones', nube.cong, 'anuncios'), s => {
     nube.anuncios = s.docs.map(d => ({ id: d.id, ...d.data() }));
     if (nube.listo && view.name !== 'anuncios') buildNav();
-    return view.name === 'anuncios' || view.name === 'list';
+    return ['anuncios', 'list', 'inicio'].includes(view.name);
   });
   if (isElder()) listen('contactos', F.collection(F.db, 'congregaciones', nube.cong, 'contactos'), s => {
     nube.contactos = new Map(s.docs.map(d => [d.id, d.data()]));
@@ -1345,7 +1436,6 @@ function renderAuth(tab = 'entrar', msg = '') {
   }
 
   const card = h('div', { class: 'card auth-card' },
-    h('h2', null, '📋 Programas'),
     h('div', { class: 'tabs' }, [['entrar', 'Entrar'], ['unirse', 'Crear cuenta'], ['crear', 'Nueva congregación']].map(([k, t]) =>
       h('button', { class: k === tab ? 'on' : null, onclick: () => renderAuth(k) }, t))),
     tab === 'unirse' ? h('p', { class: 'muted small-text' }, 'Pide el código a un administrador de tu congregación. Tu cuenta quedará en espera hasta que te aprueben.') : null,
@@ -1357,7 +1447,8 @@ function renderAuth(tab = 'entrar', msg = '') {
     err, btn,
     tab === 'entrar' ? h('button', { class: 'linkbtn', onclick: forgot }, '¿Olvidaste tu contraseña?') : null);
   card.addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.tagName === 'INPUT') submit(); });
-  screen(card);
+  screen(h('div', { class: 'auth-hero' }, logo(64), h('h2', null, 'Programas'),
+    h('p', null, 'La reunión, las asignaciones y la congregación, en un solo lugar.')), card);
 }
 
 // Con sesión iniciada pero sin congregación (o la quitaron)
@@ -1443,7 +1534,6 @@ function renderPubList() {
   return h('div', null,
     h('h1', null, 'Semanas'),
     h('p', { class: 'sub' }, congName() || 'Programa de la reunión de entre semana'),
-    unreadBanner(),
     nextAssignmentCard(weeks),
     next.length ? next.map((w, i) => publicWeekCard(w, i === 0))
       : h('div', { class: 'card empty' }, 'Todavía no hay programas publicados.'));
@@ -1700,11 +1790,6 @@ const unreadAnnouncements = () => {
   const seen = seenAt(), today = todayISO();
   return nube.anuncios.filter(a => a.autor !== nube.user.uid && stampMs(a.fecha) > seen && (!a.vence || a.vence >= today)).length;
 };
-function unreadBanner() {
-  const n = FB_CONFIG && nube.listo ? unreadAnnouncements() : 0;
-  return n ? h('div', { class: 'notice warn row spread', style: { cursor: 'pointer' }, onclick: () => go({ name: 'anuncios' }) },
-    h('span', null, `📢 Tienes ${n} anuncio${n > 1 ? 's' : ''} nuevo${n > 1 ? 's' : ''}`), h('strong', null, 'Ver →')) : null;
-}
 // Texto con saltos de línea y enlaces que se pueden tocar
 function richText(text) {
   const out = [];
@@ -2330,7 +2415,7 @@ function renderSharedTerritory() {
   const q = new URLSearchParams(location.hash.slice(1));
   const pts = decodePoly(q.get('p') || ''), numero = q.get('n') || '', nombre = q.get('t') || '';
   document.title = `Territorio ${numero}`;
-  document.querySelector('.brand').textContent = `📋 Territorio ${numero}${nombre ? ' · ' + nombre : ''}`;
+  setBrand(`Territorio ${numero}${nombre ? ' · ' + nombre : ''}`);
   const mapEl = h('div', { style: { height: 'calc(100vh - 170px)', minHeight: '320px', borderRadius: '12px' } });
   const tools = h('div', { class: 'row', style: { marginBottom: '10px' } });
   document.getElementById('app').replaceChildren(tools, mapEl);
@@ -2344,6 +2429,69 @@ function renderSharedTerritory() {
         h('a', { class: 'btn small', href: `https://www.google.com/maps/search/?api=1&query=${c.lat},${c.lng}`, target: '_blank', rel: 'noopener', style: { textDecoration: 'none' } }, '🧭 Cómo llegar'));
     } else mapEl.textContent = 'Este enlace no tiene una zona válida.';
   }).catch(() => { mapEl.textContent = 'No se pudo cargar el mapa. Revisa tu conexión a internet.'; });
+}
+
+// ---------- inicio: lo importante de un vistazo, según las funciones de cada quien ----------
+function renderHome() {
+  const today = todayISO(), hour = new Date().getHours();
+  const hello = hour < 12 ? 'Buenos días' : hour < 19 ? 'Buenas tardes' : 'Buenas noches';
+  const firstName = (nube.me.nombre || '').split(' ')[0];
+  const weeks = can('programa') ? publicWeeks() : nube.publico ? JSON.parse(nube.publico.semanas || '[]') : [];
+  const tile = (ic, title, value, sub, onclick, tone) => h('button', { class: 'tile' + (tone ? ' ' + tone : ''), onclick },
+    h('span', { class: 'tile-ic' }, icon(ic, 22)),
+    h('span', { class: 'tile-body' }, h('span', { class: 'tile-t' }, title), h('strong', { class: 'tile-v' }, value), sub ? h('span', { class: 'tile-s' }, sub) : null),
+    icon('chev', 18));
+  const tiles = [];
+
+  const next = weeks.find(w => (w.day || addDays(w.date, 6)) >= today);
+  tiles.push(next ? tile('list', 'Próxima reunión', next.meeting.replace(/ de \d{4}$/, ''), next.title, () => go({ name: 'list' }))
+    : tile('list', 'Reuniones', 'Sin programa publicado', null, () => go({ name: 'list' })));
+
+  // Informe del mes: se revisa si ya lo envió
+  if (reportsByMembers() && nube.me.perfil) {
+    const month = defaultMonth();
+    const t = tile('report', `Tu informe de ${fmtMonth(month).toLowerCase()}`, 'Revisando…', null, () => go({ name: 'report' }));
+    F.getDoc(congRef('informes', `${nube.me.perfil}_${month}`)).then(s => {
+      t.replaceWith(s.exists() ? tile('report', `Tu informe de ${fmtMonth(month).toLowerCase()}`, '✓ Enviado', 'Puedes corregirlo si hace falta', () => go({ name: 'report' }), 'ok')
+        : tile('report', `Tu informe de ${fmtMonth(month).toLowerCase()}`, 'Pendiente', 'Toca para enviarlo', () => go({ name: 'report' }), 'warn'));
+    }).catch(() => {});
+    tiles.push(t);
+  }
+
+  const unread = unreadAnnouncements(), ann = visibleAnnouncements();
+  tiles.push(tile('anuncios', 'Anuncios', unread ? `${unread} nuevo${unread > 1 ? 's' : ''}` : ann.length ? 'Al día' : 'Sin anuncios',
+    ann[0] ? ann[0].titulo : null, () => go({ name: 'anuncios' }), unread ? 'warn' : null));
+
+  // Según la función
+  if (can('programa')) {
+    const thisMonday = mondayOf(today);
+    const open = state.programs.filter(p => p.date >= thisMonday && slotsOf(p).some(x => !x.pid)).length;
+    tiles.push(tile('people', 'Asignaciones', open ? `${open} semana${open > 1 ? 's' : ''} por completar` : 'Todo asignado',
+      'Próximas semanas', () => go({ name: 'list' }), open ? 'warn' : 'ok'));
+  }
+  if (isAdmin()) {
+    const waiting = nube.miembros.filter(m => m.estado !== 'activo').length;
+    if (waiting) tiles.push(tile('users', 'Usuarios', `${waiting} esperando aprobación`, 'Toca para revisarlas', () => go({ name: 'users' }), 'warn'));
+  }
+  if (can('secretario')) tiles.push(tile('report', 'Informes de la congregación', fmtMonth(defaultMonth()), 'Ver quién falta y capturar', () => go({ name: 'report' })));
+  if (can('cuentas') && nube.cuentasIni) {
+    const ini = nube.cuentasIni;
+    const bal = nube.cuentas.filter(m => m.fecha >= ini.fecha).reduce((a, m) => { const d = effect(m); return a + d.caja + d.banco; }, ini.caja + ini.banco);
+    tiles.push(tile('cuentas', 'Cuentas', money(bal), 'Saldo total (efectivo y banco)', () => go({ name: 'cuentas' })));
+  }
+  if (nube.territorios.length) {
+    const n = k => nube.territorios.filter(x => x.estado === k).length;
+    const count = (k, word) => `${n(k)} ${word}${n(k) === 1 ? '' : 's'}`;
+    tiles.push(tile('territorios', 'Territorios', count('disponible', 'disponible'),
+      `${count('asignado', 'asignado')} · ${count('terminado', 'terminado')}`, () => go({ name: 'territorios' })));
+  }
+
+  return h('div', null,
+    h('div', { class: 'card hello' },
+      h('h1', null, `${hello}${firstName ? ', ' + firstName : ''}`),
+      h('p', null, congName() || 'Programas y asignaciones')),
+    nextAssignmentCard(weeks),
+    h('div', { class: 'tiles' }, tiles));
 }
 
 // ---------- usuarios (solo admins) ----------
@@ -2431,38 +2579,56 @@ function renderUsers() {
 function go(v) { view = v; render(); window.scrollTo(0, 0); }
 
 // Cada quien ve solo las secciones de sus funciones
+// Secciones del menú: [vista, nombre, aviso con número]. Cada quien ve solo las de sus funciones.
 function navItems() {
   if (!FB_CONFIG) return [['list', 'Semanas'], ['people', 'Perfiles'], ['families', 'Familias'], ['settings', 'Ajustes']];
   if (!nube.acceso) return [];
-  const items = [['list', 'Semanas']];
+  const items = [['inicio', 'Inicio'], ['list', 'Semanas']];
   if (can('programa')) items.push(['people', 'Perfiles'], ['families', 'Familias']);
-  if (isAdmin()) {
-    const waiting = nube.miembros.filter(m => m.estado !== 'activo').length;
-    items.push(['users', waiting ? `Usuarios (${waiting})` : 'Usuarios']);
-  }
+  if (isAdmin()) items.push(['users', 'Usuarios', nube.miembros.filter(m => m.estado !== 'activo').length]);
   if (can('secretario')) items.push(['report', 'Informes']);
   else if (reportsByMembers()) items.push(['report', 'Informe']);
-  const unread = unreadAnnouncements();
-  items.push(['anuncios', unread ? `Anuncios (${unread})` : 'Anuncios']);
+  items.push(['anuncios', 'Anuncios', unreadAnnouncements()]);
   if (isElder()) items.push(['directorio', 'Directorio']);
   if (can('cuentas')) items.push(['cuentas', 'Cuentas']);
   items.push(['territorios', 'Territorios']);
   items.push(['settings', 'Ajustes']);
   return items;
 }
+const isActiveView = v => view.name === v || (view.name === 'edit' && v === 'list');
+const badge = n => n ? h('span', { class: 'nbadge' }, n) : null;
+// Arriba en la PC; en el celular, barra de abajo con las principales y "Más" para el resto
 function buildNav(items = navItems()) {
-  document.querySelector('nav').replaceChildren(...items.map(([v, t]) =>
-    h('button', { class: view.name === v || (view.name === 'edit' && v === 'list') ? 'active' : null, onclick: () => go({ name: v }) }, t)));
+  document.querySelector('header nav').replaceChildren(...items.map(([v, t, n]) =>
+    h('button', { class: isActiveView(v) ? 'active' : null, onclick: () => go({ name: v }) }, icon(v, 18), t, badge(n))));
+  const order = ['inicio', 'list', 'report', 'anuncios', 'territorios'];
+  const main = items.length <= 5 ? items : order.map(v => items.find(i => i[0] === v)).filter(Boolean).slice(0, 4);
+  const rest = items.filter(i => !main.includes(i));
+  const tab = ([v, t, n], onclick, active) => h('button', { class: active ? 'active' : null, onclick }, icon(v, 22), t, badge(n));
+  document.querySelector('.tabbar').replaceChildren(...[
+    ...main.map(i => tab(i, () => go({ name: i[0] }), isActiveView(i[0]))),
+    rest.length ? tab(['mas', 'Más', rest.reduce((a, i) => a + (i[2] || 0), 0)], () => openMoreSheet(rest), rest.some(i => isActiveView(i[0]))) : null,
+  ].filter(Boolean));
   const name = FB_CONFIG && nube.listo ? congName() : '';
-  document.querySelector('.brand').textContent = '📋 ' + (name || 'Programas');
+  setBrand(name || 'Programas');
+}
+function openMoreSheet(items) {
+  const close = () => { dlg.close(); dlg.remove(); };
+  const dlg = h('dialog', { class: 'sheet', onclick: e => { if (e.target === dlg) close(); } },
+    h('div', { class: 'grab' }),
+    items.map(([v, t, n]) => h('button', { class: 'item' + (isActiveView(v) ? ' active' : ''), onclick: () => { close(); go({ name: v }); } },
+      icon(v, 22), t, badge(n))));
+  document.body.append(dlg); dlg.showModal();
 }
 
 function render() {
   if (FB_CONFIG && !(nube.acceso && nube.listo)) return; // las pantallas de acceso se dibujan aparte
-  if (!navItems().some(([v]) => v === view.name || (view.name === 'edit' && v === 'list'))) view = { name: 'list' };
-  buildNav();
+  const items = navItems();
+  if (!items.some(([v]) => isActiveView(v))) view = { name: items[0][0] };
+  buildNav(items);
   const app = document.getElementById('app');
   const program = !FB_CONFIG || can('programa');
+  if (view.name === 'inicio') return app.replaceChildren(renderHome());
   if (view.name === 'report') return app.replaceChildren(renderReport());
   if (view.name === 'users') return app.replaceChildren(renderUsers());
   if (view.name === 'anuncios') { app.replaceChildren(renderAnnouncements()); return buildNav(); }
@@ -2508,7 +2674,6 @@ function renderList() {
     h('div', { class: 'row spread', style: { marginBottom: '14px' } },
       h('div', null, h('h1', null, 'Semanas'), h('p', { class: 'sub', style: { margin: 0 } }, 'Programas de la reunión con sus asignaciones.')),
       pdfBtn),
-    unreadBanner(),
     FB_CONFIG && nube.me.perfil ? nextAssignmentCard(publicWeeks()) : null,
     location.protocol === 'file:' ? h('div', { class: 'notice warn' },
       'Abriste la app directamente. Para que busque las guías en jw.org, ciérrala y ábrela con el archivo “Programas.bat”.') : null,
