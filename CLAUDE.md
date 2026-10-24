@@ -32,6 +32,11 @@ App para organizar las asignaciones de la reunión semanal Vida y Ministerio Cri
 - En pantallas angostas el panel de sugerencias se mueve debajo de la asignación con foco.
 - `savePDF()`: en el celular abre Compartir (WhatsApp…); en la PC descarga.
 
+## Territorios (1.8.0)
+- Mapa con Leaflet 1.9.4 (`vendor/leaflet`, se carga al abrir la sección) y OpenStreetMap; capa Satélite de Esri. QR con `vendor/qrcode.js` (qrcode-generator).
+- `territorios/{id}`: numero, nombre, notas, coords (JSON de [[lat, lng]]), estado (disponible|asignado|terminado), asignadoA, desde, historial. Los ve cualquier miembro; los cambia la función `territorios`.
+- QR: `WEB_URL#ver&n=…&t=…&p=<polilínea codificada>`. `renderSharedTerritory()` lo muestra sin Firebase ni sesión. Si se redibuja la zona, hay que reimprimir el QR.
+
 ## Cuentas de la congregación (1.7.0)
 - Función `cuentas` (no da anuncios ni directorio). `cuentas/{id}`: fecha, tipo (entrada|salida|transferencia), categoria (`CATS`), descripcion, monto, fondo (caja|banco; en transferencias es el de origen), por, creado. `cuentasConfig/inicial`: fecha, caja, banco.
 - Saldos = inicial + movimientos desde su fecha (`effect()`). Avisa lo de la obra mundial recibido y no enviado. Hecho sin ver las hojas S-26/S-30 de la congregación: ajustar categorías si usan otras.

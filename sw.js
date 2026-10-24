@@ -1,6 +1,6 @@
 // Guarda la app en el celular para que abra rápido y funcione sin internet.
 // Sube el número de versión cada vez que cambies index.html.
-const CACHE = 'programas-v11';
+const CACHE = 'programas-v12';
 const FILES = [
   './',
   './index.html',
@@ -9,6 +9,9 @@ const FILES = [
   './icon.svg',
   './icon.png',
   './vendor/jspdf.umd.min.js',
+  './vendor/leaflet/leaflet.js',
+  './vendor/leaflet/leaflet.css',
+  './vendor/qrcode.js',
 ];
 
 self.addEventListener('install', e => {

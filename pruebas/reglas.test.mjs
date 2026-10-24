@@ -161,6 +161,22 @@ test('cuentas: solo la función "Cuentas" y el coordinador', async () => {
   await assertFails(getDoc(cdoc(db('pub'), 'cuentas', 'm1')));
 });
 
+test('territorios: los ve cualquier miembro, los cambia la función "Territorios"', async () => {
+  await assertSucceeds(updateDoc(cdoc(db('admin'), 'miembros', 'pub'), { permisos: ['territorios'] }));
+  const terr = { numero: '12', nombre: 'Centro', notas: '', coords: '[[19.43,-99.13],[19.44,-99.13],[19.44,-99.12]]', estado: 'disponible', asignadoA: '', desde: null, historial: [] };
+  await assertSucceeds(setDoc(cdoc(db('pub'), 'territorios', 't1'), terr));
+  await assertSucceeds(updateDoc(cdoc(db('pub'), 'territorios', 't1'), { estado: 'asignado', asignadoA: 'Grupo 2', desde: '2026-10-24' }));
+  await assertSucceeds(getDoc(cdoc(db('secre'), 'territorios', 't1')));
+  await assertFails(updateDoc(cdoc(db('secre'), 'territorios', 't1'), { estado: 'terminado' }));
+  await assertFails(setDoc(cdoc(db('pub'), 'territorios', 't2'), { ...terr, estado: 'perdido' }));
+  await assertFails(setDoc(cdoc(db('pub'), 'territorios', 't2'), { ...terr, numero: '' }));
+  await assertFails(getDoc(cdoc(db('pub'), 'cuentas', 'm1'))); // "Territorios" no da las cuentas
+  await assertFails(getDoc(cdoc(db('otro'), 'territorios', 't1')));
+  await assertSucceeds(updateDoc(cdoc(db('admin'), 'miembros', 'pub'), { permisos: [] }));
+  await assertSucceeds(getDoc(cdoc(db('pub'), 'territorios', 't1')));
+  await assertFails(deleteDoc(cdoc(db('pub'), 'territorios', 't1')));
+});
+
 test('el coordinador puede hacer coordinador a otro; alguien de fuera no ve nada', async () => {
   const a = db('admin'), o = db('otro');
   await assertSucceeds(updateDoc(cdoc(a, 'miembros', 'pub'), { admin: true }));

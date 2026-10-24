@@ -214,6 +214,10 @@
   .urow .info { flex: 1; min-width: 180px; }
   .code { font: 700 22px ui-monospace, Consolas, monospace; letter-spacing: .15em; }
   .totals { display: flex; gap: 18px; flex-wrap: wrap; margin: 4px 0 10px; font-size: 14px; }
+  /* Número de cada territorio sobre el mapa */
+  .leaflet-tooltip.terr-label { background: rgba(255,255,255,.85); border: 0; box-shadow: none; color: #111; font-weight: 700; padding: 0 4px; }
+  .leaflet-tooltip.terr-label::before { display: none; }
+  .leaflet-container { font: inherit; }
 </style>
 </head>
 <body>
@@ -229,7 +233,7 @@
 
 <script>
 const KEY = 'programas-app-v2';
-const APP_VERSION = '1.7.0'; // igual que "version" en package.json (publicar.ps1 lo revisa)
+const APP_VERSION = '1.8.0'; // igual que "version" en package.json (publicar.ps1 lo revisa)
 // Con FIREBASE_CONFIG (firebase-config.js) los datos viven en la nube de la congregación;
 // sin él, la app funciona como antes, solo en esta PC. "?emu" usa el Firebase local de prueba.
 const EMU = /[?&]emu\b/.test(location.search);
@@ -980,13 +984,14 @@ function openProfileDialog(prof, opts = {}) {
 // Desde la 1.3 los datos van por partes (perfiles/, familias/, semanas/, config/ajustes) en vez de
 // un solo privado/estado (que tenía límite de 1 MB); privado/estado queda como copia de la 1.2.
 const nube = { user: null, cong: null, congData: null, me: null, acceso: '', listo: false, publico: null,
-  miembros: [], anuncios: [], contactos: new Map(), cuentas: [], cuentasIni: null, sent: {}, ultimoPub: '', registro: null, inicial: null, unsubMe: null, unsubDatos: [] };
+  miembros: [], anuncios: [], contactos: new Map(), cuentas: [], cuentasIni: null, territorios: [], sent: {}, ultimoPub: '', registro: null, inicial: null, unsubMe: null, unsubDatos: [] };
 // Funciones que el coordinador puede dar a cada cuenta (el coordinador tiene todas)
 const PERMS = [
   ['programa', 'Programa VyM', 'Semanas, perfiles, familias y ajustes de la reunión'],
   ['secretario', 'Secretario', 'Informes de todos: verlos y capturarlos'],
   ['ancianos', 'Anciano', 'Anuncios y directorio (las otras funciones ya los incluyen)'],
   ['cuentas', 'Cuentas', 'Entradas, salidas y saldos de la congregación'],
+  ['territorios', 'Territorios', 'Dibujar, asignar y terminar territorios (todos pueden ver el mapa)'],
 ];
 // Colecciones que se guardan por documento: [colección, parte de state, permisos para leer]
 const COLLS = [['perfiles', 'profiles', ['programa', 'secretario', 'ancianos']], ['familias', 'families', ['programa']], ['semanas', 'programs', ['programa']]];
@@ -1100,7 +1105,7 @@ async function startCloud() {
   F.onAuthStateChanged(F.auth, async user => {
     stopListening(); if (nube.unsubMe) { nube.unsubMe(); nube.unsubMe = null; }
     Object.assign(nube, { user, cong: null, congData: null, me: null, acceso: '', listo: false, miembros: [], anuncios: [],
-      contactos: new Map(), cuentas: [], cuentasIni: null, publico: null, sent: {}, ultimoPub: '' });
+      contactos: new Map(), cuentas: [], cuentasIni: null, territorios: [], publico: null, sent: {}, ultimoPub: '' });
     if (!user) return renderAuth();
     screen(h('div', { class: 'card auth-card' }, h('p', { class: 'muted' }, 'Cargando tu cuenta…')));
     let joinErr = '';
@@ -1161,6 +1166,12 @@ function enterCongregation() {
   if (isElder()) listen('contactos', F.collection(F.db, 'congregaciones', nube.cong, 'contactos'), s => {
     nube.contactos = new Map(s.docs.map(d => [d.id, d.data()]));
     return view.name === 'directorio';
+  });
+  // Territorios: si el mapa está abierto se actualizan los colores ahí mismo, sin redibujar la página
+  listen('territorios', F.collection(F.db, 'congregaciones', nube.cong, 'territorios'), s => {
+    nube.territorios = s.docs.map(d => ({ id: d.id, ...d.data() }));
+    if (view.name === 'territorios' && terr && terr.refresh) { terr.refresh(); return false; }
+    return false;
   });
   if (can('cuentas')) {
     listen('cuentas', F.collection(F.db, 'congregaciones', nube.cong, 'cuentas'), s => {
@@ -1995,6 +2006,346 @@ function renderAccounts() {
         h('button', { class: 'btn small', onclick: openInitialDialog }, `Saldo inicial (${fmtShort(ini.fecha)})`))));
 }
 
+// ---------- territorios (todos ven el mapa; la función "Territorios" los cambia) ----------
+// Mapa con Leaflet y OpenStreetMap (vendor/leaflet). Cada territorio: territorios/{id} con
+// numero, nombre, notas, coords (JSON de [[lat, lng], …]), estado, asignadoA, desde
+// (fecha del estado actual) e historial [{ quien, desde, hasta }].
+const WEB_URL = 'https://becker9824.github.io/programas/';
+const TERR = {
+  disponible: { label: 'Disponible', color: '#1b9e4b' },
+  asignado: { label: 'Asignado', color: '#e08a00' },
+  terminado: { label: 'Terminado', color: '#2f6fd6' },
+};
+const byNumero = (a, b) => (a.numero || '').localeCompare(b.numero || '', 'es', { numeric: true });
+let terr = null; // mapa abierto: { L, map, group, selected, draw, refresh }
+
+function loadScript(src, css) {
+  return (loadScript[src] = loadScript[src] || new Promise((res, rej) => {
+    if (css) document.head.append(h('link', { rel: 'stylesheet', href: css }));
+    document.head.append(h('script', { src, onload: () => res(), onerror: () => { loadScript[src] = null; rej(new Error('No se pudo cargar ' + src)); } }));
+  }));
+}
+const loadLeaflet = () => loadScript('vendor/leaflet/leaflet.js', 'vendor/leaflet/leaflet.css').then(() => window.L);
+const loadQR = () => loadScript('vendor/qrcode.js').then(() => window.qrcode);
+
+// Polilínea codificada (el formato de Google): las coordenadas caben en el enlace del QR
+function encodePoly(points) {
+  let out = '', pl = 0, pg = 0;
+  const enc = v => { v = v < 0 ? ~(v << 1) : v << 1; let s = ''; while (v >= 0x20) { s += String.fromCharCode((0x20 | (v & 0x1f)) + 63); v >>= 5; } return s + String.fromCharCode(v + 63); };
+  for (const [lat, lng] of points) { const a = Math.round(lat * 1e5), b = Math.round(lng * 1e5); out += enc(a - pl) + enc(b - pg); pl = a; pg = b; }
+  return out;
+}
+function decodePoly(str) {
+  const pts = []; let i = 0, lat = 0, lng = 0;
+  const dec = () => { let r = 0, sh = 0, b; do { b = str.charCodeAt(i++) - 63; r |= (b & 0x1f) << sh; sh += 5; } while (b >= 0x20); return r & 1 ? ~(r >> 1) : r >> 1; };
+  while (i < str.length) { lat += dec(); lng += dec(); pts.push([lat / 1e5, lng / 1e5]); }
+  return pts;
+}
+const coordsOf = t => { try { return JSON.parse(t.coords || '[]'); } catch (e) { return []; } };
+const shareUrl = t => `${WEB_URL}#ver&n=${encodeURIComponent(t.numero)}&t=${encodeURIComponent(t.nombre || '')}&p=${encodeURIComponent(encodePoly(coordsOf(t)))}`;
+
+function baseMap(L, el) {
+  const map = L.map(el);
+  const streets = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap' }).addTo(map);
+  const sat = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19, attribution: 'Imágenes © Esri' });
+  L.control.layers({ 'Calles': streets, 'Satélite': sat }).addTo(map);
+  return map;
+}
+// "Dónde estoy": un punto azul en la ubicación del celular
+function locateButton(L, map) {
+  let dot = null;
+  return h('button', { class: 'btn small', onclick: () => {
+    if (!navigator.geolocation) return toast('Este equipo no puede dar su ubicación');
+    navigator.geolocation.getCurrentPosition(pos => {
+      const ll = [pos.coords.latitude, pos.coords.longitude];
+      if (dot) dot.remove();
+      dot = L.circleMarker(ll, { radius: 8, color: '#fff', weight: 2, fillColor: '#1a73e8', fillOpacity: 1 }).addTo(map);
+      map.setView(ll, Math.max(map.getZoom(), 17));
+    }, () => toast('No se pudo obtener tu ubicación. Revisa que la app tenga permiso.'), { enableHighAccuracy: true, timeout: 15000 });
+  } }, '📍 Dónde estoy');
+}
+
+function openQRDialog(t) {
+  const url = shareUrl(t), box = h('div', { style: { display: 'grid', placeItems: 'center' } }, 'Cargando…');
+  loadQR().then(qrcode => { const q = qrcode(0, 'M'); q.addData(url); q.make(); box.innerHTML = q.createSvgTag({ cellSize: 5, margin: 2, scalable: true }); box.firstChild.style.width = '240px'; box.firstChild.style.background = '#fff'; })
+    .catch(() => { box.textContent = 'No se pudo crear el QR.'; });
+  const close = () => { dlg.close(); dlg.remove(); };
+  const dlg = h('dialog', { class: 'dlg' },
+    h('div', { class: 'dlg-body' }, h('h3', null, `Territorio ${t.numero}${t.nombre ? ' · ' + t.nombre : ''}`), box,
+      h('p', { class: 'muted small-text' }, 'Al escanearlo se abre la zona en el mapa, sin iniciar sesión. Si cambias el dibujo de la zona, vuelve a imprimir el QR.')),
+    h('div', { class: 'dlg-foot' },
+      h('button', { class: 'btn', onclick: () => navigator.clipboard.writeText(url).then(() => toast('Enlace copiado')) }, 'Copiar enlace'),
+      navigator.share ? h('button', { class: 'btn', onclick: () => navigator.share({ title: `Territorio ${t.numero}`, url }).catch(() => {}) }, 'Compartir') : null,
+      h('button', { class: 'btn primary', onclick: close }, 'Cerrar')));
+  document.body.append(dlg); dlg.showModal();
+}
+
+// Tarjetas para imprimir: 6 por hoja, con número, nombre, notas y QR
+async function territoryCardsPDF(list) {
+  const J = window.jspdf && window.jspdf.jsPDF;
+  if (!J) return toast('No se pudo crear el PDF.');
+  let qrcode;
+  try { qrcode = await loadQR(); } catch (e) { return toast('No se pudo crear el QR.'); }
+  const doc = new J({ unit: 'mm', format: state.settings.paper === 'a4' ? 'a4' : 'letter' });
+  const W = doc.internal.pageSize.getWidth(), H = doc.internal.pageSize.getHeight(), M = 10;
+  const cw = (W - M * 3) / 2, ch = (H - M * 4) / 3;
+  list.forEach((t, i) => {
+    if (i && i % 6 === 0) doc.addPage();
+    const x = M + (i % 2) * (cw + M), y = M + (Math.floor(i / 2) % 3) * (ch + M);
+    doc.setDrawColor(150); doc.setLineWidth(0.3); doc.roundedRect(x, y, cw, ch, 3, 3);
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(22); doc.setTextColor(0); doc.text(`Territorio ${t.numero}`, x + 6, y + 12);
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(12);
+    if (t.nombre) doc.text(doc.splitTextToSize(t.nombre, cw - 52), x + 6, y + 20);
+    if (t.notas) { doc.setFontSize(9); doc.setTextColor(90); doc.text(doc.splitTextToSize(t.notas, cw - 52).slice(0, 8), x + 6, y + 30); }
+    const q = qrcode(0, 'M'); q.addData(shareUrl(t)); q.make();
+    const n = q.getModuleCount(), size = 40, cell = size / n, qx = x + cw - size - 5, qy = y + 6;
+    doc.setFillColor(0);
+    for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) if (q.isDark(r, c)) doc.rect(qx + c * cell, qy + r * cell, cell + 0.02, cell + 0.02, 'F');
+    doc.setFontSize(8); doc.setTextColor(90); doc.text('Escanea para ver la zona en el mapa', qx + size / 2, qy + size + 4, { align: 'center' });
+  });
+  savePDF(doc, list.length === 1 ? `Territorio ${list[0].numero}` : `Tarjetas de territorio`);
+}
+
+function openTerritoryDataDialog(t, coords) {
+  const num = h('input', { type: 'text', maxlength: 20, value: t ? t.numero : '', placeholder: 'Ej.: 12', style: { width: '120px' } });
+  const name = h('input', { type: 'text', maxlength: 100, value: t ? t.nombre : '', placeholder: 'Ej.: Colonia Centro' });
+  const notes = h('textarea', { rows: 3, maxlength: 1000, placeholder: 'Opcional: calles que abarca, indicaciones…' }, t ? t.notas : '');
+  const err = h('div', { class: 'err' });
+  const close = () => { dlg.close(); dlg.remove(); };
+  const dlg = h('dialog', { class: 'dlg' },
+    h('div', { class: 'dlg-body' }, h('h3', null, t ? `Territorio ${t.numero}` : 'Nuevo territorio'),
+      h('div', { class: 'row', style: { gap: '16px', alignItems: 'flex-end' } }, h('label', { class: 'field' }, 'Número', num), h('label', { class: 'field', style: { flex: 1 } }, 'Nombre', name)),
+      h('label', { class: 'field' }, 'Notas', notes), err),
+    h('div', { class: 'dlg-foot' },
+      h('button', { class: 'btn', onclick: close }, 'Cancelar'),
+      h('button', { class: 'btn primary', onclick: async e => {
+        const numero = squash(num.value);
+        if (!numero) return err.textContent = 'Escribe el número del territorio.';
+        if (nube.territorios.some(x => x.numero === numero && (!t || x.id !== t.id))) return err.textContent = 'Ya hay un territorio con ese número.';
+        const data = { numero, nombre: squash(name.value), notas: notes.value.trim() };
+        e.target.disabled = true;
+        try {
+          if (t) await F.updateDoc(congRef('territorios', t.id), coords ? { ...data, coords: JSON.stringify(coords) } : data);
+          else {
+            const r = await F.addDoc(F.collection(F.db, 'congregaciones', nube.cong, 'territorios'),
+              { ...data, coords: JSON.stringify(coords), estado: 'disponible', asignadoA: '', desde: todayISO(), historial: [] });
+            if (terr) terr.selected = r.id;
+          }
+          toast('Territorio guardado'); close();
+        } catch (ex) { err.textContent = errMsg(ex); e.target.disabled = false; }
+      } }, 'Guardar')));
+  document.body.append(dlg); dlg.showModal(); (t ? name : num).focus();
+}
+
+function openAssignDialog(t) {
+  const who = h('input', { type: 'text', maxlength: 100, list: 'profiles-list', placeholder: 'Ej.: Grupo 3 o el nombre del capitán' });
+  const since = h('input', { type: 'date', value: todayISO() });
+  const close = () => { dlg.close(); dlg.remove(); };
+  const dlg = h('dialog', { class: 'dlg' },
+    h('div', { class: 'dlg-body' }, h('h3', null, `Asignar territorio ${t.numero}`),
+      h('label', { class: 'field' }, '¿A quién?', who), h('label', { class: 'field' }, 'Desde', since)),
+    h('div', { class: 'dlg-foot' },
+      h('button', { class: 'btn', onclick: close }, 'Cancelar'),
+      h('button', { class: 'btn primary', onclick: async () => {
+        if (!squash(who.value)) return who.focus();
+        await setTerritoryState(t, 'asignado', squash(who.value), since.value || todayISO()); close();
+      } }, 'Asignar')));
+  refreshDatalist();
+  document.body.append(dlg); dlg.showModal(); who.focus();
+}
+
+// Cambia el estado; al dejar de estar asignado, queda en el historial quién lo tuvo
+async function setTerritoryState(t, estado, asignadoA = '', desde = todayISO()) {
+  const historial = [...(t.historial || [])];
+  if (t.estado === 'asignado' && estado !== 'asignado') historial.push({ quien: t.asignadoA, desde: t.desde || '', hasta: desde });
+  try {
+    await F.updateDoc(congRef('territorios', t.id), { estado, asignadoA, desde, historial: historial.slice(-50) });
+    toast(`Territorio ${t.numero}: ${TERR[estado].label.toLowerCase()}`);
+  } catch (e) { toast(errMsg(e)); }
+}
+
+function renderTerritories() {
+  const editor = can('territorios');
+  if (terr && terr.map) terr.map.remove();
+  terr = { selected: terr && terr.selected, filter: (terr && terr.filter) || 'todos' };
+  const mapEl = h('div', { style: { height: '58vh', minHeight: '320px', borderRadius: '12px', zIndex: 0 } });
+  const drawBar = h('div');
+  const panel = h('div');
+  const list = h('div');
+  const counts = h('div', { class: 'totals' });
+  const tools = h('div', { class: 'row' });
+
+  loadLeaflet().then(L => {
+    const map = baseMap(L, mapEl);
+    Object.assign(terr, { L, map, group: L.featureGroup().addTo(map) });
+    map.on('click', e => { if (terr.draw) addPoint(e.latlng); });
+    let saved = null;
+    try { saved = JSON.parse(localStorage.getItem('terr-vista-' + nube.cong)); } catch (e) {}
+    map.on('moveend', () => { try { localStorage.setItem('terr-vista-' + nube.cong, JSON.stringify([map.getCenter(), map.getZoom()])); } catch (e) {} });
+    drawLayers();
+    if (saved) map.setView(saved[0], saved[1]);
+    else if (terr.group.getLayers().length) map.fitBounds(terr.group.getBounds(), { padding: [20, 20] });
+    else { map.setView([23.6, -102.5], 5); map.locate({ setView: true, maxZoom: 16 }); }
+    tools.prepend(locateButton(L, map));
+    setTimeout(() => map.invalidateSize(), 50); // por si la página aún acomodaba su tamaño
+  }).catch(() => { mapEl.textContent = 'No se pudo cargar el mapa. Revisa tu conexión a internet.'; });
+
+  function drawLayers() {
+    const L = terr.L;
+    terr.group.clearLayers();
+    for (const t of nube.territorios) {
+      const c = coordsOf(t);
+      if (c.length < 3) continue;
+      const sel = t.id === terr.selected, color = (TERR[t.estado] || TERR.disponible).color;
+      L.polygon(c, { color: sel ? '#000' : color, weight: sel ? 4 : 2, fillColor: color, fillOpacity: sel ? 0.5 : 0.35 })
+        .bindTooltip(String(t.numero), { permanent: true, direction: 'center', className: 'terr-label' })
+        .on('click', ev => { if (terr.draw) return addPoint(ev.latlng); select(t.id, false); })
+        .addTo(terr.group);
+    }
+  }
+
+  function select(id, zoom = true) {
+    terr.selected = id;
+    const t = nube.territorios.find(x => x.id === id);
+    if (zoom && t && terr.map && coordsOf(t).length >= 3) terr.map.fitBounds(terr.L.polygon(coordsOf(t)).getBounds(), { padding: [40, 40], maxZoom: 18 });
+    refresh();
+    if (window.innerWidth < 1000) panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+
+  // ----- dibujar una zona tocando sus esquinas -----
+  function startDraw(t) {
+    if (!terr.map) return;
+    terr.draw = { t, points: [], shape: null, dots: [] };
+    terr.map.getContainer().style.cursor = 'crosshair';
+    drawBarUpdate();
+  }
+  function addPoint(ll) {
+    const d = terr.draw;
+    d.points.push([ll.lat, ll.lng]);
+    d.dots.push(terr.L.circleMarker(ll, { radius: 5, color: '#000', fillColor: '#fff', fillOpacity: 1, weight: 2 }).addTo(terr.map));
+    redrawShape(); drawBarUpdate();
+  }
+  function redrawShape() {
+    const d = terr.draw;
+    if (d.shape) d.shape.remove();
+    d.shape = d.points.length > 1 ? terr.L.polygon(d.points, { color: '#000', dashArray: '6 4', weight: 2, fillOpacity: 0.15 }).addTo(terr.map) : null;
+  }
+  function endDraw() {
+    const d = terr.draw;
+    if (!d) return;
+    if (d.shape) d.shape.remove();
+    d.dots.forEach(x => x.remove());
+    terr.draw = null;
+    terr.map.getContainer().style.cursor = '';
+    drawBarUpdate();
+  }
+  function drawBarUpdate() {
+    const d = terr.draw;
+    drawBar.replaceChildren(d ? h('div', { class: 'notice warn row spread', style: { margin: '0 0 8px' } },
+      h('span', null, d.t ? `Redibujando el territorio ${d.t.numero}: ` : '', `Toca las esquinas de la zona en orden (${d.points.length} puesta${d.points.length === 1 ? '' : 's'}).`),
+      h('span', { class: 'row' },
+        h('button', { class: 'btn small', disabled: !d.points.length, onclick: () => { d.points.pop(); d.dots.pop().remove(); redrawShape(); drawBarUpdate(); } }, '↶ Deshacer'),
+        h('button', { class: 'btn small', onclick: endDraw }, 'Cancelar'),
+        h('button', { class: 'btn small primary', disabled: d.points.length < 3, onclick: () => {
+          const pts = d.points.map(([a, b]) => [+a.toFixed(6), +b.toFixed(6)]), t = d.t;
+          endDraw();
+          if (t) F.updateDoc(congRef('territorios', t.id), { coords: JSON.stringify(pts) }).then(() => toast('Zona actualizada')).catch(e => toast(errMsg(e)));
+          else openTerritoryDataDialog(null, pts);
+        } }, 'Listo'))) : '');
+  }
+
+  // ----- panel del territorio elegido y lista -----
+  function refresh() {
+    if (terr.map) drawLayers();
+    const all = [...nube.territorios].sort(byNumero), today = todayISO();
+    const n = k => all.filter(t => t.estado === k).length;
+    counts.replaceChildren(...Object.entries(TERR).map(([k, v]) => h('span', null,
+      h('span', { style: { display: 'inline-block', width: '10px', height: '10px', borderRadius: '50%', background: v.color, marginRight: '5px' } }),
+      h('strong', null, n(k)), ' ', v.label.toLowerCase() + (n(k) === 1 ? '' : 's'))));
+    const t = all.find(x => x.id === terr.selected);
+    const since = t && t.desde ? daysBetween(t.desde, today) : null;
+    panel.replaceChildren(t ? h('div', { class: 'card', style: { padding: '14px', marginTop: '12px' } },
+      h('div', { class: 'row spread', style: { alignItems: 'flex-start' } },
+        h('div', null,
+          h('strong', { style: { fontSize: '18px' } }, `Territorio ${t.numero}`, t.nombre ? ` · ${t.nombre}` : ''),
+          h('div', { style: { marginTop: '4px' } },
+            h('span', { class: 'badge', style: { background: TERR[t.estado].color, color: '#fff' } }, TERR[t.estado].label),
+            ' ', t.estado === 'asignado' ? `a ${t.asignadoA}` : '',
+            since != null ? h('span', { class: 'muted small-text' }, ` · desde el ${fmtShort(t.desde)} (${since} días)`) : null),
+          t.notas ? h('div', { class: 'small-text', style: { marginTop: '6px' } }, richText(t.notas)) : null),
+        h('button', { class: 'btn small', onclick: () => { terr.selected = null; refresh(); } }, '✕')),
+      h('div', { class: 'row', style: { marginTop: '10px' } },
+        editor && t.estado !== 'asignado' ? h('button', { class: 'btn small primary', onclick: () => openAssignDialog(t) }, 'Asignar') : null,
+        editor && t.estado === 'asignado' ? h('button', { class: 'btn small primary', onclick: () => setTerritoryState(t, 'terminado') }, '✓ Terminado') : null,
+        editor && t.estado !== 'disponible' ? h('button', { class: 'btn small', onclick: () => setTerritoryState(t, 'disponible') }, 'Dejar disponible') : null,
+        h('button', { class: 'btn small', onclick: () => openQRDialog(t) }, '▦ QR'),
+        h('button', { class: 'btn small', onclick: () => territoryCardsPDF([t]) }, '🖨 Tarjeta'),
+        editor ? h('button', { class: 'btn small', onclick: () => openTerritoryDataDialog(t) }, 'Editar datos') : null,
+        editor ? h('button', { class: 'btn small', onclick: () => startDraw(t) }, 'Redibujar zona') : null,
+        editor ? h('button', { class: 'btn small danger', onclick: async () => {
+          if (!confirm(`¿Borrar el territorio ${t.numero}? Se pierde también su historial.`)) return;
+          try { await F.deleteDoc(congRef('territorios', t.id)); terr.selected = null; toast('Territorio borrado'); } catch (e) { toast(errMsg(e)); }
+        } }, 'Borrar') : null),
+      (t.historial || []).length ? h('div', { class: 'hist', style: { marginTop: '10px' } },
+        h('strong', null, 'Historial'),
+        [...t.historial].reverse().map(x => h('div', null, h('span', null, x.quien || '—'), h('span', { class: 'muted' }, `${x.desde ? fmtShort(x.desde) : '?'} – ${x.hasta ? fmtShort(x.hasta) : '?'}`)))) : null) : '');
+    const shown = all.filter(t => terr.filter === 'todos' || t.estado === terr.filter);
+    list.replaceChildren(
+      h('div', { class: 'chips', style: { maxWidth: '520px' } }, [['todos', 'Todos'], ...Object.entries(TERR).map(([k, v]) => [k, v.label + 's'])].map(([k, label]) =>
+        h('button', { class: terr.filter === k ? 'on' : '', onclick: () => { terr.filter = k; refresh(); } }, label))),
+      h('div', { class: 'tablewrap' }, h('table', { class: 'stats' },
+        h('thead', null, h('tr', null, ['Nº', 'Nombre', 'Estado', 'Asignado a', 'Desde'].map(x => h('th', null, x)))),
+        h('tbody', null, shown.length ? shown.map(t => h('tr', { onclick: () => select(t.id), style: t.id === terr.selected ? { background: 'var(--surface-2)' } : null },
+          h('td', null, h('strong', null, t.numero)), h('td', null, t.nombre || '—'),
+          h('td', null, h('span', { class: 'badge', style: { background: TERR[t.estado].color, color: '#fff' } }, TERR[t.estado].label)),
+          h('td', null, t.estado === 'asignado' ? t.asignadoA : '—'),
+          h('td', { class: 'small-text' }, t.desde ? `${fmtShort(t.desde)} (${daysBetween(t.desde, today)} d)` : '—')))
+          : h('tr', null, h('td', { colspan: 5, class: 'empty' }, all.length ? 'Ninguno con este filtro.' : editor ? 'Todavía no hay territorios. Toca “+ Nuevo territorio” y dibuja su zona en el mapa.' : 'Todavía no hay territorios.'))))));
+  }
+  terr.refresh = refresh;
+  refresh();
+
+  return h('div', null,
+    h('div', { class: 'row spread', style: { marginBottom: '10px' } },
+      h('div', null, h('h1', null, 'Territorios'),
+        h('p', { class: 'sub', style: { margin: 0 } }, editor ? 'Toca un territorio en el mapa o en la lista para asignarlo o terminarlo.' : 'Toca un territorio para ver sus datos y su QR.')),
+      tools),
+    counts,
+    drawBar,
+    mapEl,
+    panel,
+    h('div', { class: 'row spread', style: { margin: '18px 0 8px' } },
+      h('h2', { class: 'group', style: { margin: 0 } }, 'Lista'),
+      h('div', { class: 'row' },
+        editor ? h('button', { class: 'btn small primary', onclick: () => startDraw(null) }, '+ Nuevo territorio') : null,
+        h('button', { class: 'btn small', onclick: () => {
+          const all = [...nube.territorios].sort(byNumero).filter(t => terr.filter === 'todos' || t.estado === terr.filter);
+          if (all.length) territoryCardsPDF(all); else toast('No hay territorios para imprimir');
+        } }, '🖨 Tarjetas con QR (PDF)'))),
+    list);
+}
+
+// Lo que abre el QR de una tarjeta: solo esa zona en el mapa, sin iniciar sesión
+function renderSharedTerritory() {
+  const q = new URLSearchParams(location.hash.slice(1));
+  const pts = decodePoly(q.get('p') || ''), numero = q.get('n') || '', nombre = q.get('t') || '';
+  document.title = `Territorio ${numero}`;
+  document.querySelector('.brand').textContent = `📋 Territorio ${numero}${nombre ? ' · ' + nombre : ''}`;
+  const mapEl = h('div', { style: { height: 'calc(100vh - 170px)', minHeight: '320px', borderRadius: '12px' } });
+  const tools = h('div', { class: 'row', style: { marginBottom: '10px' } });
+  document.getElementById('app').replaceChildren(tools, mapEl);
+  loadLeaflet().then(L => {
+    const map = baseMap(L, mapEl);
+    if (pts.length >= 3) {
+      const poly = L.polygon(pts, { color: '#e08a00', weight: 3, fillOpacity: 0.25 }).addTo(map);
+      map.fitBounds(poly.getBounds(), { padding: [30, 30], maxZoom: 18 });
+      const c = poly.getBounds().getCenter();
+      tools.append(locateButton(L, map),
+        h('a', { class: 'btn small', href: `https://www.google.com/maps/search/?api=1&query=${c.lat},${c.lng}`, target: '_blank', rel: 'noopener', style: { textDecoration: 'none' } }, '🧭 Cómo llegar'));
+    } else mapEl.textContent = 'Este enlace no tiene una zona válida.';
+  }).catch(() => { mapEl.textContent = 'No se pudo cargar el mapa. Revisa tu conexión a internet.'; });
+}
+
 // ---------- usuarios (solo admins) ----------
 function renderUsers() {
   const ms = [...nube.miembros].sort(byNombre);
@@ -2095,6 +2446,7 @@ function navItems() {
   items.push(['anuncios', unread ? `Anuncios (${unread})` : 'Anuncios']);
   if (isElder()) items.push(['directorio', 'Directorio']);
   if (can('cuentas')) items.push(['cuentas', 'Cuentas']);
+  items.push(['territorios', 'Territorios']);
   items.push(['settings', 'Ajustes']);
   return items;
 }
@@ -2116,6 +2468,7 @@ function render() {
   if (view.name === 'anuncios') { app.replaceChildren(renderAnnouncements()); return buildNav(); }
   if (view.name === 'directorio') return app.replaceChildren(renderDirectory());
   if (view.name === 'cuentas') return app.replaceChildren(renderAccounts());
+  if (view.name === 'territorios') return app.replaceChildren(renderTerritories());
   if (view.name === 'settings') return app.replaceChildren(program ? renderSettings() : renderPubSettings());
   if (!program) return app.replaceChildren(renderPubList());
   refreshDatalist();
@@ -2629,7 +2982,8 @@ function startJw() {
   if (Date.now() - state.lastSync > 12 * 36e5 || !state.programs.some(p => p.date >= mondayOf(todayISO()))) syncGuides(false);
   else ensureSongTitles(state.programs);
 }
-if (FB_CONFIG) startCloud();
+if (/^#ver&/.test(location.hash)) renderSharedTerritory(); // QR de una tarjeta de territorio
+else if (FB_CONFIG) startCloud();
 else { render(); startJw(); }
 if ('serviceWorker' in navigator && location.protocol === 'https:') {
   // Cuando llega una versión nueva de la web, se recarga una vez para usarla

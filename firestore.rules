@@ -18,7 +18,7 @@ service cloud.firestore {
     function isElder(c) { return can(c, 'ancianos') || can(c, 'programa') || can(c, 'secretario'); }
     function cong(c) { return get(/databases/$(db)/documents/congregaciones/$(c)).data; }
     function only(keys) { return request.resource.data.keys().hasOnly(keys); }
-    function validPerms(d) { return !('permisos' in d) || (d.permisos is list && d.permisos.hasOnly(['programa', 'secretario', 'ancianos', 'cuentas'])); }
+    function validPerms(d) { return !('permisos' in d) || (d.permisos is list && d.permisos.hasOnly(['programa', 'secretario', 'ancianos', 'cuentas', 'territorios'])); }
 
     // Qué congregación usa cada cuenta (solo la propia persona)
     match /usuarios/{uid} {
@@ -94,6 +94,22 @@ service cloud.firestore {
       }
       match /cuentasConfig/{doc} {
         allow read, write: if can(c, 'cuentas');
+      }
+      // Territorios: los ve cualquier miembro activo (el mapa no tiene datos personales);
+      // los cambia quien tiene la función "Territorios". coords = JSON de [[lat, lng], …].
+      match /territorios/{id} {
+        allow read: if isActive(c);
+        allow delete: if can(c, 'territorios');
+        allow create, update: if can(c, 'territorios')
+          && only(['numero', 'nombre', 'notas', 'coords', 'estado', 'asignadoA', 'desde', 'historial'])
+          && request.resource.data.numero is string && request.resource.data.numero.size() > 0 && request.resource.data.numero.size() <= 20
+          && request.resource.data.nombre is string && request.resource.data.nombre.size() <= 100
+          && request.resource.data.notas is string && request.resource.data.notas.size() <= 1000
+          && request.resource.data.coords is string && request.resource.data.coords.size() <= 30000
+          && request.resource.data.estado in ['disponible', 'asignado', 'terminado']
+          && request.resource.data.asignadoA is string && request.resource.data.asignadoA.size() <= 100
+          && (request.resource.data.desde == null || (request.resource.data.desde is string && request.resource.data.desde.matches('[0-9]{4}-[0-9]{2}-[0-9]{2}')))
+          && request.resource.data.historial is list && request.resource.data.historial.size() <= 50;
       }
       // Anuncios: los leen todos los miembros activos; los publican los ancianos.
       match /anuncios/{id} {

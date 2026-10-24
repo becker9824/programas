@@ -84,6 +84,10 @@ async function selfTest(win) {
     out.cancion = await (await fetch('/jw/titulo?path=' + encodeURIComponent('/es/wol/d/r4/lp-s/1102016821'))).text();
     localStorage.setItem('prueba', '1'); out.guardado = localStorage.getItem('prueba') === '1'; localStorage.removeItem('prueba');
     if (FB_CONFIG) { for (let i = 0; i < 50 && !F; i++) await new Promise(r => setTimeout(r, 200)); out.firebase = !!F; }
+    out.mapa = await loadLeaflet().then(L => !!L.map, () => false);
+    out.qr = await loadQR().then(q => typeof q === 'function', () => false);
+    out.teselas = await new Promise(res => { const i = new Image(); i.onload = () => res(i.width); i.onerror = () => res('error');
+      i.src = 'https://tile.openstreetmap.org/5/7/14.png'; });
     return out;
   })()`);
   console.log('PRUEBA ' + JSON.stringify(result));
