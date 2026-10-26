@@ -43,6 +43,7 @@ App para organizar las asignaciones de la reunión semanal Vida y Ministerio Cri
 - Regla de descanso: `settings.restDays` (28) días antes o después de otra asignación (`contextFor().recent`); en las sugerencias salen aparte como “Descansando”.
 - En pantallas angostas el panel de sugerencias se mueve debajo de la asignación con foco.
 - `savePDF()`: en el celular abre Compartir (WhatsApp…); en la PC descarga.
+- Filtros de sugerencias (1.10.0): `settings.filters` [{nombre, palabras, min, max, sexo}] (predeterminados en `DEFAULT_FILTERS`, se editan en Ajustes). `ruleFor(row)` busca las palabras (completas, sin acentos) en título y descripción de cualquier parte; `candidatesFor()` ordena: cumple filtro, tiene privilegio, no descansa, más días sin participar. Botón "Sugerencias" del editor: propuesta bajo cada vacía con Aplicar / Otra y Aplicar todas; nunca asigna sin que el usuario lo pida.
 
 ## Territorios (1.8.0)
 - Mapa con Leaflet 1.9.4 (`vendor/leaflet`, se carga al abrir la sección) y OpenStreetMap; capa Satélite de Esri. QR con `vendor/qrcode.js` (qrcode-generator).

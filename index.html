@@ -245,6 +245,9 @@
   /* En pantallas angostas las sugerencias se muestran debajo de la asignación que se está llenando */
   .side.inline { position: static; margin: 4px 0 12px; border-color: var(--accent); }
   .side.inline .sugg { max-height: 45vh; }
+  /* Propuesta del botón "Sugerencias" debajo de una asignación vacía */
+  .propose { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 4px;
+    padding: 6px 8px; border-radius: 10px; background: var(--accent-2); font-size: 13px; }
   .auth { min-height: 72vh; display: grid; place-items: center; align-content: center; gap: 18px; }
   .auth-hero { text-align: center; display: grid; justify-items: center; gap: 6px; }
   .auth-hero h2 { margin: 6px 0 0; font-size: 26px; letter-spacing: -.01em; }
@@ -292,12 +295,19 @@
 
 <script>
 const KEY = 'programas-app-v2';
-const APP_VERSION = '1.9.0'; // igual que "version" en package.json (publicar.ps1 lo revisa)
+const APP_VERSION = '1.10.0'; // igual que "version" en package.json (publicar.ps1 lo revisa)
 // Con FIREBASE_CONFIG (firebase-config.js) los datos viven en la nube de la congregación;
 // sin él, la app funciona como antes, solo en esta PC. "?emu" usa el Firebase local de prueba.
 const EMU = /[?&]emu\b/.test(location.search);
 const FB_CONFIG = EMU ? { apiKey: 'demo-key', authDomain: 'localhost', projectId: 'demo-programas' } : window.FIREBASE_CONFIG;
 const OLD_PDF_TITLE = 'Reunión Vida y Ministerio Cristianos';
+// Filtros de sugerencias que trae la app (se pueden cambiar en Ajustes)
+const DEFAULT_FILTERS = [
+  { nombre: 'Escuela', palabras: 'escuela, colegio, secundaria, primaria, compañero de clase, compañera de clase, compañeros de clase, maestro, maestra, profesor, profesora, salón de clases, escolar', min: 8, max: 17, sexo: '' },
+  { nombre: 'Universidad', palabras: 'universidad, facultad, universitario, universitaria', min: 17, max: 30, sexo: '' },
+  { nombre: 'Trabajo', palabras: 'trabajo, compañero de trabajo, compañera de trabajo, jefe, jefa, empleado, empleada, cliente', min: 18, max: null, sexo: '' },
+  { nombre: 'Persona mayor', palabras: 'jubilado, jubilada, persona mayor, personas mayores, abuelo, abuela, edad avanzada', min: 50, max: null, sexo: '' },
+];
 const defaults = () => ({
   profiles: [], families: [], programs: [], songs: {}, missing: {}, lastSync: 0,
   settings: {
@@ -305,6 +315,7 @@ const defaults = () => ({
     pdfTitle: 'Programa para la reunión de entre semana', meetingDay: 2, startTime: '19:00', paper: 'letter',
     slipNote: 'En la Guía de actividades está la información para preparar su intervención. Repase también las indicaciones para la reunión Vida y Ministerio Cristianos.',
     slipFooter: '',
+    filters: DEFAULT_FILTERS.map(f => ({ ...f })),
   },
 });
 const SECTIONS = [
@@ -496,6 +507,31 @@ function privFor(row, slot) {
   return 'vida';
 }
 const canDo = (prof, priv) => !Array.isArray(prof.puede) || prof.puede.includes(priv);
+
+// Filtros de sugerencias: si el título o la descripción de una parte tiene alguna de las
+// palabras, se prefiere a quien tenga esa edad (y ese sexo, si se pone). Se editan en Ajustes.
+function ruleFor(row) {
+  const text = ' ' + norm(`${row.title || ''} ${row.detail || ''}`).replace(/[^a-z0-9ñ]+/g, ' ') + ' ';
+  return (state.settings.filters || []).find(f => (f.palabras || '').split(',')
+    .map(w => norm(w).replace(/[^a-z0-9ñ]+/g, ' ').trim()).filter(Boolean).some(w => text.includes(' ' + w + ' '))) || null;
+}
+const ruleText = f => [
+  f.min != null && f.max != null ? `${f.min} a ${f.max} años` : f.min != null ? `${f.min} años o más` : f.max != null ? `hasta ${f.max} años` : '',
+  f.sexo === 'M' ? 'hombres' : f.sexo === 'F' ? 'mujeres' : ''].filter(Boolean).join(', ');
+const fitsRule = (pr, f) => !f || ((f.min == null || (pr.age != null && pr.age >= f.min))
+  && (f.max == null || (pr.age != null && pr.age <= f.max)) && (!f.sexo || pr.sex === f.sexo));
+
+// Quiénes conviene poner en una asignación, en orden: cumplen el filtro, tienen el privilegio,
+// no están descansando y llevan más tiempo sin participar. reserved: ya usados en la semana.
+function candidatesFor(p, row, slot, ctx, reserved, partnerId) {
+  const priv = privFor(row, slot), rule = ruleFor(row), men = slotNeedsMen(row, slot);
+  const partner = row.helper === 'Ayudante' && partnerId ? profById(partnerId) : null;
+  return state.profiles
+    .filter(pr => !reserved.has(pr.id) && canDo(pr, priv) && !(men && pr.sex === 'F') && !ctx.recent.has(pr.id)
+      && (!partner || partner.sex === pr.sex || sameFamily(partner.id, pr.id)))
+    .map(pr => { const l = ctx.last.get(pr.id); return { pr, rule, fits: fitsRule(pr, rule), days: l ? daysBetween(l.q.date, p.date) : Infinity }; })
+    .sort((a, b) => (rule ? b.fits - a.fits : 0) || b.days - a.days || a.pr.name.localeCompare(b.pr.name, 'es'));
+}
 
 // Horario: canción y oración inicial 5 min, canción intermedia 4 min, 1 min de consejo tras cada
 // intervención de estudiante; la canción final queda a los 100 minutos del inicio.
@@ -2711,15 +2747,49 @@ function renderEditor(p) {
   const totalEl = h('span', { class: 'total' });
   const heading = h('div', { class: 'ph2' });
   const rebuild = () => { save(); build(); };
+  let suggesting = false, proposals = new Map();
+  const skips = new Map();
+  const suggestBar = h('div');
+
+  // Botón "Sugerencias": propone a alguien para cada asignación vacía (sin asignarlo).
+  // "Otra" pasa a la siguiente opción de esa asignación.
+  function computeProposals(ctx) {
+    proposals = new Map();
+    const reserved = new Set(slotsOf(p).map(x => x.pid).filter(Boolean));
+    for (const x of slotsOf(p)) {
+      if (x.pid) continue;
+      const key = x.row.id + '|' + x.slot;
+      const other = x.slot === 'b' ? x.row.a || (proposals.get(x.row.id + '|a') || {}).pr?.id : x.row.b;
+      const list = candidatesFor(p, x.row, x.slot, ctx, reserved, other);
+      const c = list.length ? list[(skips.get(key) || 0) % list.length] : null;
+      proposals.set(key, c);
+      if (c) reserved.add(c.pr.id);
+    }
+  }
+  function applyProposal(row, slot) {
+    const c = proposals.get(row.id + '|' + slot);
+    if (c) assign(row, slot, c.pr.id);
+  }
 
   function updateHints() {
     const ctx = contextFor(p);
     const counts = countsFor(p);
+    if (suggesting) computeProposals(ctx);
     body.querySelectorAll('input[data-slot]').forEach(inp => {
       const row = p.rows.find(r => r.id === inp.dataset.row), slot = inp.dataset.slot;
-      const hint = inp.nextElementSibling;
+      const hint = inp.nextElementSibling, line = hint.nextElementSibling;
       inp.classList.remove('s-dup', 's-recent', 's-warn');
       const pid = row[slot];
+      const c = suggesting && !pid ? proposals.get(row.id + '|' + slot) : undefined;
+      line.replaceChildren(c === undefined ? '' : c ? h('div', { class: 'propose' },
+        h('span', null, '✨ ', h('strong', null, c.pr.name),
+          h('span', { class: 'muted' }, [c.pr.age != null ? ` · ${c.pr.age} años` : '', c.days === Infinity ? ' · nunca' : ` · hace ${c.days} d`].join('')),
+          c.rule ? h('span', { class: 'tag-fam', style: c.fits ? null : { color: 'var(--orange)' }, title: c.fits ? 'Cumple el filtro' : 'Nadie disponible cumple el filtro' },
+            (c.fits ? '✓ ' : '≈ ') + c.rule.nombre) : null),
+        h('span', { class: 'row', style: { gap: '4px' } },
+          h('button', { class: 'btn small primary', onclick: () => applyProposal(row, slot) }, 'Aplicar'),
+          h('button', { class: 'btn small', onclick: () => { const k = row.id + '|' + slot; skips.set(k, (skips.get(k) || 0) + 1); updateHints(); } }, 'Otra')))
+        : h('div', { class: 'propose muted' }, '✨ Nadie disponible para sugerir'));
       if (!pid) { hint.textContent = ''; hint.className = 'hint'; return; }
       const st = statusFor(pid, p, ctx, counts, row, slot);
       hint.textContent = st.text; hint.className = 'hint ' + st.cls;
@@ -2727,6 +2797,18 @@ function renderEditor(p) {
     });
     const slots = slotsOf(p);
     totalEl.textContent = `${slots.filter(x => x.pid).length} de ${slots.length} asignaciones · termina aprox. a las ${fmtTime(timesFor(p).end)}`;
+    const n = [...proposals.values()].filter(Boolean).length, none = proposals.size - n;
+    suggestBar.replaceChildren(suggesting ? h('div', { class: 'notice row spread', style: { background: 'var(--accent-2)', color: 'var(--text)', margin: '10px 0 0' } },
+      h('span', null, n ? `✨ ${n} sugerencia${n > 1 ? 's' : ''}: según privilegios, filtros de edad, descanso de ${s.restDays} días y quien lleva más tiempo sin participar.`
+        + (none ? ` Para ${none} no hay nadie disponible.` : '')
+        : none ? `✨ Quedan ${none} vacía${none > 1 ? 's' : ''}, pero no hay nadie disponible que no esté asignado esta semana o descansando.`
+          : '✨ Ya no hay asignaciones vacías.'),
+      h('span', { class: 'row' },
+        n ? h('button', { class: 'btn small primary', onclick: () => {
+          for (const [key, c] of proposals) if (c) { const [rid, slot] = key.split('|'); p.rows.find(r => r.id === rid)[slot] = c.pr.id; }
+          save(); build(); toast(`Se aplicaron ${n} sugerencias`);
+        } }, `Aplicar todas (${n})`) : null,
+        h('button', { class: 'btn small', onclick: () => { suggesting = false; proposals = new Map(); build(); } }, 'Ocultar'))) : '');
     updateSide(ctx);
   }
 
@@ -2742,20 +2824,23 @@ function renderEditor(p) {
     privToggle.replaceChildren(priv ? h('label', { class: 'row small-text muted', style: { gap: '6px', margin: '0 0 8px' } },
       h('input', { type: 'checkbox', checked: privOnly, onchange: e => { privOnly = e.target.checked; updateSide(); } }),
       `Solo quien tiene “${privLabel(priv)}”`) : '');
-    // En una pareja de estudiantes, los familiares de la otra persona salen primero
+    // En una pareja de estudiantes, los familiares de la otra persona salen primero;
+    // luego quien cumple el filtro de la parte (por ejemplo, edad escolar si habla de la escuela)
     const partner = fr && fr.helper === 'Ayudante' ? fr[focus.slot === 'a' ? 'b' : 'a'] : null;
+    const rule = fr ? ruleFor(fr) : null;
     const items = state.profiles
       .filter(pr => !used.has(pr.id) && (!f || norm(pr.name).includes(f)))
       .map(pr => {
         const l = ctx.last.get(pr.id);
         return { pr, fam: !!partner && sameFamily(partner, pr.id), days: l ? daysBetween(l.q.date, p.date) : Infinity,
-          rest: ctx.recent.get(pr.id), able: !priv || canDo(pr, priv) };
+          rest: ctx.recent.get(pr.id), able: !priv || canDo(pr, priv), fits: !!rule && fitsRule(pr, rule) };
       })
       .filter(it => (it.fam || sexFilter === 'all' || it.pr.sex === sexFilter) && (!privOnly || it.able))
-      .sort((a, b) => b.fam - a.fam || b.able - a.able || b.days - a.days || a.pr.name.localeCompare(b.pr.name, 'es'));
+      .sort((a, b) => b.fam - a.fam || b.able - a.able || b.fits - a.fits || b.days - a.days || a.pr.name.localeCompare(b.pr.name, 'es'));
     const item = it => h('button', { onclick: () => insertProfile(it.pr), title: it.rest ? restText(it.rest, p).slice(2) : null },
       h('span', { class: 'nm' }, it.pr.name, ' ', h('small', null, `${it.pr.sex === 'M' ? '♂' : '♀'}${it.pr.age != null ? ' ' + it.pr.age : ''}`),
         it.fam ? h('span', { class: 'tag-fam' }, 'Familia') : null,
+        it.fits ? h('span', { class: 'tag-fam', title: 'Cumple el filtro de esta parte' }, '✓ ' + rule.nombre) : null,
         it.able ? null : h('span', { class: 'tag-fam', style: { color: 'var(--orange)' } }, 'Sin privilegio')),
       h('span', { class: 'hint ' + (it.rest ? 's-recent' : it.days === Infinity || it.days >= s.staleDays ? 's-stale' : 's-ok') },
         it.days === Infinity ? 'nunca' : `hace ${it.days} d`));
@@ -2777,7 +2862,9 @@ function renderEditor(p) {
     const partner = row.helper === 'Ayudante' && profById(row[slot === 'a' ? 'b' : 'a']);
     sexFilter = slotNeedsMen(row, slot) ? 'M' : partner ? partner.sex : 'all';
     const lb = slotLabels(row);
-    suggFor.textContent = `Para: ${slot === 'b' ? lb.b : lb.a && !lb.soft ? lb.a : displayTitle(row)}`;
+    const rule = ruleFor(row);
+    suggFor.textContent = `Para: ${slot === 'b' ? lb.b : lb.a && !lb.soft ? lb.a : displayTitle(row)}`
+      + (rule ? ` · filtro “${rule.nombre}”${ruleText(rule) ? ` (${ruleText(rule)})` : ''}` : '');
     privOnly = true;
     body.querySelectorAll('input.focused').forEach(i => i.classList.remove('focused'));
     const inp = body.querySelector(`input[data-row="${row.id}"][data-slot="${slot}"]`);
@@ -2823,7 +2910,8 @@ function renderEditor(p) {
             openProfileDialog(null, { name: val, onSave: np => assign(row, slot, np.id), onCancel: () => assign(row, slot, row[slot]) });
           },
         }),
-        h('div', { class: 'hint' })));
+        h('div', { class: 'hint' }),
+        h('div')));                // aquí sale la sugerencia del botón "Sugerencias"
   }
 
   function titleNode(row) {
@@ -2890,6 +2978,10 @@ function renderEditor(p) {
       editing ? h('button', { class: 'btn danger', onclick: () => {
         if (confirm(`¿Eliminar la semana “${p.title}”? Se perderán sus asignaciones.`)) { state.programs = state.programs.filter(x => x !== p); save(); go({ name: 'list' }); }
       } }, 'Eliminar semana') : null,
+      editing ? null : h('button', { class: 'btn' + (suggesting ? ' primary' : ''), onclick: () => {
+        suggesting = !suggesting; skips.clear(); build();
+        if (suggesting) suggestBar.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      } }, '✨ Sugerencias'),
       h('button', { class: 'btn', onclick: () => { editing = !editing; build(); } }, editing ? '✓ Listo' : '✎ Editar programa'),
       h('button', { class: 'btn', onclick: () => openSlipsDialog(p) }, '📄 Hojas de asignación'),
       h('button', { class: 'btn primary', onclick: () => downloadPDF([p]) }, '⬇ Programa PDF')].filter(Boolean));
@@ -2941,6 +3033,7 @@ function renderEditor(p) {
         h('div', { class: 'ph1' }, h('span', null, s.pdfTitle || 'Programa'), s.congregation ? h('span', null, s.congregation) : null),
         heading,
         metaBox,
+        suggestBar,
         body,
         h('div', { class: 'pfoot' },
           h('button', { class: 'btn small', onclick: addRow }, '+ Agregar intervención'), totalEl),
@@ -3137,7 +3230,44 @@ function renderSettings() {
           a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
         } }, '⬇ Descargar respaldo'),
         h('button', { class: 'btn', onclick: () => fileIn.click() }, '⬆ Cargar respaldo'), fileIn)),
+    filtersCard(),
     version);
+}
+
+// Ajustes: filtros de sugerencias (palabras de la parte → edad y sexo preferidos)
+function filtersCard() {
+  const s = state.settings;
+  if (!Array.isArray(s.filters)) s.filters = DEFAULT_FILTERS.map(f => ({ ...f }));
+  const box = h('div', { style: { display: 'grid', gap: '10px' } });
+  const ageIn = (f, key) => h('input', { type: 'number', min: 0, max: 120, value: f[key] ?? '', placeholder: '—', style: { width: '74px' },
+    onchange: e => { f[key] = e.target.value === '' ? null : Math.max(0, Math.round(+e.target.value)); save(); } });
+  function fill() {
+    box.replaceChildren(...(s.filters.length ? s.filters.map((f, i) => h('div', { class: 'card', style: { padding: '12px', display: 'grid', gap: '8px', boxShadow: 'none' } },
+      h('div', { class: 'row', style: { gap: '12px', alignItems: 'flex-end' } },
+        h('label', { class: 'field', style: { flex: '1', minWidth: '140px' } }, 'Nombre',
+          h('input', { type: 'text', value: f.nombre, oninput: e => { f.nombre = e.target.value; save(); } })),
+        h('label', { class: 'field' }, 'Edad desde', ageIn(f, 'min')),
+        h('label', { class: 'field' }, 'hasta', ageIn(f, 'max')),
+        h('label', { class: 'field' }, 'Sexo', h('select', { onchange: e => { f.sexo = e.target.value; save(); } },
+          [['', 'Cualquiera'], ['M', 'Hombres'], ['F', 'Mujeres']].map(([v, t]) => h('option', { value: v, selected: (f.sexo || '') === v ? true : null }, t)))),
+        h('button', { class: 'btn small danger', onclick: () => { if (confirm(`¿Quitar el filtro “${f.nombre}”?`)) { s.filters.splice(i, 1); save(); fill(); } } }, 'Quitar')),
+      h('label', { class: 'field' }, 'Palabras que lo activan (separadas por comas)',
+        h('input', { type: 'text', value: f.palabras, placeholder: 'Ej.: escuela, compañero de clase', oninput: e => { f.palabras = e.target.value; save(); } }))))
+      : [h('div', { class: 'muted' }, 'No hay filtros.')]));
+  }
+  fill();
+  return [
+    h('h2', { class: 'group' }, 'Filtros de sugerencias'),
+    h('div', { class: 'card settings', style: { marginTop: 0 } },
+      h('p', { class: 'muted small-text', style: { margin: 0 } },
+        'Si el título o la descripción de una parte tiene alguna de estas palabras, las sugerencias ponen primero a quien tenga esa edad. Para que funcionen, los perfiles necesitan tener la edad.'),
+      box,
+      h('div', { class: 'row' },
+        h('button', { class: 'btn small', onclick: () => { s.filters.push({ nombre: 'Nuevo filtro', palabras: '', min: null, max: null, sexo: '' }); save(); fill(); } }, '+ Agregar filtro'),
+        h('button', { class: 'btn small', onclick: () => {
+          if (!confirm('¿Volver a los filtros que trae la app? Se pierden los cambios que hayas hecho.')) return;
+          s.filters = DEFAULT_FILTERS.map(f => ({ ...f })); save(); fill();
+        } }, 'Volver a los predeterminados')))];
 }
 
 // Revisa jw.org al abrir, como máximo cada 12 horas (o siempre si faltan semanas próximas).
