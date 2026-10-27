@@ -314,7 +314,7 @@
 
 <script>
 const KEY = 'programas-app-v2';
-const APP_VERSION = '1.14.1'; // igual que "version" en package.json (publicar.ps1 lo revisa)
+const APP_VERSION = '1.14.2'; // igual que "version" en package.json (publicar.ps1 lo revisa)
 // Con FIREBASE_CONFIG (firebase-config.js) los datos viven en la nube de la congregación;
 // sin él, la app funciona como antes, solo en esta PC. "?emu" usa el Firebase local de prueba.
 const EMU = /[?&]emu\b/.test(location.search);
@@ -1283,6 +1283,7 @@ function errMsg(e) {
     'permission-denied': 'No tienes permiso para hacer esto.',
     'unavailable': 'No hay conexión con el servidor. Revisa tu internet.',
     'codigo': 'Ese código de congregación no existe. Pídeselo de nuevo a un administrador.',
+    'cuenta-existe': 'Ya hay una cuenta con ese correo, pero la contraseña no coincide. Usa “Entrar” o “¿Olvidaste tu contraseña?”.',
   })[c] || 'Ocurrió un error: ' + ((e && e.message) || c);
 }
 
@@ -1349,9 +1350,14 @@ async function startCloud() {
     let joinErr = '';
     try {
       const reg = nube.registro; nube.registro = null;
-      if (reg && reg.tipo === 'unirse') await joinCongregation(reg.codigo, reg.nombre).catch(e => { joinErr = errMsg(e); });
+      const prev = await F.getDoc(ref('usuarios', user.uid)), prevCong = prev.exists() ? prev.data().cong : null;
+      // Si la cuenta ya es miembro de una congregación, se queda en la suya (no se cambia por error)
+      let member = false;
+      if (reg && prevCong) { try { member = (await F.getDoc(ref('congregaciones', prevCong, 'miembros', user.uid))).exists(); } catch (e) {} }
+      if (reg && member) toast('Esa cuenta ya pertenece a una congregación: entraste a la suya.');
+      else if (reg && reg.tipo === 'unirse') await joinCongregation(reg.codigo, reg.nombre).catch(e => { joinErr = errMsg(e); });
       else if (reg && reg.tipo === 'crear') await createCongregation(reg.cong, reg.nombre);
-      if (!nube.cong) { const u = await F.getDoc(ref('usuarios', user.uid)); nube.cong = u.exists() ? u.data().cong : null; }
+      if (!nube.cong && !joinErr) nube.cong = prevCong;
     } catch (e) { return screenMessage(errMsg(e)); }
     if (!nube.cong) return renderJoin(joinErr);
     nube.unsubMe = F.onSnapshot(congRef('miembros', user.uid), snap => {
@@ -1575,7 +1581,12 @@ function renderAuth(tab = 'entrar', msg = '') {
       if (tab === 'entrar') await F.signInWithEmailAndPassword(F.auth, em, pw);
       else {
         nube.registro = tab === 'unirse' ? { tipo: 'unirse', codigo: code.value, nombre: name.value } : { tipo: 'crear', cong: congI.value, nombre: name.value };
-        await F.createUserWithEmailAndPassword(F.auth, em, pw);
+        try { await F.createUserWithEmailAndPassword(F.auth, em, pw); }
+        catch (e) {
+          if (e.code !== 'auth/email-already-in-use') throw e;
+          // El correo ya tiene cuenta (por ejemplo, su congregación se borró): se entra con ella y se sigue
+          try { await F.signInWithEmailAndPassword(F.auth, em, pw); } catch (e2) { throw { code: 'cuenta-existe' }; }
+        }
       }
     } catch (e) { nube.registro = null; err.textContent = errMsg(e); btn.disabled = false; }
   }
