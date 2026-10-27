@@ -82,7 +82,7 @@ App para organizar las asignaciones de la reunión semanal Vida y Ministerio Cri
 - Sin funciones: Semanas (solo lectura + “Tu próxima asignación”), Informe (si `modo` es `todos` y tiene perfil) y Ajustes de solo lectura.
 - La seguridad está en `firestore.rules`, no en la interfaz. Pruebas: `npm run prueba-reglas` (proyecto `demo-reglas`).
 - Prueba local sin tocar el Firebase real: `npm run nube-local` y abrir `http://localhost:8765/?emu` (con `servidor.ps1`) o `npx electron . --emu`. Cuentas en `pruebas/cuentas-prueba.txt`.
-- La versión web (https) no puede leer jw.org (CORS): las semanas se importan desde el programa de PC.
+- La versión web lee jw.org con el intermediario de Cloudflare (`intermediario/worker.js`, https://programas-jw.marperjamin007.workers.dev, `JW_PROXY` en index.html). Subirlo: `npx.cmd wrangler deploy --config intermediario/wrangler.toml` (sesión con `npx.cmd wrangler login`). Solo responde a los orígenes de la app.
 
 ## Pendiente / ideas
 - Pulir detalles mínimos del diseño que el usuario vaya encontrando.

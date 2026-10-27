@@ -314,7 +314,7 @@
 
 <script>
 const KEY = 'programas-app-v2';
-const APP_VERSION = '1.13.0'; // igual que "version" en package.json (publicar.ps1 lo revisa)
+const APP_VERSION = '1.14.0'; // igual que "version" en package.json (publicar.ps1 lo revisa)
 // Con FIREBASE_CONFIG (firebase-config.js) los datos viven en la nube de la congregación;
 // sin él, la app funciona como antes, solo en esta PC. "?emu" usa el Firebase local de prueba.
 const EMU = /[?&]emu\b/.test(location.search);
@@ -819,7 +819,7 @@ function blankRows() {
 
 // Dónde se lee jw.org: el programa de PC y servidor.ps1 lo hacen ellos mismos (/jw/…); la versión web
 // usa el intermediario en Cloudflare (carpeta intermediario/), porque jw.org no deja leerlo desde otro sitio.
-const JW_PROXY = '';
+const JW_PROXY = 'https://programas-jw.marperjamin007.workers.dev';
 const JW_BASE = location.protocol === 'https:' ? JW_PROXY : '';
 async function serverAvailable() {
   if (serverOK !== null) return serverOK;
