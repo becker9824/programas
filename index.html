@@ -245,6 +245,16 @@
   /* En pantallas angostas las sugerencias se muestran debajo de la asignación que se está llenando */
   .side.inline { position: static; margin: 4px 0 12px; border-color: var(--accent); }
   .side.inline .sugg { max-height: 45vh; }
+  /* Lista desplegable de recomendados al tocar un espacio para asignar */
+  .pick { position: absolute; left: 0; right: 0; z-index: 20; background: var(--surface); border: 1px solid var(--border);
+    border-radius: 12px; box-shadow: 0 8px 28px rgba(16,24,40,.18); max-height: 330px; overflow-y: auto; padding: 4px; }
+  .pick-head { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); padding: 6px 8px 4px; }
+  .pick-item { display: flex; justify-content: space-between; align-items: center; gap: 8px; width: 100%; text-align: left;
+    background: none; border: 0; border-radius: 8px; padding: 8px; font: inherit; color: var(--text); cursor: pointer; }
+  .pick-item:hover, .pick-item.on { background: var(--accent-2); }
+  .pick-item.other .nm { opacity: .75; }
+  .pick-item small { color: var(--muted); }
+  .pick-empty { padding: 10px 8px; color: var(--muted); font-size: 13px; }
   /* Propuesta del botón "Sugerencias" debajo de una asignación vacía */
   .propose { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 4px;
     padding: 6px 8px; border-radius: 10px; background: var(--accent-2); font-size: 13px; }
@@ -295,7 +305,7 @@
 
 <script>
 const KEY = 'programas-app-v2';
-const APP_VERSION = '1.10.0'; // igual que "version" en package.json (publicar.ps1 lo revisa)
+const APP_VERSION = '1.11.0'; // igual que "version" en package.json (publicar.ps1 lo revisa)
 // Con FIREBASE_CONFIG (firebase-config.js) los datos viven en la nube de la congregación;
 // sin él, la app funciona como antes, solo en esta PC. "?emu" usa el Firebase local de prueba.
 const EMU = /[?&]emu\b/.test(location.search);
@@ -2869,8 +2879,6 @@ function renderEditor(p) {
     body.querySelectorAll('input.focused').forEach(i => i.classList.remove('focused'));
     const inp = body.querySelector(`input[data-row="${row.id}"][data-slot="${slot}"]`);
     if (inp) inp.classList.add('focused');
-    if (inp && matchMedia('(max-width: 1000px)').matches) { inp.closest('.prow').after(side); side.classList.add('inline'); }
-    else if (side.parentNode !== grid) { grid.append(side); side.classList.remove('inline'); }
     updateSide();
   }
 
@@ -2893,15 +2901,89 @@ function renderEditor(p) {
     if (next) setFocus(next.row, next.slot);
   }
 
+  // Lista desplegable al tocar un espacio: primero los más recomendados (mismos criterios que
+  // el botón Sugerencias); al escribir, busca entre todos y dice por qué no se recomienda a otros.
+  let pick = null; // { el, inp, row, slot, items, at }
+  function closePick() { if (pick) { pick.el.remove(); pick = null; } }
+  function openPick(row, slot, inp) {
+    closePick();
+    pick = { el: h('div', { class: 'pick', role: 'listbox' }), inp, row, slot, items: [], at: 0 };
+    pick.el.style.top = (inp.offsetTop + inp.offsetHeight + 4) + 'px'; // justo debajo del campo
+    // Al menos 260 px de ancho, pero sin salirse de la pantalla (en el celular la columna es angosta)
+    const box = inp.parentNode.getBoundingClientRect(), width = Math.min(Math.max(box.width, 260), innerWidth - 16);
+    const over = box.left + width - (innerWidth - 8);
+    Object.assign(pick.el.style, { width: width + 'px', right: 'auto', left: (over > 0 ? -over : 0) + 'px' });
+    inp.parentNode.append(pick.el);
+    fillPick();
+  }
+  // Busca por el inicio de cada palabra del nombre: "ana" encuentra "Ana María", no "Hermana"
+  const nameMatch = (name, typed) => (' ' + norm(name)).includes(' ' + typed);
+  function fillPick() {
+    const { row, slot, inp } = pick;
+    const ctx = contextFor(p), counts = new Set(slotsOf(p).filter(x => x.pid && !(x.row === row && x.slot === slot)).map(x => x.pid));
+    const current = row[slot], typed = current && profById(current) && profById(current).name === inp.value ? '' : norm(inp.value);
+    const partner = slot === 'b' ? row.a : row.b;
+    const best = candidatesFor(p, row, slot, ctx, counts, partner).filter(c => c.pr.id !== current);
+    const priv = privFor(row, slot), rule = ruleFor(row), men = slotNeedsMen(row, slot);
+    let items;
+    if (!typed) items = best.slice(0, 8).map(c => ({ ...c, why: '' }));
+    else {
+      const shown = new Set();
+      items = best.filter(c => nameMatch(c.pr.name, typed)).map(c => { shown.add(c.pr.id); return { ...c, why: '' }; });
+      for (const pr of state.profiles) {
+        if (shown.has(pr.id) || pr.id === current || !nameMatch(pr.name, typed)) continue;
+        const l = ctx.last.get(pr.id);
+        const why = counts.has(pr.id) ? 'Ya asignado esta semana' : ctx.recent.has(pr.id) ? 'Descansando'
+          : !canDo(pr, priv) ? 'Sin privilegio' : men && pr.sex === 'F' ? 'Normalmente un varón' : 'Pareja de distinto sexo';
+        items.push({ pr, rule, fits: fitsRule(pr, rule), days: l ? daysBetween(l.q.date, p.date) : Infinity, why });
+      }
+      items = items.slice(0, 30);
+    }
+    pick.items = items; pick.at = Math.min(pick.at, Math.max(items.length - 1, 0));
+    pick.el.replaceChildren(
+      h('div', { class: 'pick-head' }, typed ? 'Coincidencias' : `Recomendados${rule ? ` · filtro “${rule.nombre}”` : ''}`),
+      ...(items.length ? items.map((it, i) => h('button', { class: 'pick-item' + (i === pick.at ? ' on' : '') + (it.why ? ' other' : ''),
+        type: 'button', onmousedown: e => e.preventDefault(), onclick: () => choose(it.pr) },
+        h('span', { class: 'nm' }, it.pr.name, ' ',
+          h('small', null, `${it.pr.sex === 'M' ? '♂' : '♀'}${it.pr.age != null ? ' ' + it.pr.age : ''}`),
+          it.rule && it.fits && !it.why ? h('span', { class: 'tag-fam' }, '✓ ' + it.rule.nombre) : null,
+          it.why ? h('span', { class: 'tag-fam', style: { color: 'var(--orange)' } }, it.why) : null),
+        h('span', { class: 'hint ' + (it.why ? 's-recent' : it.days === Infinity || it.days >= s.staleDays ? 's-stale' : 's-ok') },
+          it.days === Infinity ? 'nunca' : `hace ${it.days} d`)))
+        : [h('div', { class: 'pick-empty' }, typed ? 'Nadie con ese nombre. Al salir del campo se puede crear el perfil.' : 'Nadie disponible. Escribe un nombre para buscar entre todos.')]));
+  }
+  function choose(pr) {
+    const { row, slot, inp } = pick;
+    closePick();
+    inp.value = pr.name;
+    assign(row, slot, pr.id);
+    inp.blur();
+  }
+  function pickKeys(e) {
+    if (!pick) return;
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      pick.at = Math.max(0, Math.min(pick.items.length - 1, pick.at + (e.key === 'ArrowDown' ? 1 : -1)));
+      fillPick();
+      const on = pick.el.querySelector('.on'); if (on) on.scrollIntoView({ block: 'nearest' });
+    } else if (e.key === 'Enter' && pick.items[pick.at]) {
+      e.preventDefault(); choose(pick.items[pick.at].pr);
+    } else if (e.key === 'Escape') closePick();
+  }
+
   function slotNode(row, slot, label, soft) {
     const pid = row[slot];
     return h('div', { class: 'slot' },
       h('span', { class: 'slabel' + (soft ? ' soft' : '') }, label),
-      h('div', null,
+      h('div', { style: { position: 'relative' } },
         h('input', {
-          type: 'text', list: 'profiles-list', value: pid && profById(pid) ? profById(pid).name : '',
+          type: 'text', autocomplete: 'off', value: pid && profById(pid) ? profById(pid).name : '',
           placeholder: 'Asignar…', 'data-row': row.id, 'data-slot': slot,
-          onfocus: () => setFocus(row, slot),
+          onfocus: e => { setFocus(row, slot); openPick(row, slot, e.target); },
+          onclick: e => { if (!pick) openPick(row, slot, e.target); },
+          oninput: () => { if (pick) { pick.at = 0; fillPick(); } },
+          onkeydown: pickKeys,
+          onblur: () => setTimeout(() => { if (pick && document.activeElement !== pick.inp) closePick(); }, 150),
           onchange: e => {
             const val = squash(e.target.value);
             if (!val) return assign(row, slot, null);
@@ -2939,6 +3021,7 @@ function renderEditor(p) {
   }
 
   function build() {
+    closePick();
     const times = timesFor(p);
     const nodes = [];
     let sec = '';

@@ -44,6 +44,7 @@ App para organizar las asignaciones de la reunión semanal Vida y Ministerio Cri
 - En pantallas angostas el panel de sugerencias se mueve debajo de la asignación con foco.
 - `savePDF()`: en el celular abre Compartir (WhatsApp…); en la PC descarga.
 - Filtros de sugerencias (1.10.0): `settings.filters` [{nombre, palabras, min, max, sexo}] (predeterminados en `DEFAULT_FILTERS`, se editan en Ajustes). `ruleFor(row)` busca las palabras (completas, sin acentos) en título y descripción de cualquier parte; `candidatesFor()` ordena: cumple filtro, tiene privilegio, no descansa, más días sin participar. Botón "Sugerencias" del editor: propuesta bajo cada vacía con Aplicar / Otra y Aplicar todas; nunca asigna sin que el usuario lo pida.
+- Lista desplegable al tocar un espacio (1.11.0, `openPick`/`fillPick` en el editor): hasta 8 de `candidatesFor()`; al escribir busca por inicio de palabra entre todos y marca el motivo (descansando, sin privilegio, ya asignado…). Reemplaza al datalist y al panel lateral en línea del celular.
 
 ## Territorios (1.8.0)
 - Mapa con Leaflet 1.9.4 (`vendor/leaflet`, se carga al abrir la sección) y OpenStreetMap; capa Satélite de Esri. QR con `vendor/qrcode.js` (qrcode-generator).
