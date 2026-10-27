@@ -40,7 +40,7 @@ App para organizar las asignaciones de la reunión semanal Vida y Ministerio Cri
 
 ## Asignaciones mecánicas (1.12.0)
 - Sección `mecanicas` (función programa). Por semana y por reunión: `p.mec = { entre: {...}, fin: {...} }` con las claves de `MEC` (presidente, lector, micPlat, micAud1, micAud2, acomInt, acomExt, audio). Presidente y lector de entre semana se leen/escriben en la fila del programa (`mecLinked`).
-- `mecCandidates()`: varones con el privilegio (`presidente_fin`, `atalaya`, `microfonos`, `acomodador`, `audio`; presidente/lector en entre semana), sin otra asignación en esa reunión, sin mecánica en `settings.mecRestDays` (14) días. `settings.weekendDay` = día del fin de semana.
+- `mecCandidates()`: varones con el privilegio (`presidente_fin`, `atalaya`, `microfonos`, `acomodador`, `audio`; presidente/lector en entre semana), sin otra asignación en esa reunión, sin mecánica en `settings.mecRestDays` (14) días. `settings.weekendDay`/`weekendTime` y `meetingDay`/`startTime`: horarios (tarjeta `meetingTimesCard` en Ajustes; entre semana solo lunes a viernes, fin de semana sábado o domingo). `mecanicasPDF()`: tabla horizontal, una fila por reunión.
 - El programa VyM no recomienda a quien tiene mecánica entre semana (`mecIds`) y avisa en `statusFor`. `publicWeeks()` incluye `mec` para que los hermanos las vean.
 
 ## Asignaciones asistidas (1.4.0)

@@ -249,6 +249,11 @@
   .mec-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
   @media (max-width: 760px) { .mec-grid { grid-template-columns: 1fr; } }
   .mec-row { display: grid; grid-template-columns: 150px minmax(0, 1fr); gap: 8px; align-items: center; padding: 3px 0; }
+  /* Ajustes: horario de cada reunión */
+  .meet-row { display: grid; grid-template-columns: minmax(160px, 1fr) auto auto; gap: 16px; align-items: end; padding: 10px 0;
+    border-bottom: 1px solid var(--border); }
+  .meet-row:last-of-type { border-bottom: 0; }
+  @media (max-width: 520px) { .meet-row { grid-template-columns: 1fr 1fr; } .meet-row > div:first-child { grid-column: 1 / -1; } }
   /* Lista desplegable de recomendados al tocar un espacio para asignar */
   .pick { position: absolute; left: 0; right: 0; z-index: 20; background: var(--surface); border: 1px solid var(--border);
     border-radius: 12px; box-shadow: 0 8px 28px rgba(16,24,40,.18); max-height: 330px; overflow-y: auto; padding: 4px; }
@@ -309,7 +314,7 @@
 
 <script>
 const KEY = 'programas-app-v2';
-const APP_VERSION = '1.12.0'; // igual que "version" en package.json (publicar.ps1 lo revisa)
+const APP_VERSION = '1.13.0'; // igual que "version" en package.json (publicar.ps1 lo revisa)
 // Con FIREBASE_CONFIG (firebase-config.js) los datos viven en la nube de la congregación;
 // sin él, la app funciona como antes, solo en esta PC. "?emu" usa el Firebase local de prueba.
 const EMU = /[?&]emu\b/.test(location.search);
@@ -325,7 +330,7 @@ const DEFAULT_FILTERS = [
 const defaults = () => ({
   profiles: [], families: [], programs: [], songs: {}, missing: {}, lastSync: 0,
   settings: {
-    staleDays: 60, restDays: 28, mecRestDays: 14, weekendDay: 6, weeksAhead: 8, congregation: '',
+    staleDays: 60, restDays: 28, mecRestDays: 14, weekendDay: 6, weekendTime: '10:00', weeksAhead: 8, congregation: '',
     pdfTitle: 'Programa para la reunión de entre semana', meetingDay: 2, startTime: '19:00', paper: 'letter',
     slipNote: 'En la Guía de actividades está la información para preparar su intervención. Repase también las indicaciones para la reunión Vida y Ministerio Cristianos.',
     slipFooter: '',
@@ -2618,6 +2623,89 @@ function attachPicker(inp, getList, onChoose) {
   inp.addEventListener('blur', () => setTimeout(close, 150));
 }
 
+const mecTime = mtg => fmtClock(mtg === 'entre' ? state.settings.startTime || '19:00' : state.settings.weekendTime || '10:00');
+
+// PDF: tabla en hoja horizontal, una fila por reunión, columnas por asignación
+function mecanicasPDF(weeks) {
+  const J = window.jspdf && window.jspdf.jsPDF;
+  if (!J) return toast('No se pudo crear el PDF.');
+  weeks = [...weeks].sort((a, b) => a.date.localeCompare(b.date));
+  const s = state.settings;
+  const doc = new J({ orientation: 'landscape', unit: 'mm', format: s.paper === 'a4' ? 'a4' : 'letter' });
+  const W = doc.internal.pageSize.getWidth(), H = doc.internal.pageSize.getHeight(), M = 10;
+  // Columnas: fecha + una por asignación (micrófono auditorio junta sus 2 hermanos)
+  const cols = [{ t: 'Reunión', keys: [] }, ...MEC.filter(r => r.key !== 'micAud2').map(r => ({ t: r.label, keys: r.key === 'micAud1' ? ['micAud1', 'micAud2'] : [r.key] }))];
+  const dateW = 40, colW = (W - 2 * M - dateW) / (cols.length - 1);
+  const xs = cols.map((c, i) => M + (i ? dateW + (i - 1) * colW : 0)), widths = cols.map((c, i) => i ? colW : dateW);
+  const blue = [29, 95, 208];
+  const fmtD = iso => capFirst(toDate(iso).toLocaleDateString('es', { weekday: 'long', day: 'numeric', month: 'short' }));
+  const range = `${fmtShort(mecDate(weeks[0], 'entre'))} – ${fmtShort(mecDate(weeks[weeks.length - 1], 'fin'))}`;
+  let y;
+  const header = () => {
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(16); doc.setTextColor(20);
+    doc.text('Asignaciones mecánicas', M, M + 6);
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(10); doc.setTextColor(90);
+    doc.text(range, M, M + 12);
+    if (s.congregation) { doc.setFont('helvetica', 'bold'); doc.setTextColor(20); doc.text(s.congregation, W - M, M + 6, { align: 'right' }); }
+    y = M + 17;
+    doc.setFillColor(...blue); doc.rect(M, y, W - 2 * M, 11, 'F');
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(8.5); doc.setTextColor(255);
+    cols.forEach((c, i) => {
+      const lines = doc.splitTextToSize(c.t, widths[i] - 3);
+      lines.forEach((t, j) => doc.text(t, xs[i] + widths[i] / 2, y + 5.5 - (lines.length - 1) * 1.7 + j * 3.4, { align: 'center', baseline: 'middle' }));
+    });
+    y += 11;
+  };
+  header();
+  weeks.forEach((p, wi) => {
+    for (const [mtg, label] of MEETINGS) {
+      const cells = cols.map((c, i) => i === 0
+        ? [label, fmtD(mecDate(p, mtg)), mecTime(mtg)]
+        : c.keys.map(k => (profById(mecGet(p, mtg, k)) || {}).name).filter(Boolean).flatMap(n => doc.splitTextToSize(n, widths[i] - 3)));
+      const lines = Math.max(2, ...cells.map(l => l.length || 1));
+      const rh = Math.max(11, lines * 3.9 + 3);
+      if (y + rh > H - M) { doc.addPage(); header(); }
+      if (wi % 2 === 0) { doc.setFillColor(242, 245, 250); doc.rect(M, y, W - 2 * M, rh, 'F'); }
+      doc.setDrawColor(205); doc.setLineWidth(0.2);
+      cols.forEach((c, i) => doc.rect(xs[i], y, widths[i], rh));
+      cells.forEach((lines, i) => {
+        if (!lines.length) { doc.setTextColor(170); doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.text('—', xs[i] + widths[i] / 2, y + rh / 2, { align: 'center', baseline: 'middle' }); return; }
+        const top = y + rh / 2 - (lines.length - 1) * 1.95;
+        lines.forEach((t, j) => {
+          if (i === 0) { doc.setFont('helvetica', j === 0 ? 'bold' : 'normal'); doc.setFontSize(j === 0 ? 9 : 8.5); doc.setTextColor(j === 0 ? 20 : 80); }
+          else { doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(20); }
+          doc.text(t, i === 0 ? xs[i] + 2.5 : xs[i] + widths[i] / 2, top + j * 3.9, { align: i === 0 ? 'left' : 'center', baseline: 'middle' });
+        });
+      });
+      y += rh;
+    }
+    // Línea más gruesa entre semanas
+    doc.setDrawColor(120); doc.setLineWidth(0.5); doc.line(M, y, W - M, y);
+  });
+  savePDF(doc, `Asignaciones mecánicas ${range}`);
+}
+
+// Elegir las semanas del PDF (marcadas las próximas 8)
+function openMecanicasPDFDialog(weeks) {
+  const boxes = weeks.map((p, i) => ({ p, box: h('input', { type: 'checkbox', checked: i < 8 }) }));
+  const close = () => { dlg.close(); dlg.remove(); };
+  const dlg = h('dialog', { class: 'dlg' },
+    h('div', { class: 'dlg-body' }, h('h3', null, 'PDF de asignaciones mecánicas'),
+      h('p', { class: 'muted small-text', style: { margin: 0 } }, 'Elige las semanas que quieres en la tabla.'),
+      h('div', { class: 'row' },
+        h('button', { class: 'btn small', onclick: () => boxes.forEach(b => { b.box.checked = true; }) }, 'Todas'),
+        h('button', { class: 'btn small', onclick: () => boxes.forEach(b => { b.box.checked = false; }) }, 'Ninguna')),
+      h('div', { class: 'slips' }, boxes.map(({ p, box }) => h('label', { class: 'slip' }, box, h('span', null, p.title))))),
+    h('div', { class: 'dlg-foot' },
+      h('button', { class: 'btn', onclick: close }, 'Cancelar'),
+      h('button', { class: 'btn primary', onclick: () => {
+        const sel = boxes.filter(b => b.box.checked).map(b => b.p);
+        if (!sel.length) return toast('Elige al menos una semana');
+        close(); mecanicasPDF(sel);
+      } }, '⬇ Crear PDF')));
+  document.body.append(dlg); dlg.showModal();
+}
+
 function renderMecanicas() {
   const thisMonday = mondayOf(todayISO());
   const weeks = [...state.programs].filter(p => p.date >= thisMonday).sort((a, b) => a.date.localeCompare(b.date));
@@ -2659,13 +2747,15 @@ function renderMecanicas() {
           delete p.mec; save(); render();
         } }, 'Limpiar'))),
     h('div', { class: 'mec-grid' }, MEETINGS.map(([mtg, label]) => h('div', null,
-      h('div', { class: 'small-text muted', style: { fontWeight: 600, marginBottom: '6px' } }, `${label} · ${fmtD(mecDate(p, mtg))}`),
+      h('div', { class: 'small-text muted', style: { fontWeight: 600, marginBottom: '6px' } }, `${label} · ${fmtD(mecDate(p, mtg))} · ${mecTime(mtg)}`),
       MEC.map(({ key, label: l }) => h('div', { class: 'mec-row' },
         h('span', { class: 'small-text' }, l, mtg === 'entre' && mecLinked(p, mtg, key) ? h('span', { class: 'muted', title: 'Es el mismo del programa de Vida y Ministerio' }, ' (programa)') : null),
         slotInput(p, mtg, key)))))));
 
   return h('div', null,
-    h('h1', null, 'Asignaciones mecánicas'),
+    h('div', { class: 'row spread', style: { alignItems: 'flex-start' } },
+      h('h1', null, 'Asignaciones mecánicas'),
+      weeks.length ? h('button', { class: 'btn primary', onclick: () => openMecanicasPDFDialog(weeks) }, '⬇ PDF') : null),
     h('p', { class: 'sub' }, `Toca un espacio para ver a los hermanos más recomendados, o usa “✨ Sugerir” para llenar los vacíos de la semana. No se repite a nadie en ${state.settings.mecRestDays ?? 14} días ni en la misma reunión.`),
     weeks.length ? weeks.map(card) : h('div', { class: 'card empty' }, 'No hay semanas próximas. Agrégalas en Semanas.'));
 }
@@ -3491,19 +3581,13 @@ function renderSettings() {
       : 'Los datos se guardan en este navegador. Descarga un respaldo de vez en cuando.'),
     FB_CONFIG ? accountCard() : null,
     FB_CONFIG && isAdmin() ? congregationSettings() : null,
-    FB_CONFIG ? h('h2', { class: 'group' }, 'Reunión y PDF') : null,
+    h('h2', { class: 'group' }, 'Horarios de las reuniones'),
+    meetingTimesCard(),
+    h('h2', { class: 'group' }, 'Programa y PDF'),
     h('div', { class: 'card settings' },
       text('Título del programa', 'pdfTitle', 'Programa para la reunión de entre semana'),
       FB_CONFIG ? null : text('Nombre de la congregación', 'congregation', 'Opcional'),
       h('div', { class: 'row', style: { gap: '20px', alignItems: 'flex-end' } },
-        h('label', { class: 'field' }, 'Día de la reunión',
-          h('select', { onchange: e => { s.meetingDay = +e.target.value; save(); } },
-            WEEKDAYS.map((d, i) => h('option', { value: i, selected: s.meetingDay === i ? true : null }, d)))),
-        h('label', { class: 'field' }, 'Reunión del fin de semana',
-          h('select', { onchange: e => { s.weekendDay = +e.target.value; save(); } },
-            WEEKDAYS.map((d, i) => h('option', { value: i, selected: (s.weekendDay ?? 6) === i ? true : null }, d)))),
-        h('label', { class: 'field' }, 'Hora de inicio',
-          h('input', { type: 'time', value: s.startTime, onchange: e => { if (e.target.value) { s.startTime = e.target.value; save(); } } })),
         h('label', { class: 'field' }, 'Tamaño de papel del PDF',
           h('select', { onchange: e => { s.paper = e.target.value; save(); } },
             h('option', { value: 'letter', selected: s.paper !== 'a4' ? true : null }, 'Carta'),
@@ -3525,6 +3609,27 @@ function renderSettings() {
     filtersCard(),
     version);
 }
+
+// Ajustes: día y hora de cada reunión (entre semana: lunes a viernes; fin de semana: sábado o domingo)
+function meetingTimesCard() {
+  const s = state.settings;
+  const meeting = (title, desc, dayKey, days, timeKey, fallbackDay, fallbackTime) => h('div', { class: 'meet-row' },
+    h('div', null, h('strong', null, title), h('div', { class: 'muted small-text' }, desc)),
+    h('label', { class: 'field' }, 'Día',
+      h('select', { onchange: e => { s[dayKey] = +e.target.value; save(); } },
+        days.map(i => h('option', { value: i, selected: (s[dayKey] ?? fallbackDay) === i ? true : null }, WEEKDAYS[i])))),
+    h('label', { class: 'field' }, 'Hora',
+      h('input', { type: 'time', value: s[timeKey] || fallbackTime, onchange: e => { if (e.target.value) { s[timeKey] = e.target.value; save(); } } })));
+  // Si antes se había elegido un día fuera de rango, se acomoda al más cercano
+  if (s.meetingDay > 4) s.meetingDay = 4;
+  if ((s.weekendDay ?? 6) < 5) s.weekendDay = 6;
+  return h('div', { class: 'card settings', style: { gap: '4px' } },
+    meeting('Entre semana', 'Vida y Ministerio Cristianos', 'meetingDay', [0, 1, 2, 3, 4], 'startTime', 2, '19:00'),
+    meeting('Fin de semana', 'Reunión pública y estudio de La Atalaya', 'weekendDay', [5, 6], 'weekendTime', 6, '10:00'),
+    h('p', { class: 'muted small-text', style: { margin: '6px 0 0' } }, 'Se usan en el programa, en las asignaciones mecánicas y en los PDF.'));
+}
+// "19:00" → "7:00 p. m."
+const fmtClock = hm => { const [hh, mm] = (hm || '0:0').split(':').map(Number); return new Date(2000, 0, 1, hh, mm).toLocaleTimeString('es-MX', { hour: 'numeric', minute: '2-digit' }); };
 
 // Ajustes: filtros de sugerencias (palabras de la parte → edad y sexo preferidos)
 function filtersCard() {
