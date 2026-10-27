@@ -245,6 +245,10 @@
   /* En pantallas angostas las sugerencias se muestran debajo de la asignación que se está llenando */
   .side.inline { position: static; margin: 4px 0 12px; border-color: var(--accent); }
   .side.inline .sugg { max-height: 45vh; }
+  /* Mecánicas: dos columnas (entre semana y fin de semana); una en el celular */
+  .mec-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+  @media (max-width: 760px) { .mec-grid { grid-template-columns: 1fr; } }
+  .mec-row { display: grid; grid-template-columns: 150px minmax(0, 1fr); gap: 8px; align-items: center; padding: 3px 0; }
   /* Lista desplegable de recomendados al tocar un espacio para asignar */
   .pick { position: absolute; left: 0; right: 0; z-index: 20; background: var(--surface); border: 1px solid var(--border);
     border-radius: 12px; box-shadow: 0 8px 28px rgba(16,24,40,.18); max-height: 330px; overflow-y: auto; padding: 4px; }
@@ -305,7 +309,7 @@
 
 <script>
 const KEY = 'programas-app-v2';
-const APP_VERSION = '1.11.1'; // igual que "version" en package.json (publicar.ps1 lo revisa)
+const APP_VERSION = '1.12.0'; // igual que "version" en package.json (publicar.ps1 lo revisa)
 // Con FIREBASE_CONFIG (firebase-config.js) los datos viven en la nube de la congregación;
 // sin él, la app funciona como antes, solo en esta PC. "?emu" usa el Firebase local de prueba.
 const EMU = /[?&]emu\b/.test(location.search);
@@ -321,7 +325,7 @@ const DEFAULT_FILTERS = [
 const defaults = () => ({
   profiles: [], families: [], programs: [], songs: {}, missing: {}, lastSync: 0,
   settings: {
-    staleDays: 60, restDays: 28, weeksAhead: 8, congregation: '',
+    staleDays: 60, restDays: 28, mecRestDays: 14, weekendDay: 6, weeksAhead: 8, congregation: '',
     pdfTitle: 'Programa para la reunión de entre semana', meetingDay: 2, startTime: '19:00', paper: 'letter',
     slipNote: 'En la Guía de actividades está la información para preparar su intervención. Repase también las indicaciones para la reunión Vida y Ministerio Cristianos.',
     slipFooter: '',
@@ -404,6 +408,7 @@ const ICONS = {
   directorio: '<path d="M5 4h12a2 2 0 012 2v14H7a2 2 0 01-2-2z"/><path d="M5 18a2 2 0 012-2h12"/><circle cx="12" cy="9" r="2"/>',
   cuentas: '<rect x="3" y="6" width="18" height="14" rx="2"/><path d="M3 10h18"/><circle cx="16" cy="15" r="1.3"/>',
   territorios: '<path d="M9 4L3 6v14l6-2 6 2 6-2V4l-6 2z"/><path d="M9 4v14M15 6v14"/>',
+  mecanicas: '<rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0014 0M12 18v3M8 21h8"/>',
   settings: '<path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/>',
   mas: '<circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/>',
   chev: '<path d="M9 6l6 6-6 6"/>',
@@ -498,12 +503,19 @@ const PRIVS = [
   ['vida', 'Nuestra vida cristiana'],
   ['conductor', 'Conductor del estudio bíblico'],
   ['lector', 'Lector del estudio bíblico'],
+  // Asignaciones mecánicas
+  ['presidente_fin', 'Presidente del fin de semana'],
+  ['atalaya', 'Lector de La Atalaya'],
+  ['microfonos', 'Micrófonos'],
+  ['acomodador', 'Acomodador'],
+  ['audio', 'Audio y video'],
 ];
+const MEC_PRIVS = ['presidente_fin', 'atalaya', 'microfonos', 'acomodador', 'audio'];
 // Para marcar varios de un jalón en el perfil
 const PRIV_PRESETS = [
-  ['Anciano', ['presidente', 'oracion', 'tesoros', 'lectura', 'vida', 'conductor', 'lector']],
-  ['Siervo ministerial', ['oracion', 'tesoros', 'lectura', 'vida', 'lector']],
-  ['Varón bautizado', ['oracion', 'lectura', 'estudiante', 'lector']],
+  ['Anciano', ['presidente', 'oracion', 'tesoros', 'lectura', 'vida', 'conductor', 'lector', ...MEC_PRIVS]],
+  ['Siervo ministerial', ['oracion', 'tesoros', 'lectura', 'vida', 'lector', ...MEC_PRIVS]],
+  ['Varón bautizado', ['oracion', 'lectura', 'estudiante', 'lector', 'atalaya', 'microfonos', 'acomodador', 'audio']],
   ['Estudiante', ['estudiante']],
 ];
 const privLabel = k => (PRIVS.find(([key]) => key === k) || [k, k])[1];
@@ -530,6 +542,69 @@ const ruleText = f => [
   f.sexo === 'M' ? 'hombres' : f.sexo === 'F' ? 'mujeres' : ''].filter(Boolean).join(', ');
 const fitsRule = (pr, f) => !f || ((f.min == null || (pr.age != null && pr.age >= f.min))
   && (f.max == null || (pr.age != null && pr.age <= f.max)) && (!f.sexo || pr.sex === f.sexo));
+
+// ---------- asignaciones mecánicas ----------
+// Por reunión: entre semana ('entre') y fin de semana ('fin'). Se guardan en cada semana como
+// p.mec = { entre: { clave: perfil }, fin: { … } }. El presidente y el lector de entre semana
+// son los mismos del programa de Vida y Ministerio (se leen y escriben ahí).
+const MEC = [
+  { key: 'presidente', label: 'Presidente', priv: { entre: 'presidente', fin: 'presidente_fin' } },
+  { key: 'lector', label: 'Lector', priv: { entre: 'lector', fin: 'atalaya' } },
+  { key: 'micPlat', label: 'Micrófono plataforma', priv: 'microfonos' },
+  { key: 'micAud1', label: 'Micrófono auditorio', priv: 'microfonos' },
+  { key: 'micAud2', label: 'Micrófono auditorio', priv: 'microfonos' },
+  { key: 'acomInt', label: 'Acomodador interior', priv: 'acomodador' },
+  { key: 'acomExt', label: 'Acomodador exterior', priv: 'acomodador' },
+  { key: 'audio', label: 'Audio y video', priv: 'audio' },
+];
+const MEETINGS = [['entre', 'Entre semana'], ['fin', 'Fin de semana']];
+const mecPriv = (mtg, key) => { const r = MEC.find(x => x.key === key); return typeof r.priv === 'string' ? r.priv : r.priv[mtg]; };
+const mecDate = (p, mtg) => mtg === 'entre' ? meetingDate(p) : addDays(p.date, state.settings.weekendDay ?? 6);
+// Fila del programa enlazada (solo presidente y lector de entre semana)
+function mecLinked(p, mtg, key) {
+  if (mtg !== 'entre') return null;
+  if (key === 'presidente') { const r = p.rows.find(x => x.kind === 'chair' && x.intro); return r ? [r, 'a'] : null; }
+  if (key === 'lector') { const r = p.rows.find(x => x.helper === 'Lector'); return r ? [r, 'b'] : null; }
+  return null;
+}
+function mecGet(p, mtg, key) {
+  const l = mecLinked(p, mtg, key);
+  return l ? l[0][l[1]] || null : ((p.mec || {})[mtg] || {})[key] || null;
+}
+function mecSet(p, mtg, key, pid) {
+  const l = mecLinked(p, mtg, key);
+  if (l) { l[0][l[1]] = pid; return; }
+  p.mec = p.mec || {}; p.mec[mtg] = p.mec[mtg] || {}; p.mec[mtg][key] = pid;
+}
+// Quiénes tienen asignación mecánica en una reunión (sin contar presidente y lector enlazados)
+const mecIds = (p, mtg) => Object.values(((p.mec || {})[mtg]) || {}).filter(Boolean);
+// Fechas de asignaciones mecánicas de cada hermano (para "hace cuánto" y el descanso)
+function mecHistory(skip) {
+  const hist = new Map();
+  for (const q of state.programs) for (const [mtg] of MEETINGS) for (const { key } of MEC) {
+    if (skip && skip.p === q && skip.mtg === mtg && skip.key === key) continue;
+    const id = mecGet(q, mtg, key);
+    if (id) (hist.get(id) || hist.set(id, []).get(id)).push(mecDate(q, mtg));
+  }
+  return hist;
+}
+// Recomendados para una asignación mecánica: varones con el privilegio, sin otra asignación
+// en esa reunión, sin mecánica en los últimos mecRestDays días; primero quien lleva más tiempo.
+function mecCandidates(p, mtg, key) {
+  const priv = mecPriv(mtg, key), date = mecDate(p, mtg), rest = state.settings.mecRestDays ?? 14;
+  const busy = new Set();
+  for (const r of MEC) if (r.key !== key) { const id = mecGet(p, mtg, r.key); if (id) busy.add(id); }
+  const linked = mecLinked(p, mtg, key); // su propia fila del programa no cuenta como "ocupado"
+  if (mtg === 'entre') for (const x of slotsOf(p)) if (x.pid && !(linked && x.row === linked[0] && x.slot === linked[1])) busy.add(x.pid);
+  const hist = mecHistory({ p, mtg, key });
+  return state.profiles.filter(pr => pr.sex === 'M' && pr.tipo !== 'no').map(pr => {
+    const dates = hist.get(pr.id) || [];
+    const before = dates.filter(d => d < date).sort().pop();
+    const near = dates.some(d => Math.abs(daysBetween(d, date)) < rest);
+    const why = busy.has(pr.id) ? 'Ya tiene asignación en esta reunión' : !canDo(pr, priv) ? 'Sin privilegio' : near ? 'Descansando' : '';
+    return { pr, why, days: before ? daysBetween(before, date) : Infinity };
+  }).sort((a, b) => (!b.why - !a.why) || b.days - a.days || a.pr.name.localeCompare(b.pr.name, 'es'));
+}
 
 // En Seamos mejores maestros se prefiere a las hermanas: 2 por cada hermano, sin dejar de
 // mostrar hermanos. Respeta el orden que ya traía cada grupo (sexo).
@@ -634,6 +709,8 @@ function statusFor(pid, p, ctx, counts, row, slot) {
   const prof = profById(pid);
   if (!prof) return { cls: 's-warn', text: 'Perfil eliminado' };
   if (counts[pid] > 1) return { cls: 's-dup', text: '⚠ Ya tiene otra intervención en esta semana' };
+  const mec = Object.entries(((p.mec || {}).entre) || {}).find(([, id]) => id === pid);
+  if (mec) return { cls: 's-dup', text: `⚠ Tiene asignación mecánica en esta reunión: ${MEC.find(r => r.key === mec[0]).label}` };
   if (slotNeedsMen(row, slot) && prof.sex === 'F') return { cls: 's-warn', text: '⚠ Normalmente la asigna un varón' };
   if (!canDo(prof, privFor(row, slot))) return { cls: 's-warn', text: `⚠ No tiene marcado el privilegio “${privLabel(privFor(row, slot))}”` };
   if (row.helper === 'Ayudante') {
@@ -1427,7 +1504,11 @@ function publicWeeks() {
     return { id: p.id, date: p.date, day: meetingDate(p), title: p.title, reading: p.reading || '', meeting: fmtMeeting(p),
       rows: p.rows.map(r => ({ kind: r.kind, section: r.section || '', t: displayTitle(r), min: r.kind === 'part' ? +r.min || null : null,
         time: fmtTime(t[r.id]), detail: r.kind === 'part' ? r.detail || '' : '', labels: slotLabels(r),
-        a: isAssignable(r) ? person(r.a) : null, b: isAssignable(r) && r.helper ? person(r.b) : null })) };
+        a: isAssignable(r) ? person(r.a) : null, b: isAssignable(r) && r.helper ? person(r.b) : null })),
+      // Asignaciones mecánicas (sin repetir presidente y lector de entre semana, que ya están arriba)
+      mec: MEETINGS.map(([mtg, label]) => ({ label, day: mecDate(p, mtg),
+        items: MEC.filter(r => !mecLinked(p, mtg, r.key)).map(r => ({ l: r.label, ...person(mecGet(p, mtg, r.key)) })).filter(x => x.id) }))
+        .filter(m => m.items.length) };
   });
 }
 async function publishProgram() {
@@ -1539,18 +1620,21 @@ function renderWaiting() {
 }
 
 // ---------- vista de publicadores ----------
+// Próximas asignaciones de la persona (programa y mecánicas), por fecha
 function myAssignments(weeks) {
   const pid = nube.me && nube.me.perfil, today = todayISO(), out = [];
   if (!pid) return out;
   for (const w of weeks) {
-    if ((w.day || addDays(w.date, 6)) < today) continue; // la reunión ya pasó
-    for (const r of w.rows) for (const k of ['a', 'b']) {
+    if ((w.day || addDays(w.date, 6)) >= today) for (const r of w.rows) for (const k of ['a', 'b']) {
       if (!r[k] || r[k].id !== pid) continue;
       const other = r[k === 'a' ? 'b' : 'a'];
-      out.push({ w, r, role: r.labels[k] || '', with: other ? other.n : '' });
+      out.push({ day: w.day || w.date, title: r.t, when: `${w.meeting} · ${r.time}`, role: r.labels[k] || '', with: other ? other.n : '', detail: r.detail });
     }
+    for (const m of w.mec || []) if (m.day >= today) for (const it of m.items) if (it.id === pid)
+      out.push({ day: m.day, title: it.l, when: `${m.label} · ${capFirst(toDate(m.day).toLocaleDateString('es', { weekday: 'long', day: 'numeric', month: 'long' }))}`,
+        role: 'Asignación mecánica', with: '', detail: '' });
   }
-  return out;
+  return out.sort((a, b) => a.day.localeCompare(b.day));
 }
 
 function nextAssignmentCard(weeks) {
@@ -1560,12 +1644,12 @@ function nextAssignmentCard(weeks) {
   const [x, ...rest] = myAssignments(weeks);
   if (!x) return h('div', { class: 'card mine' }, title, h('div', null, 'No tienes asignaciones en las próximas semanas.'));
   return h('div', { class: 'card mine' }, title,
-    h('div', { class: 'mine-t' }, x.r.t),
-    h('div', null, `${x.w.meeting} · ${x.r.time}`),
+    h('div', { class: 'mine-t' }, x.title),
+    h('div', null, x.when),
     x.role ? h('div', null, h('strong', null, x.role), x.with ? ` · con ${x.with}` : '') : null,
-    x.r.detail ? h('div', { class: 'detail' }, x.r.detail) : null,
+    x.detail ? h('div', { class: 'detail' }, x.detail) : null,
     rest.length ? h('div', { class: 'small-text muted', style: { marginTop: '6px' } },
-      'Después: ' + rest.map(y => `${fmtShort(y.w.date)} (${y.r.t})`).join(' · ')) : null);
+      'Después: ' + rest.map(y => `${fmtShort(y.day)} (${y.title})`).join(' · ')) : null);
 }
 
 function publicWeekCard(w, open) {
@@ -1581,6 +1665,12 @@ function publicWeekCard(w, open) {
     body.push(h('div', { class: 'vrow' }, h('span', { class: 'ptime' }, r.time),
       h('div', null, h('div', { class: 'pt' }, r.t, r.min ? h('span', { class: 'min' }, ` (${r.min} mins.)`) : null),
         names.length ? h('div', { class: 'vnames' }, names) : null)));
+  }
+  if ((w.mec || []).length) {
+    body.push(h('div', { class: 'psec', style: { '--sec': 'var(--sec-none)' } }, h('i'), 'Asignaciones mecánicas'));
+    for (const m of w.mec) body.push(h('div', { class: 'vrow' },
+      h('span', { class: 'ptime small-text' }, m.label.split(' ')[0]),
+      h('div', { class: 'vnames', style: { marginTop: 0 } }, m.items.map(it => h('span', { class: it.id === pid ? 'yo' : null }, `${it.l}: ${it.n}`)))));
   }
   return h('details', { class: 'card vweek', open: open || null },
     h('summary', null, h('strong', null, w.title), h('span', { class: 'muted small-text' }, ' · ' + w.meeting)),
@@ -2491,6 +2581,95 @@ function renderSharedTerritory() {
   }).catch(() => { mapEl.textContent = 'No se pudo cargar el mapa. Revisa tu conexión a internet.'; });
 }
 
+// ---------- sección Mecánicas (función Programa VyM) ----------
+// Lista de recomendados al tocar un espacio (como en el programa). getList(texto) devuelve
+// [{ pr, why, days }]; los que tienen "why" salen al final con el motivo.
+function attachPicker(inp, getList, onChoose) {
+  let el = null, items = [], at = 0;
+  const close = () => { if (el) { el.remove(); el = null; } };
+  const fill = () => {
+    const typed = norm(inp.value), all = getList();
+    items = (typed ? all.filter(x => (' ' + norm(x.pr.name)).includes(' ' + typed)) : all.filter(x => !x.why).slice(0, 8)).slice(0, 30);
+    at = Math.min(at, Math.max(items.length - 1, 0));
+    el.replaceChildren(h('div', { class: 'pick-head' }, typed ? 'Coincidencias' : 'Recomendados'),
+      ...(items.length ? items.map((x, i) => h('button', { class: 'pick-item' + (i === at ? ' on' : '') + (x.why ? ' other' : ''), type: 'button',
+        onmousedown: e => e.preventDefault(), onclick: () => choose(x.pr) },
+        h('span', { class: 'nm' }, x.pr.name, x.why ? h('span', { class: 'tag-fam', style: { color: 'var(--orange)' } }, x.why) : null),
+        h('span', { class: 'hint ' + (x.why ? 's-recent' : x.days === Infinity ? 's-stale' : 's-ok') }, x.days === Infinity ? 'nunca' : `hace ${x.days} d`)))
+        : [h('div', { class: 'pick-empty' }, typed ? 'Nadie con ese nombre.' : 'Nadie disponible. Escribe un nombre para buscar entre todos.')]));
+  };
+  const open = () => {
+    close();
+    el = h('div', { class: 'pick' });
+    const box = inp.parentNode.getBoundingClientRect(), width = Math.min(Math.max(box.width, 260), innerWidth - 16);
+    const over = box.left + width - (innerWidth - 8);
+    Object.assign(el.style, { top: (inp.offsetTop + inp.offsetHeight + 4) + 'px', width: width + 'px', right: 'auto', left: (over > 0 ? -over : 0) + 'px' });
+    inp.parentNode.append(el); fill();
+  };
+  const choose = pr => { close(); inp.value = pr.name; onChoose(pr.id); inp.blur(); };
+  inp.addEventListener('focus', () => { inp.select(); open(); });
+  inp.addEventListener('input', () => { if (el) { at = 0; fill(); } });
+  inp.addEventListener('keydown', e => {
+    if (!el) return;
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); at = Math.max(0, Math.min(items.length - 1, at + (e.key === 'ArrowDown' ? 1 : -1))); fill(); }
+    else if (e.key === 'Enter' && items[at]) { e.preventDefault(); choose(items[at].pr); }
+    else if (e.key === 'Escape') close();
+  });
+  inp.addEventListener('blur', () => setTimeout(close, 150));
+}
+
+function renderMecanicas() {
+  const thisMonday = mondayOf(todayISO());
+  const weeks = [...state.programs].filter(p => p.date >= thisMonday).sort((a, b) => a.date.localeCompare(b.date));
+  const fmtD = iso => capFirst(toDate(iso).toLocaleDateString('es', { weekday: 'long', day: 'numeric', month: 'long' }));
+
+  const slotInput = (p, mtg, key) => {
+    const id = mecGet(p, mtg, key), wrap = h('div', { style: { position: 'relative' } });
+    const inp = h('input', { type: 'text', autocomplete: 'off', placeholder: 'Asignar…', value: id && profById(id) ? profById(id).name : '', style: { width: '100%' },
+      onchange: e => {
+        const val = squash(e.target.value);
+        if (!val) { mecSet(p, mtg, key, null); save(); return; }
+        const pr = profByName(val);
+        if (pr) { mecSet(p, mtg, key, pr.id); save(); render(); } else { toast('No hay un perfil con ese nombre'); e.target.value = id && profById(id) ? profById(id).name : ''; }
+      } });
+    attachPicker(inp, () => mecCandidates(p, mtg, key), pid => { mecSet(p, mtg, key, pid); save(); render(); });
+    wrap.append(inp);
+    return wrap;
+  };
+
+  // "Sugerir": llena los espacios vacíos de la semana con el mejor disponible de cada uno
+  const suggestWeek = p => {
+    let n = 0;
+    for (const [mtg] of MEETINGS) for (const { key } of MEC) {
+      if (mecGet(p, mtg, key)) continue;
+      const best = mecCandidates(p, mtg, key).find(x => !x.why);
+      if (best) { mecSet(p, mtg, key, best.pr.id); n++; }
+    }
+    save(); render();
+    toast(n ? `Se sugirieron ${n} asignaciones. Puedes cambiar las que quieras.` : 'No hay a quién sugerir para los espacios vacíos.');
+  };
+
+  const card = p => h('div', { class: 'card', style: { padding: '14px', marginBottom: '12px' } },
+    h('div', { class: 'row spread', style: { marginBottom: '10px' } },
+      h('strong', { style: { fontSize: '16px' } }, p.title),
+      h('div', { class: 'row' },
+        h('button', { class: 'btn small primary', onclick: () => suggestWeek(p) }, '✨ Sugerir'),
+        h('button', { class: 'btn small', onclick: () => {
+          if (!confirm('¿Quitar las asignaciones mecánicas de esta semana? (El presidente y el lector de entre semana se quedan en el programa.)')) return;
+          delete p.mec; save(); render();
+        } }, 'Limpiar'))),
+    h('div', { class: 'mec-grid' }, MEETINGS.map(([mtg, label]) => h('div', null,
+      h('div', { class: 'small-text muted', style: { fontWeight: 600, marginBottom: '6px' } }, `${label} · ${fmtD(mecDate(p, mtg))}`),
+      MEC.map(({ key, label: l }) => h('div', { class: 'mec-row' },
+        h('span', { class: 'small-text' }, l, mtg === 'entre' && mecLinked(p, mtg, key) ? h('span', { class: 'muted', title: 'Es el mismo del programa de Vida y Ministerio' }, ' (programa)') : null),
+        slotInput(p, mtg, key)))))));
+
+  return h('div', null,
+    h('h1', null, 'Asignaciones mecánicas'),
+    h('p', { class: 'sub' }, `Toca un espacio para ver a los hermanos más recomendados, o usa “✨ Sugerir” para llenar los vacíos de la semana. No se repite a nadie en ${state.settings.mecRestDays ?? 14} días ni en la misma reunión.`),
+    weeks.length ? weeks.map(card) : h('div', { class: 'card empty' }, 'No hay semanas próximas. Agrégalas en Semanas.'));
+}
+
 // ---------- inicio: lo importante de un vistazo, según las funciones de cada quien ----------
 function renderHome() {
   const today = todayISO(), hour = new Date().getHours();
@@ -2528,6 +2707,11 @@ function renderHome() {
     const open = state.programs.filter(p => p.date >= thisMonday && slotsOf(p).some(x => !x.pid)).length;
     tiles.push(tile('people', 'Asignaciones', open ? `${open} semana${open > 1 ? 's' : ''} por completar` : 'Todo asignado',
       'Próximas semanas', () => go({ name: 'list' }), open ? 'warn' : 'ok'));
+    // Mecánicas de las próximas 4 semanas
+    const soon = state.programs.filter(p => p.date >= thisMonday && p.date < addDays(thisMonday, 28));
+    const empty = soon.reduce((a, p) => a + MEETINGS.reduce((b, [mtg]) => b + MEC.filter(r => !mecGet(p, mtg, r.key)).length, 0), 0);
+    if (soon.length) tiles.push(tile('mecanicas', 'Asignaciones mecánicas', empty ? `${empty} espacio${empty > 1 ? 's' : ''} por llenar` : 'Todo asignado',
+      'Próximas 4 semanas', () => go({ name: 'mecanicas' }), empty ? 'warn' : 'ok'));
   }
   if (isAdmin()) {
     const waiting = nube.miembros.filter(m => m.estado !== 'activo').length;
@@ -2641,10 +2825,10 @@ function go(v) { view = v; render(); window.scrollTo(0, 0); }
 // Cada quien ve solo las secciones de sus funciones
 // Secciones del menú: [vista, nombre, aviso con número]. Cada quien ve solo las de sus funciones.
 function navItems() {
-  if (!FB_CONFIG) return [['list', 'Semanas'], ['people', 'Perfiles'], ['families', 'Familias'], ['settings', 'Ajustes']];
+  if (!FB_CONFIG) return [['list', 'Semanas'], ['mecanicas', 'Mecánicas'], ['people', 'Perfiles'], ['families', 'Familias'], ['settings', 'Ajustes']];
   if (!nube.acceso) return [];
   const items = [['inicio', 'Inicio'], ['list', 'Semanas']];
-  if (can('programa')) items.push(['people', 'Perfiles'], ['families', 'Familias']);
+  if (can('programa')) items.push(['mecanicas', 'Mecánicas'], ['people', 'Perfiles'], ['families', 'Familias']);
   if (isAdmin()) items.push(['users', 'Usuarios', nube.miembros.filter(m => m.estado !== 'activo').length]);
   if (can('secretario')) items.push(['report', 'Informes']);
   else if (reportsByMembers()) items.push(['report', 'Informe']);
@@ -2695,6 +2879,7 @@ function render() {
   if (view.name === 'directorio') return app.replaceChildren(renderDirectory());
   if (view.name === 'cuentas') return app.replaceChildren(renderAccounts());
   if (view.name === 'territorios') return app.replaceChildren(renderTerritories());
+  if (view.name === 'mecanicas') return app.replaceChildren(renderMecanicas());
   if (view.name === 'settings') return app.replaceChildren(program ? renderSettings() : renderPubSettings());
   if (!program) return app.replaceChildren(renderPubList());
   refreshDatalist();
@@ -2779,7 +2964,7 @@ function renderEditor(p) {
   // "Otra" pasa a la siguiente opción de esa asignación.
   function computeProposals(ctx) {
     proposals = new Map();
-    const reserved = new Set(slotsOf(p).map(x => x.pid).filter(Boolean));
+    const reserved = new Set([...slotsOf(p).map(x => x.pid).filter(Boolean), ...mecIds(p, 'entre')]);
     for (const x of slotsOf(p)) {
       if (x.pid) continue;
       const key = x.row.id + '|' + x.slot;
@@ -2839,7 +3024,7 @@ function renderEditor(p) {
   // Sugerencias para la asignación seleccionada: primero quien puede hacerla y lleva más
   // tiempo sin participar; abajo, aparte, quien está "descansando" (regla de los 28 días).
   function updateSide(ctx = contextFor(p)) {
-    const used = new Set(slotsOf(p).map(x => x.pid).filter(Boolean));
+    const used = new Set([...slotsOf(p).map(x => x.pid).filter(Boolean), ...mecIds(p, 'entre')]);
     const f = norm(suggFilter.value);
     chips.replaceChildren(...[['all', 'Todos'], ['M', 'Hombres'], ['F', 'Mujeres']].map(([v, t]) =>
       h('button', { class: sexFilter === v ? 'on' : '', onclick: () => { sexFilter = v; updateSide(); } }, t)));
@@ -2940,7 +3125,7 @@ function renderEditor(p) {
   const nameMatch = (name, typed) => (' ' + norm(name)).includes(' ' + typed);
   function fillPick() {
     const { row, slot, inp } = pick;
-    const ctx = contextFor(p), counts = new Set(slotsOf(p).filter(x => x.pid && !(x.row === row && x.slot === slot)).map(x => x.pid));
+    const ctx = contextFor(p), counts = new Set([...slotsOf(p).filter(x => x.pid && !(x.row === row && x.slot === slot)).map(x => x.pid), ...mecIds(p, 'entre')]);
     const current = row[slot], typed = current && profById(current) && profById(current).name === inp.value ? '' : norm(inp.value);
     const partner = slot === 'b' ? row.a : row.b;
     const best = candidatesFor(p, row, slot, ctx, counts, partner).filter(c => c.pr.id !== current);
@@ -3314,6 +3499,9 @@ function renderSettings() {
         h('label', { class: 'field' }, 'Día de la reunión',
           h('select', { onchange: e => { s.meetingDay = +e.target.value; save(); } },
             WEEKDAYS.map((d, i) => h('option', { value: i, selected: s.meetingDay === i ? true : null }, d)))),
+        h('label', { class: 'field' }, 'Reunión del fin de semana',
+          h('select', { onchange: e => { s.weekendDay = +e.target.value; save(); } },
+            WEEKDAYS.map((d, i) => h('option', { value: i, selected: (s.weekendDay ?? 6) === i ? true : null }, d)))),
         h('label', { class: 'field' }, 'Hora de inicio',
           h('input', { type: 'time', value: s.startTime, onchange: e => { if (e.target.value) { s.startTime = e.target.value; save(); } } })),
         h('label', { class: 'field' }, 'Tamaño de papel del PDF',
@@ -3324,6 +3512,7 @@ function renderSettings() {
         h('textarea', { rows: 3, oninput: e => { s.slipNote = e.target.value; save(); } }, s.slipNote)),
       text('Texto al pie de las hojas de asignación', 'slipFooter', 'Opcional (por ejemplo, el código del formulario)'),
       num('No repetir a nadie en … días (antes o después de su asignación)', 'restDays', 7, 120),
+      num('Asignaciones mecánicas: no repetir a nadie en … días', 'mecRestDays', 0, 120),
       num('Marcar como “hace mucho” después de … días', 'staleDays', 1, 3650),
       num('Cuántas semanas hacia adelante buscar en jw.org', 'weeksAhead', 1, 16),
       h('div', { class: 'row' },

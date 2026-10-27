@@ -38,6 +38,11 @@ App para organizar las asignaciones de la reunión semanal Vida y Ministerio Cri
 - Familias: sugieren y validan parejas estudiante/ayudante.
 - PDF del programa (una semana por hoja, diseño basado en un PDF de ejemplo del usuario) y hojas de asignación (una por hoja, copiando las medidas de la hoja de asignación de ejemplo; nota y pie editables en Ajustes).
 
+## Asignaciones mecánicas (1.12.0)
+- Sección `mecanicas` (función programa). Por semana y por reunión: `p.mec = { entre: {...}, fin: {...} }` con las claves de `MEC` (presidente, lector, micPlat, micAud1, micAud2, acomInt, acomExt, audio). Presidente y lector de entre semana se leen/escriben en la fila del programa (`mecLinked`).
+- `mecCandidates()`: varones con el privilegio (`presidente_fin`, `atalaya`, `microfonos`, `acomodador`, `audio`; presidente/lector en entre semana), sin otra asignación en esa reunión, sin mecánica en `settings.mecRestDays` (14) días. `settings.weekendDay` = día del fin de semana.
+- El programa VyM no recomienda a quien tiene mecánica entre semana (`mecIds`) y avisa en `statusFor`. `publicWeeks()` incluye `mec` para que los hermanos las vean.
+
 ## Asignaciones asistidas (1.4.0)
 - `perfil.puede`: lista de privilegios (`PRIVS`: presidente, oracion, tesoros, lectura, estudiante, vida, conductor, lector). Si no existe, el perfil está "sin marcar" y sale para todo. `privFor(row, slot)` dice cuál pide cada asignación.
 - Regla de descanso: `settings.restDays` (28) días antes o después de otra asignación (`contextFor().recent`); en las sugerencias salen aparte como “Descansando”.
