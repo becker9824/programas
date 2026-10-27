@@ -817,10 +817,14 @@ function blankRows() {
   ];
 }
 
+// Dónde se lee jw.org: el programa de PC y servidor.ps1 lo hacen ellos mismos (/jw/…); la versión web
+// usa el intermediario en Cloudflare (carpeta intermediario/), porque jw.org no deja leerlo desde otro sitio.
+const JW_PROXY = '';
+const JW_BASE = location.protocol === 'https:' ? JW_PROXY : '';
 async function serverAvailable() {
   if (serverOK !== null) return serverOK;
-  if (location.protocol === 'file:') return serverOK = false;
-  try { const r = await fetch('/jw/ping', { cache: 'no-store' }); serverOK = r.ok && (await r.text()) === 'ok'; }
+  if (location.protocol === 'file:' || (location.protocol === 'https:' && !JW_PROXY)) return serverOK = false;
+  try { const r = await fetch(JW_BASE + '/jw/ping', { cache: 'no-store' }); serverOK = r.ok && (await r.text()) === 'ok'; }
   catch (e) { serverOK = false; }
   return serverOK;
 }
@@ -842,7 +846,7 @@ async function ensureSongTitles(programs) {
     const path = n >= 1 && n <= 151 ? `/es/wol/d/r4/lp-s/${1102016800 + n}` : href;
     if (!path) continue;
     try {
-      const r = await fetch('/jw/titulo?path=' + encodeURIComponent(path), { cache: 'no-store' });
+      const r = await fetch(JW_BASE + '/jw/titulo?path=' + encodeURIComponent(path), { cache: 'no-store' });
       const t = r.ok ? squash(await r.text()) : '';
       if (t) {
         state.songs[n] = t;
@@ -867,7 +871,8 @@ async function syncGuides(manual) {
   if (!await serverAvailable()) {
     syncing = false;
     setSync(location.protocol === 'https:'
-      ? 'Desde la versión web no se puede leer jw.org. Busca las semanas desde el programa de PC y aparecerán aquí solas.'
+      ? (JW_PROXY ? 'No se pudo conectar con jw.org. Revisa tu internet y vuelve a intentar.'
+        : 'Desde la versión web no se puede leer jw.org. Busca las semanas desde el programa de PC y aparecerán aquí solas.')
       : 'Para buscar las guías en jw.org, abre la app con el archivo “Programas.bat”.', true);
     return;
   }
@@ -3670,7 +3675,7 @@ function filtersCard() {
 // Revisa jw.org al abrir, como máximo cada 12 horas (o siempre si faltan semanas próximas).
 // En la versión web no se puede leer jw.org, así que no se intenta solo.
 function startJw() {
-  if (location.protocol === 'https:') return;
+  if (location.protocol === 'https:' && !JW_PROXY) return;
   if (Date.now() - state.lastSync > 12 * 36e5 || !state.programs.some(p => p.date >= mondayOf(todayISO()))) syncGuides(false);
   else ensureSongTitles(state.programs);
 }

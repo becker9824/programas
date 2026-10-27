@@ -1,0 +1,5 @@
+# Intermediario de la app Programas para leer wol.jw.org desde la versión web.
+# Subirlo: npx.cmd wrangler deploy --config intermediario/wrangler.toml
+name = "programas-jw"
+main = "worker.js"
+compatibility_date = "2026-10-01"
