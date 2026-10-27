@@ -305,7 +305,7 @@
 
 <script>
 const KEY = 'programas-app-v2';
-const APP_VERSION = '1.11.0'; // igual que "version" en package.json (publicar.ps1 lo revisa)
+const APP_VERSION = '1.11.1'; // igual que "version" en package.json (publicar.ps1 lo revisa)
 // Con FIREBASE_CONFIG (firebase-config.js) los datos viven en la nube de la congregación;
 // sin él, la app funciona como antes, solo en esta PC. "?emu" usa el Firebase local de prueba.
 const EMU = /[?&]emu\b/.test(location.search);
@@ -531,16 +531,30 @@ const ruleText = f => [
 const fitsRule = (pr, f) => !f || ((f.min == null || (pr.age != null && pr.age >= f.min))
   && (f.max == null || (pr.age != null && pr.age <= f.max)) && (!f.sexo || pr.sex === f.sexo));
 
+// En Seamos mejores maestros se prefiere a las hermanas: 2 por cada hermano, sin dejar de
+// mostrar hermanos. Respeta el orden que ya traía cada grupo (sexo).
+function preferWomen(list, prOf = x => x.pr) {
+  const f = list.filter(x => prOf(x).sex === 'F'), m = list.filter(x => prOf(x).sex !== 'F'), out = [];
+  while (f.length || m.length) out.push(...f.splice(0, 2), ...m.splice(0, 1));
+  return out;
+}
+// ¿Se aplica la preferencia? Solo al estudiante (o a quien no tiene pareja aún) de Seamos mejores maestros
+const womenFirst = (row, slot, partnerId) => privFor(row, slot) === 'estudiante' && !slotNeedsMen(row, slot)
+  && !(row.helper === 'Ayudante' && partnerId);
+
 // Quiénes conviene poner en una asignación, en orden: cumplen el filtro, tienen el privilegio,
 // no están descansando y llevan más tiempo sin participar. reserved: ya usados en la semana.
 function candidatesFor(p, row, slot, ctx, reserved, partnerId) {
   const priv = privFor(row, slot), rule = ruleFor(row), men = slotNeedsMen(row, slot);
   const partner = row.helper === 'Ayudante' && partnerId ? profById(partnerId) : null;
-  return state.profiles
+  const list = state.profiles
     .filter(pr => !reserved.has(pr.id) && canDo(pr, priv) && !(men && pr.sex === 'F') && !ctx.recent.has(pr.id)
       && (!partner || partner.sex === pr.sex || sameFamily(partner.id, pr.id)))
     .map(pr => { const l = ctx.last.get(pr.id); return { pr, rule, fits: fitsRule(pr, rule), days: l ? daysBetween(l.q.date, p.date) : Infinity }; })
     .sort((a, b) => (rule ? b.fits - a.fits : 0) || b.days - a.days || a.pr.name.localeCompare(b.pr.name, 'es'));
+  if (!womenFirst(row, slot, partnerId)) return list;
+  // Los que cumplen el filtro siguen yendo primero; dentro de cada grupo se intercala
+  return [...preferWomen(list.filter(c => c.fits || !rule)), ...(rule ? preferWomen(list.filter(c => !c.fits)) : [])];
 }
 
 // Horario: canción y oración inicial 5 min, canción intermedia 4 min, 1 min de consejo tras cada
@@ -2854,7 +2868,13 @@ function renderEditor(p) {
         it.able ? null : h('span', { class: 'tag-fam', style: { color: 'var(--orange)' } }, 'Sin privilegio')),
       h('span', { class: 'hint ' + (it.rest ? 's-recent' : it.days === Infinity || it.days >= s.staleDays ? 's-stale' : 's-ok') },
         it.days === Infinity ? 'nunca' : `hace ${it.days} d`));
-    const ready = items.filter(it => !it.rest), resting = items.filter(it => it.rest);
+    let ready = items.filter(it => !it.rest), resting = items.filter(it => it.rest);
+    // Seamos mejores maestros: 2 hermanas por cada hermano (familiares, con privilegio y filtro siguen primero)
+    if (fr && womenFirst(fr, focus.slot, partner) && sexFilter === 'all') {
+      const key = it => `${+it.fam}${+it.able}${+it.fits}`;
+      const groups = [...new Set(ready.map(key))];
+      ready = groups.flatMap(g => preferWomen(ready.filter(it => key(it) === g)));
+    }
     const unset = state.profiles.filter(pr => !Array.isArray(pr.puede)).length;
     suggList.replaceChildren(...(items.length ? [
       ...ready.map(item),
