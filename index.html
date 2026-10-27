@@ -314,7 +314,7 @@
 
 <script>
 const KEY = 'programas-app-v2';
-const APP_VERSION = '1.14.0'; // igual que "version" en package.json (publicar.ps1 lo revisa)
+const APP_VERSION = '1.14.1'; // igual que "version" en package.json (publicar.ps1 lo revisa)
 // Con FIREBASE_CONFIG (firebase-config.js) los datos viven en la nube de la congregación;
 // sin él, la app funciona como antes, solo en esta PC. "?emu" usa el Firebase local de prueba.
 const EMU = /[?&]emu\b/.test(location.search);
@@ -831,7 +831,7 @@ async function serverAvailable() {
 
 async function fetchGuide(monday) {
   const { y, w } = isoWeek(monday);
-  const r = await fetch(`/jw/semana?y=${y}&w=${w}`, { cache: 'no-store' });
+  const r = await fetch(`${JW_BASE}/jw/semana?y=${y}&w=${w}`, { cache: 'no-store' });
   if (!r.ok) return null;
   const g = parseGuide(await r.text(), monday);
   return g.rows.some(x => x.kind === 'part') ? g : null;
