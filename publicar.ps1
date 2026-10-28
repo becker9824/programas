@@ -11,6 +11,9 @@ npm.cmd run instalador
 if ($LASTEXITCODE) { throw 'No se pudo crear el instalador' }
 
 $archivos = "dist\Programas-Setup-$version.exe", "dist\Programas-Setup-$version.exe.blockmap", 'dist\latest.yml'
+# El APK de Android (se arma aparte, ver CLAUDE.md) va en cada versión para que el enlace /latest/download/Programas.apk no falle.
+$apk = 'E:\AndroidTools\programas-apk\Programas.apk'
+if (Test-Path $apk) { $archivos += $apk }
 # La subida del instalador (~110 MB) a veces se corta: se reintenta hasta 3 veces.
 # Si la versión ya quedó creada a medias, se vuelven a subir sus archivos.
 $listo = $false

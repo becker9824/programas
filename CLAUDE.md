@@ -32,6 +32,12 @@ App para organizar las asignaciones de la reunión semanal Vida y Ministerio Cri
 - `main.js` usa `electron-updater`: al abrir busca la versión nueva en Releases (`latest.yml`), la baja en segundo plano y pregunta si reiniciar; si no, la instala al cerrar. Solo corre en el programa instalado, no en `--prueba`.
 - Los nombres de archivo deben coincidir con `latest.yml` (por eso `artifactName` sin espacios).
 
+## APK de Android (TWA)
+- `Programas.apk` es una cáscara (Trusted Web Activity) que abre https://becker9824.github.io/programas/ en Chrome a pantalla completa: se actualiza sola con la web, no hay que rehacerla en cada versión. `publicar.ps1` la sube a cada versión; enlace fijo: https://github.com/becker9824/programas/releases/latest/download/Programas.apk
+- Todo vive en `E:\AndroidTools` (el usuario pidió descargar en el disco SSD SEC): `sdk`, `gradle-home`, `bw/generar.js` (genera el proyecto con @bubblewrap/core), `programas-apk` (proyecto; se subió `minSdkVersion` a 24 a mano) y `llaves/` (programas.keystore + clave.txt: **no perderlas**, sin ellas no se puede sacar otra versión del APK con el mismo paquete).
+- Sin barra de dirección gracias a https://github.com/becker9824/becker9824.github.io (`.well-known/assetlinks.json` con la huella SHA-256 de la llave; paquete `io.github.becker9824.programas`).
+- Rehacer: `node generar.js <versión> <código>` en `bw`, subir minSdk a 24, `gradlew.bat assembleRelease` con `GRADLE_USER_HOME`/`ANDROID_HOME` en E:, luego zipalign + apksigner con la llave.
+
 ## Funciones hechas
 - Semanas importadas solas de la Guía de actividades (wol.jw.org), con canciones (título por número: documento `1102016800 + n` para 1-151), horarios calculados y secciones de color.
 - Perfiles (nombre, edad, sexo, notas, familia), avisos de repetidos / "hace mucho", lista ordenada por tiempo sin participar.
