@@ -1,0 +1,9 @@
+{
+  "appId": "io.github.becker9824.programas",
+  "appName": "Programas",
+  "webDir": "www",
+  "android": {
+    "backgroundColor": "#f4f5f7",
+    "adjustMarginsForEdgeToEdge": "auto"
+  }
+}

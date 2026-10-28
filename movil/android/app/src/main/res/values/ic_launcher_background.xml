@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="ic_launcher_background">#FFFFFF</color>
+    <color name="fondo_arranque">#F4F5F7</color>
+    <!-- Azul de la app (theme_color de manifest.webmanifest): barra de estado -->
+    <color name="colorPrimary">#1D5FD0</color>
+    <color name="colorPrimaryDark">#1D5FD0</color>
+    <color name="colorAccent">#1D5FD0</color>
+</resources>

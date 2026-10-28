@@ -10,10 +10,13 @@ Remove-Item dist\latest.yml, "dist\Programas-Setup-$version.*" -ErrorAction Sile
 npm.cmd run instalador
 if ($LASTEXITCODE) { throw 'No se pudo crear el instalador' }
 
-$archivos = "dist\Programas-Setup-$version.exe", "dist\Programas-Setup-$version.exe.blockmap", 'dist\latest.yml'
-# El APK de Android (se arma aparte, ver CLAUDE.md) va en cada versión para que el enlace /latest/download/Programas.apk no falle.
-$apk = 'E:\AndroidTools\programas-apk\Programas.apk'
-if (Test-Path $apk) { $archivos += $apk }
+# App de Android (movil/, ver CLAUDE.md): va en cada versión para que /latest/download/Programas.apk no falle
+# y para que el aviso de versión nueva del celular encuentre su APK.
+Remove-Item movil\Programas.apk -ErrorAction SilentlyContinue
+npm.cmd --prefix movil run apk
+if ($LASTEXITCODE -or -not (Test-Path movil\Programas.apk)) { throw 'No se pudo crear el APK' }
+
+$archivos = "dist\Programas-Setup-$version.exe", "dist\Programas-Setup-$version.exe.blockmap", 'dist\latest.yml', 'movil\Programas.apk'
 # La subida del instalador (~110 MB) a veces se corta: se reintenta hasta 3 veces.
 # Si la versión ya quedó creada a medias, se vuelven a subir sus archivos.
 $listo = $false

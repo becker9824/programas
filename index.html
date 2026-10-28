@@ -314,11 +314,15 @@
 
 <script>
 const KEY = 'programas-app-v2';
-const APP_VERSION = '1.14.2'; // igual que "version" en package.json (publicar.ps1 lo revisa)
+const APP_VERSION = '1.15.0'; // igual que "version" en package.json (publicar.ps1 lo revisa)
 // Con FIREBASE_CONFIG (firebase-config.js) los datos viven en la nube de la congregación;
 // sin él, la app funciona como antes, solo en esta PC. "?emu" usa el Firebase local de prueba.
 const EMU = /[?&]emu\b/.test(location.search);
 const FB_CONFIG = EMU ? { apiKey: 'demo-key', authDomain: 'localhost', projectId: 'demo-programas' } : window.FIREBASE_CONFIG;
+// App de Android (carpeta movil/, Capacitor): la app va dentro del APK y usa funciones del celular
+// (movil/copiar.js le agrega capacitor.js; sin él, como en la PC y la web, NATIVE es false)
+const NATIVE = !!(window.capacitorExports && Capacitor.isNativePlatform());
+const NP = NATIVE ? { http: capacitorExports.CapacitorHttp, files: capacitorExports.registerPlugin('Filesystem'), share: capacitorExports.registerPlugin('Share') } : null;
 const OLD_PDF_TITLE = 'Reunión Vida y Ministerio Cristianos';
 // Filtros de sugerencias que trae la app (se pueden cambiar en Ajustes)
 const DEFAULT_FILTERS = [
@@ -819,19 +823,45 @@ function blankRows() {
 
 // Dónde se lee jw.org: el programa de PC y servidor.ps1 lo hacen ellos mismos (/jw/…); la versión web
 // usa el intermediario en Cloudflare (carpeta intermediario/), porque jw.org no deja leerlo desde otro sitio.
+// La app de Android lo lee directo (sus peticiones no tienen esa limitación), igual que intermediario/worker.js.
 const JW_PROXY = 'https://programas-jw.marperjamin007.workers.dev';
 const JW_BASE = location.protocol === 'https:' ? JW_PROXY : '';
+async function jwFetch(path) {
+  if (!NATIVE) return fetch(JW_BASE + path, { cache: 'no-store' });
+  const wol = async p => {
+    const r = await NP.http.get({ url: 'https://wol.jw.org' + p, responseType: 'text', headers: { 'User-Agent': 'Mozilla/5.0 (Programas congregacion)' } });
+    if (r.status !== 200) throw new Error('HTTP ' + r.status);
+    return r.data;
+  };
+  const reply = (text, status = 200) => ({ ok: status === 200, status, text: async () => text });
+  const url = new URL(path, 'https://x');
+  try {
+    if (url.pathname === '/jw/ping') return reply('ok');
+    if (url.pathname === '/jw/semana') {
+      const week = await wol(`/es/wol/meetings/r4/lp-s/${url.searchParams.get('y')}/${url.searchParams.get('w')}`);
+      const m = week.match(/href="(\/es\/wol\/d\/r4\/lp-s\/\d+)"\s+class="[^"]*pub-mwb/);
+      return m ? reply(await wol(m[1])) : reply('', 404);
+    }
+    if (url.pathname === '/jw/titulo') {
+      const t = ((await wol(url.searchParams.get('path'))).match(/<title>([^<]*)<\/title>/) || [])[1] || '';
+      const box = document.createElement('textarea'); box.innerHTML = t.split('&mdash;')[0]; // decodifica &amp;, &#233;…
+      return reply(box.value.trim());
+    }
+  } catch (e) { return reply('', 502); }
+  return reply('', 404);
+}
 async function serverAvailable() {
   if (serverOK !== null) return serverOK;
+  if (NATIVE) return serverOK = true;
   if (location.protocol === 'file:' || (location.protocol === 'https:' && !JW_PROXY)) return serverOK = false;
-  try { const r = await fetch(JW_BASE + '/jw/ping', { cache: 'no-store' }); serverOK = r.ok && (await r.text()) === 'ok'; }
+  try { const r = await jwFetch('/jw/ping'); serverOK = r.ok && (await r.text()) === 'ok'; }
   catch (e) { serverOK = false; }
   return serverOK;
 }
 
 async function fetchGuide(monday) {
   const { y, w } = isoWeek(monday);
-  const r = await fetch(`${JW_BASE}/jw/semana?y=${y}&w=${w}`, { cache: 'no-store' });
+  const r = await jwFetch(`/jw/semana?y=${y}&w=${w}`);
   if (!r.ok) return null;
   const g = parseGuide(await r.text(), monday);
   return g.rows.some(x => x.kind === 'part') ? g : null;
@@ -846,7 +876,7 @@ async function ensureSongTitles(programs) {
     const path = n >= 1 && n <= 151 ? `/es/wol/d/r4/lp-s/${1102016800 + n}` : href;
     if (!path) continue;
     try {
-      const r = await fetch(JW_BASE + '/jw/titulo?path=' + encodeURIComponent(path), { cache: 'no-store' });
+      const r = await jwFetch('/jw/titulo?path=' + encodeURIComponent(path));
       const t = r.ok ? squash(await r.text()) : '';
       if (t) {
         state.songs[n] = t;
@@ -920,8 +950,25 @@ async function addWeek(dateISO) {
 
 // ---------- PDF ----------
 // En el celular abre "Compartir" (WhatsApp, Drive, guardar…); en la PC lo descarga.
+// En la app de Android no hay descargas: el archivo se guarda dentro de la app y se abre "Compartir".
+async function nativeShareFile(blob, name) {
+  const data = await new Promise(ok => { const fr = new FileReader(); fr.onload = () => ok(fr.result.split(',')[1]); fr.readAsDataURL(blob); });
+  const { uri } = await NP.files.writeFile({ path: name, data, directory: 'CACHE' });
+  await NP.share.share({ title: name, files: [uri] }).catch(() => {});
+}
+if (NATIVE) {
+  // Los CSV y el respaldo se "descargan" con un enlace temporal (a.click()); aquí se comparten.
+  const click = HTMLAnchorElement.prototype.click;
+  HTMLAnchorElement.prototype.click = function () {
+    if (!this.download || !this.href.startsWith('blob:')) return click.call(this);
+    const name = this.download;
+    fetch(this.href).then(r => r.blob()).then(b => nativeShareFile(b, name)).catch(() => toast('No se pudo guardar el archivo'));
+  };
+  navigator.share = d => NP.share.share({ title: d.title, text: d.text, url: d.url });
+}
 function savePDF(doc, fname) {
   const name = fname.replace(/[\\/:*?"<>|]+/g, '') + '.pdf';
+  if (NATIVE) return nativeShareFile(doc.output('blob'), name).catch(() => toast('No se pudo guardar el PDF'));
   const file = typeof File === 'function' ? new File([doc.output('blob')], name, { type: 'application/pdf' }) : null;
   if (file && navigator.canShare && matchMedia('(pointer: coarse)').matches && navigator.canShare({ files: [file] })) {
     return navigator.share({ files: [file], title: name }).catch(e => { if (e.name !== 'AbortError') doc.save(name); });
@@ -1748,7 +1795,7 @@ function congregationSettings() {
 function renderPubSettings() {
   const version = h('div');
   if (location.protocol === 'app:') fetch('/version').then(r => r.text()).then(v => { version.textContent = 'Versión ' + v; }).catch(() => {});
-  else version.textContent = `Versión ${APP_VERSION} (web)`;
+  else version.textContent = `Versión ${APP_VERSION} (${NATIVE ? 'Android' : 'web'})`;
   const item = (label, value) => h('div', { class: 'field' }, h('span', null, label), h('div', { style: { color: 'var(--text)', fontSize: '15px' } }, value));
   const roles = PERMS.filter(([k]) => can(k)).map(([, label]) => label);
   return h('div', null,
@@ -3590,6 +3637,7 @@ function renderSettings() {
   // Versión del programa de escritorio (se actualiza solo desde GitHub)
   const version = h('p', { class: 'sub' });
   if (location.protocol === 'app:') fetch('/version').then(r => r.text()).then(v => { version.textContent = `Versión ${v} · se actualiza sola al abrir el programa`; }).catch(() => {});
+  else if (NATIVE) version.textContent = `Versión ${APP_VERSION} (Android) · avisa al abrir si hay una nueva`;
   else if (FB_CONFIG) version.textContent = `Versión ${APP_VERSION} (web)`;
   return h('div', null,
     h('h1', null, 'Ajustes'),
@@ -3693,7 +3741,26 @@ function startJw() {
 if (/^#ver&/.test(location.hash)) renderSharedTerritory(); // QR de una tarjeta de territorio
 else if (FB_CONFIG) startCloud();
 else { render(); startJw(); }
-if ('serviceWorker' in navigator && location.protocol === 'https:') {
+// App de Android: no se actualiza sola; al abrir revisa GitHub y ofrece bajar el APK nuevo.
+const APK_URL = 'https://github.com/becker9824/programas/releases/latest/download/Programas.apk';
+const newerVersion = (a, b) => { const x = a.split('.').map(Number), y = b.split('.').map(Number); for (let i = 0; i < 3; i++) if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) > (y[i] || 0); return false; };
+async function checkApkUpdate() {
+  try {
+    const r = await fetch('https://api.github.com/repos/becker9824/programas/releases/latest', { cache: 'no-store' });
+    const v = r.ok ? String((await r.json()).tag_name || '').replace(/^v/, '') : '';
+    if (!v || !newerVersion(v, APP_VERSION)) return;
+    const dlg = h('dialog', { class: 'dlg' },
+      h('div', { class: 'dlg-body' }, h('h3', null, 'Hay una versión nueva'),
+        h('p', null, `Tienes la ${APP_VERSION} y ya salió la ${v}. Toca “Descargar”, abre el archivo que se baja e instálalo encima: tus datos no se pierden.`)),
+      h('div', { class: 'dlg-foot' },
+        h('button', { class: 'btn', onclick: () => dlg.close() }, 'Después'),
+        h('button', { class: 'btn primary', onclick: () => { window.open(APK_URL, '_blank'); dlg.close(); } }, '⬇ Descargar')));
+    dlg.addEventListener('close', () => dlg.remove());
+    document.body.append(dlg); dlg.showModal();
+  } catch (e) {}
+}
+if (NATIVE) checkApkUpdate();
+else if ('serviceWorker' in navigator && location.protocol === 'https:') {
   // Cuando llega una versión nueva de la web, se recarga una vez para usarla
   const hadController = !!navigator.serviceWorker.controller;
   navigator.serviceWorker.addEventListener('controllerchange', () => { if (hadController && !busy()) location.reload(); });

@@ -32,11 +32,12 @@ App para organizar las asignaciones de la reunión semanal Vida y Ministerio Cri
 - `main.js` usa `electron-updater`: al abrir busca la versión nueva en Releases (`latest.yml`), la baja en segundo plano y pregunta si reiniciar; si no, la instala al cerrar. Solo corre en el programa instalado, no en `--prueba`.
 - Los nombres de archivo deben coincidir con `latest.yml` (por eso `artifactName` sin espacios).
 
-## APK de Android (TWA)
-- `Programas.apk` es una cáscara (Trusted Web Activity) que abre https://becker9824.github.io/programas/ en Chrome a pantalla completa: se actualiza sola con la web, no hay que rehacerla en cada versión. `publicar.ps1` la sube a cada versión; enlace fijo: https://github.com/becker9824/programas/releases/latest/download/Programas.apk
-- Todo vive en `E:\AndroidTools` (el usuario pidió descargar en el disco SSD SEC): `sdk`, `gradle-home`, `bw/generar.js` (genera el proyecto con @bubblewrap/core), `programas-apk` (proyecto; se subió `minSdkVersion` a 24 a mano) y `llaves/` (programas.keystore + clave.txt: **no perderlas**, sin ellas no se puede sacar otra versión del APK con el mismo paquete).
-- Sin barra de dirección gracias a https://github.com/becker9824/becker9824.github.io (`.well-known/assetlinks.json` con la huella SHA-256 de la llave; paquete `io.github.becker9824.programas`).
-- Rehacer: `node generar.js <versión> <código>` en `bw`, subir minSdk a 24, `gradlew.bat assembleRelease` con `GRADLE_USER_HOME`/`ANDROID_HOME` en E:, luego zipalign + apksigner con la llave.
+## App de Android (1.15.0, carpeta `movil/`)
+- Capacitor 7: `movil/copiar.js` copia index.html, vendor, etc. a `movil/www` y le agrega `capacitor.js`; `movil/armar-apk.js` (`npm --prefix movil run apk`) sincroniza, compila con Gradle y firma → `movil/Programas.apk`. `publicar.ps1` lo arma y lo sube a cada versión; enlace fijo: https://github.com/becker9824/programas/releases/latest/download/Programas.apk
+- En index.html, `NATIVE` (hay `capacitorExports`) y `NP` (CapacitorHttp, Filesystem, Share). En el celular: `jwFetch` lee wol.jw.org directo (misma lógica que intermediario/worker.js); PDF, CSV y respaldo se comparten con `nativeShareFile` (se parcha `HTMLAnchorElement.click` y `navigator.share`); sin service worker; `checkApkUpdate` revisa la última versión de GitHub y ofrece bajar el APK (no se actualiza sola).
+- Versión del APK = `version` de package.json (código `mayor*10000+menor*100+parche`, en `movil/android/app/build.gradle`). Paquete `io.github.becker9824.programas`. Íconos copiados del proyecto TWA anterior; pantalla de arranque `drawable/splash.xml`.
+- Herramientas en `E:\AndroidTools` (el usuario pidió descargar en el disco SSD SEC): `sdk`, `gradle-home`, `android-home` y `llaves/` (programas.keystore + clave.txt: **no perderlas**, sin ellas un APK nuevo no se instala encima del viejo). `E:\AndroidTools\programas-apk` y `bw` son del primer APK (TWA que abría la web en Chrome), ya no se usan; el repo becker9824.github.io (assetlinks.json) era para ese TWA.
+- Probado por el usuario en su celular (1.14.2 de prueba). En la PC no hay emulador.
 
 ## Funciones hechas
 - Semanas importadas solas de la Guía de actividades (wol.jw.org), con canciones (título por número: documento `1102016800 + n` para 1-151), horarios calculados y secciones de color.

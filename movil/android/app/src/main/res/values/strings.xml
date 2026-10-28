@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Programas</string>
+    <string name="title_activity_main">Programas</string>
+    <string name="package_name">io.github.becker9824.programas</string>
+    <string name="custom_url_scheme">io.github.becker9824.programas</string>
+</resources>
