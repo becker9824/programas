@@ -301,6 +301,9 @@
   .leaflet-tooltip.terr-label { background: rgba(255,255,255,.85); border: 0; box-shadow: none; color: #111; font-weight: 700; padding: 0 4px; }
   .leaflet-tooltip.terr-label::before { display: none; }
   .leaflet-tooltip.terr-label.dim { opacity: .35; }
+  .terr-actions { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; margin-top: 10px; }
+  .terr-actions .btn { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 12px 8px; font-size: 14px; line-height: 1.2; }
+  .mode-bar { padding: 12px 14px; margin-bottom: 10px; border: 2px solid var(--accent); }
   .terr-pin { background: none; border: 0; font-size: 22px; line-height: 26px; text-align: center; filter: drop-shadow(0 1px 1px rgba(0,0,0,.5)); }
   .leaflet-container { font: inherit; }
 </style>
@@ -319,7 +322,7 @@
 
 <script>
 const KEY = 'programas-app-v2';
-const APP_VERSION = '1.17.0'; // igual que "version" en package.json (publicar.ps1 lo revisa)
+const APP_VERSION = '1.18.0'; // igual que "version" en package.json (publicar.ps1 lo revisa)
 // Con FIREBASE_CONFIG (firebase-config.js) los datos viven en la nube de la congregación;
 // sin él, la app funciona como antes, solo en esta PC. "?emu" usa el Firebase local de prueba.
 const EMU = /[?&]emu\b/.test(location.search);
@@ -329,6 +332,8 @@ const FB_CONFIG = EMU ? { apiKey: 'demo-key', authDomain: 'localhost', projectId
 const NATIVE = !!(window.capacitorExports && Capacitor.isNativePlatform());
 const NP = NATIVE ? { http: capacitorExports.CapacitorHttp, files: capacitorExports.registerPlugin('Filesystem'), share: capacitorExports.registerPlugin('Share') } : null;
 const OLD_PDF_TITLE = 'Reunión Vida y Ministerio Cristianos';
+// Preferir nombrados en cada asignación (Ajustes): privilegio → 'nom', 'anciano' o 'sm'
+const DEFAULT_NOM_PREFS = { microfonos: 'nom', acomodador: 'nom', audio: 'nom' };
 // Filtros de sugerencias que trae la app (se pueden cambiar en Ajustes)
 const DEFAULT_FILTERS = [
   { nombre: 'Escuela', palabras: 'escuela, colegio, secundaria, primaria, compañero de clase, compañera de clase, compañeros de clase, maestro, maestra, profesor, profesora, salón de clases, escolar', min: 8, max: 17, sexo: '' },
@@ -344,6 +349,7 @@ const defaults = () => ({
     slipNote: 'En la Guía de actividades está la información para preparar su intervención. Repase también las indicaciones para la reunión Vida y Ministerio Cristianos.',
     slipFooter: '',
     filters: DEFAULT_FILTERS.map(f => ({ ...f })),
+    nomPrefs: { ...DEFAULT_NOM_PREFS },
   },
 });
 const SECTIONS = [
@@ -541,7 +547,11 @@ const sitLabel = k => k ? (SITUACIONES.find(([key]) => key === k) || ['', ''])[1
 // Filtro de nombrados en las listas para elegir (programa y mecánicas): '', 'nom', 'anciano' o 'sm'
 const NOM_FILTERS = [['', 'Todos'], ['nom', 'Nombrados'], ['anciano', 'Ancianos'], ['sm', 'Siervos ministeriales']];
 let nomFilter = '';
-const nomOk = pr => !nomFilter || (nomFilter === 'nom' ? !!pr.nombramiento : pr.nombramiento === nomFilter);
+const nomIs = (pr, k) => k === 'nom' ? !!pr.nombramiento : pr.nombramiento === k;
+const nomOk = pr => !nomFilter || nomIs(pr, nomFilter);
+// ¿Esta asignación prefiere nombrados y este hermano lo es? (sale antes en las sugerencias)
+const nomPref = priv => ((state.settings.nomPrefs || {})[priv]) || '';
+const prefersMe = (pr, priv) => !!nomPref(priv) && nomIs(pr, nomPref(priv));
 // Botones del filtro; no quitan el foco del campo donde se está escribiendo
 const nomChips = onChange => h('div', { class: 'chips nom-chips' }, NOM_FILTERS.map(([k, t]) =>
   h('button', { type: 'button', class: nomFilter === k ? 'on' : '', onmousedown: e => e.preventDefault(),
@@ -630,8 +640,8 @@ function mecCandidates(p, mtg, key) {
     const before = dates.filter(d => d < date).sort().pop();
     const near = dates.some(d => Math.abs(daysBetween(d, date)) < rest);
     const why = busy.has(pr.id) ? 'Ya tiene asignación en esta reunión' : !canDo(pr, priv) ? 'Sin privilegio' : near ? 'Descansando' : '';
-    return { pr, why, days: before ? daysBetween(before, date) : Infinity };
-  }).sort((a, b) => (!b.why - !a.why) || b.days - a.days || a.pr.name.localeCompare(b.pr.name, 'es'));
+    return { pr, why, pref: prefersMe(pr, priv), days: before ? daysBetween(before, date) : Infinity };
+  }).sort((a, b) => (!b.why - !a.why) || b.pref - a.pref || b.days - a.days || a.pr.name.localeCompare(b.pr.name, 'es'));
 }
 
 // En Seamos mejores maestros se prefiere a las hermanas: 2 por cada hermano, sin dejar de
@@ -653,8 +663,8 @@ function candidatesFor(p, row, slot, ctx, reserved, partnerId) {
   const list = state.profiles
     .filter(pr => !reserved.has(pr.id) && canDo(pr, priv) && !(men && pr.sex === 'F') && !ctx.recent.has(pr.id)
       && (!partner || partner.sex === pr.sex || sameFamily(partner.id, pr.id)))
-    .map(pr => { const l = ctx.last.get(pr.id); return { pr, rule, fits: fitsRule(pr, rule), days: l ? daysBetween(l.q.date, p.date) : Infinity }; })
-    .sort((a, b) => (rule ? b.fits - a.fits : 0) || b.days - a.days || a.pr.name.localeCompare(b.pr.name, 'es'));
+    .map(pr => { const l = ctx.last.get(pr.id); return { pr, rule, fits: fitsRule(pr, rule), pref: prefersMe(pr, priv), days: l ? daysBetween(l.q.date, p.date) : Infinity }; })
+    .sort((a, b) => (rule ? b.fits - a.fits : 0) || b.pref - a.pref || b.days - a.days || a.pr.name.localeCompare(b.pr.name, 'es'));
   if (!womenFirst(row, slot, partnerId)) return list;
   // Los que cumplen el filtro siguen yendo primero; dentro de cada grupo se intercala
   return [...preferWomen(list.filter(c => c.fits || !rule)), ...(rule ? preferWomen(list.filter(c => !c.fits)) : [])];
@@ -1258,13 +1268,47 @@ function openProfileDialog(prof, opts = {}) {
     h('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(210px, 1fr))', gap: '4px 12px' } }, privBoxes.map(p => p.el)),
     prof && !Array.isArray(prof.puede) ? h('span', { class: 'small-text' }, 'Todavía no se marcan: mientras tanto sale en las sugerencias para todo.') : null);
   const err = h('div', { class: 'err' });
+  // Directorio (solo los ancianos): contactos/{perfil}, aparte para que los demás no lo vean
+  const showContact = FB_CONFIG && isElder(), ro = FB_CONFIG && !can('programa');
+  const c0 = prof && showContact ? nube.contactos.get(prof.id) || {} : {};
+  const telI = h('input', { type: 'tel', value: c0.tel || '', placeholder: 'Con lada, ej.: +52 55 1234 5678' });
+  const dirI = h('textarea', { rows: 2, maxlength: 300, placeholder: 'Calle, número, colonia…' }, c0.dir || '');
+  const emI = h('input', { type: 'text', value: c0.emergencia || '', placeholder: 'Nombre y parentesco' });
+  const emTelI = h('input', { type: 'tel', value: c0.emergenciaTel || '', placeholder: '+52 …' });
+  const quick = (href, text) => h('a', { href, target: href.startsWith('http') ? '_blank' : null, rel: 'noopener', class: 'btn small', style: { textDecoration: 'none' } }, text);
+  const contactField = showContact ? h('div', { class: 'field' }, h('span', null, 'Directorio · solo lo ven los ancianos'),
+    h('div', { class: 'row', style: { gap: '12px', alignItems: 'flex-start' } },
+      h('label', { class: 'field', style: { flex: 1, minWidth: '180px' } }, 'Teléfono', telI),
+      h('label', { class: 'field', style: { flex: 2, minWidth: '220px' } }, 'Dirección', dirI)),
+    h('div', { class: 'row', style: { gap: '12px' } },
+      h('label', { class: 'field', style: { flex: 1, minWidth: '180px' } }, 'Contacto de emergencia', emI),
+      h('label', { class: 'field', style: { flex: 1, minWidth: '180px' } }, 'Teléfono de emergencia', emTelI)),
+    c0.tel || c0.dir || c0.emergenciaTel ? h('div', { class: 'row', style: { gap: '6px' } },
+      c0.tel ? quick(telLink(c0.tel), '📞 Llamar') : null, c0.tel ? quick(waLink(c0.tel), '💬 WhatsApp') : null,
+      c0.dir ? quick('https://maps.google.com/?q=' + encodeURIComponent(c0.dir), '🧭 Mapa') : null,
+      c0.emergenciaTel ? quick(telLink(c0.emergenciaTel), '🚑 Emergencia') : null) : null) : null;
+  async function saveContact(pid) {
+    if (!showContact) return;
+    const data = { tel: squash(telI.value).slice(0, 60), dir: dirI.value.trim().slice(0, 300), emergencia: squash(emI.value).slice(0, 150), emergenciaTel: squash(emTelI.value).slice(0, 60) };
+    const was = { tel: c0.tel || '', dir: c0.dir || '', emergencia: c0.emergencia || '', emergenciaTel: c0.emergenciaTel || '' };
+    if (stable(data) === stable(was)) return;
+    try {
+      if (Object.values(data).some(Boolean)) await F.setDoc(congRef('contactos', pid), data);
+      else await F.deleteDoc(congRef('contactos', pid));
+    } catch (e) { toast('No se guardó el directorio: ' + errMsg(e)); }
+  }
+  // Sin Programa VyM (secretario, función Anciano): solo ve los datos y cambia el directorio
+  if (ro) {
+    [nameI, ageI, sexM, sexF, notesI, tipoSel, famSel, nomSel, sitSel, bautI, ...privBoxes.map(p => p.box)].forEach(el => { el.disabled = true; });
+    privField.querySelectorAll('button').forEach(b => b.remove());
+  }
 
   const hist = [];
   if (prof) for (const q of sortedPrograms()) for (const x of assignmentsOf(q)) if (x.pid === prof.id) hist.push({ q, x });
 
   const dlg = h('dialog', { class: 'dlg' },
     h('div', { class: 'dlg-body' },
-      h('h3', null, prof ? 'Editar hermano' : 'Nuevo hermano'),
+      h('h3', null, ro ? prof.name : prof ? 'Editar hermano' : 'Nuevo hermano'),
       h('label', { class: 'field' }, 'Nombre', nameI),
       h('div', { class: 'row', style: { gap: '24px', alignItems: 'flex-start' } },
         h('label', { class: 'field' }, 'Edad', ageI),
@@ -1280,6 +1324,7 @@ function openProfileDialog(prof, opts = {}) {
         nube.grupos.length ? h('label', { class: 'field' }, 'Grupo', groupSel) : null),
       privField,
       h('label', { class: 'field' }, 'Notas', notesI),
+      contactField,
       accountField,
       err,
       prof ? h('div', { class: 'hist' },
@@ -1287,7 +1332,7 @@ function openProfileDialog(prof, opts = {}) {
         hist.length ? hist.map(({ q, x }) => h('div', null, h('span', null, roleLabel(x.row, x.slot)), h('span', { class: 'muted' }, fmtShort(q.date))))
           : h('div', { class: 'muted' }, 'Todavía no tiene asignaciones.')) : null),
     h('div', { class: 'dlg-foot' },
-      prof ? h('button', { class: 'btn danger', style: { marginRight: 'auto' }, onclick: () => {
+      prof && !ro ? h('button', { class: 'btn danger', style: { marginRight: 'auto' }, onclick: () => {
         if (!confirm(`¿Eliminar a ${prof.name}?${hist.length ? ' Se quitará de las ' + hist.length + ' asignaciones donde aparece.' : ''}${account ? ' Su cuenta sigue en la congregación, sin hermano.' : ''}`)) return;
         state.profiles = state.profiles.filter(x => x !== prof);
         for (const q of state.programs) for (const r of q.rows) { if (r.a === prof.id) r.a = null; if (r.b === prof.id) r.b = null; }
@@ -1298,7 +1343,11 @@ function openProfileDialog(prof, opts = {}) {
       h('button', { class: 'btn', onclick: () => dlg.close() }, 'Cancelar'),
       h('button', { class: 'btn primary', onclick: submit }, 'Guardar')));
 
-  function submit() {
+  async function submit() {
+    if (ro) {
+      const ng = nube.grupos.find(g => g.id === groupSel.value) || null;
+      if (!groupSel.disabled && ng !== oldGroup) setGroupMember(prof.id, oldGroup, ng);
+      await saveContact(prof.id); saved = true; dlg.close(); toast('Datos guardados'); return render(); }
     const name = squash(nameI.value);
     const sexV = sexM.checked ? 'M' : sexF.checked ? 'F' : '';
     if (!name) return err.textContent = 'Escribe el nombre.';
@@ -1317,6 +1366,7 @@ function openProfileDialog(prof, opts = {}) {
     if (!groupSel.disabled && newGroup !== oldGroup) setGroupMember(p.id, oldGroup, newGroup);
     const link = !account && nube.miembros.find(m => m.id === accountSel.value);
     if (link) memberUpdate(link, { perfil: p.id }, `${p.name} ya está unido a la cuenta ${link.email}`);
+    await saveContact(p.id);
     save(); refreshDatalist(); saved = true; dlg.close();
     if (opts.onSave) opts.onSave(p); else render();
   }
@@ -1324,7 +1374,7 @@ function openProfileDialog(prof, opts = {}) {
   dlg.addEventListener('close', () => { dlg.remove(); if (!saved && opts.onCancel) opts.onCancel(); });
   document.body.append(dlg);
   dlg.showModal();
-  nameI.focus();
+  if (!ro) nameI.focus();
 }
 
 // ---------- congregación en la nube (Firebase) ----------
@@ -1586,7 +1636,7 @@ function enterCongregation() {
   });
   if (isElder()) listen('contactos', F.collection(F.db, 'congregaciones', nube.cong, 'contactos'), s => {
     nube.contactos = new Map(s.docs.map(d => [d.id, d.data()]));
-    return view.name === 'directorio';
+    return view.name === 'people';
   });
   // Territorios: si el mapa está abierto se actualizan los colores ahí mismo, sin redibujar la página
   listen('territorios', F.collection(F.db, 'congregaciones', nube.cong, 'territorios'), s => {
@@ -2211,69 +2261,6 @@ function renderAnnouncements() {
 const telLink = t => 'tel:' + (t || '').replace(/[^\d+]/g, '');
 const waLink = t => 'https://wa.me/' + (t || '').replace(/\D/g, '');
 
-function openContactDialog(pr) {
-  const c = nube.contactos.get(pr.id) || {};
-  const field = (label, value, ph, type = 'text') => h('input', { type, value: value || '', placeholder: ph });
-  const tel = field('Teléfono', c.tel, 'Con lada del país, ej.: +52 55 1234 5678', 'tel');
-  const dir = h('textarea', { rows: 2, maxlength: 300, placeholder: 'Calle, número, colonia…' }, c.dir || '');
-  const em = field('Contacto de emergencia', c.emergencia, 'Nombre y parentesco');
-  const emTel = field('Teléfono de emergencia', c.emergenciaTel, '+52 …', 'tel');
-  const err = h('div', { class: 'err' });
-  const dlg = h('dialog', { class: 'dlg' },
-    h('div', { class: 'dlg-body' }, h('h3', null, pr.name),
-      h('label', { class: 'field' }, 'Teléfono', tel),
-      h('label', { class: 'field' }, 'Dirección', dir),
-      h('label', { class: 'field' }, 'Contacto de emergencia', em),
-      h('label', { class: 'field' }, 'Teléfono de emergencia', emTel),
-      h('p', { class: 'muted small-text' }, 'Solo los ancianos ven estos datos.'),
-      err),
-    h('div', { class: 'dlg-foot' },
-      h('button', { class: 'btn', onclick: () => dlg.close() }, 'Cancelar'),
-      h('button', { class: 'btn primary', onclick: async e => {
-        const data = { tel: squash(tel.value).slice(0, 60), dir: dir.value.trim().slice(0, 300), emergencia: squash(em.value).slice(0, 150), emergenciaTel: squash(emTel.value).slice(0, 60) };
-        e.target.disabled = true;
-        try {
-          if (Object.values(data).some(Boolean)) await F.setDoc(congRef('contactos', pr.id), data);
-          else await F.deleteDoc(congRef('contactos', pr.id));
-          toast('Datos guardados'); dlg.close(); dlg.remove();
-        } catch (ex) { err.textContent = errMsg(ex); e.target.disabled = false; }
-      } }, 'Guardar')));
-  dlg.addEventListener('close', () => dlg.remove());
-  document.body.append(dlg); dlg.showModal(); tel.focus();
-}
-
-function renderDirectory() {
-  const filter = h('input', { type: 'search', placeholder: 'Buscar…', style: { width: '100%', maxWidth: '360px' }, oninput: () => fill() });
-  const box = h('div', { class: 'card', style: { padding: '4px 14px' } });
-  const link = (href, text) => h('a', { href, target: href.startsWith('http') ? '_blank' : null, rel: 'noopener', class: 'btn small', style: { textDecoration: 'none' } }, text);
-  function fill() {
-    const f = norm(filter.value);
-    const rows = [...state.profiles].sort((a, b) => a.name.localeCompare(b.name, 'es'))
-      .filter(pr => !f || norm(pr.name).includes(f) || norm(Object.values(nube.contactos.get(pr.id) || {}).join(' ')).includes(f));
-    box.replaceChildren(...(rows.length ? rows.map(pr => {
-      const c = nube.contactos.get(pr.id) || {};
-      return h('div', { class: 'urow', style: { alignItems: 'flex-start' } },
-        h('div', { class: 'info' },
-          h('strong', null, pr.name),
-          c.tel ? h('div', null, c.tel) : h('div', { class: 'muted small-text' }, 'Sin teléfono'),
-          c.dir ? h('div', { class: 'small-text' }, h('a', { href: 'https://maps.google.com/?q=' + encodeURIComponent(c.dir), target: '_blank', rel: 'noopener' }, c.dir)) : null,
-          c.emergencia || c.emergenciaTel ? h('div', { class: 'small-text muted' }, '🚑 Emergencia: ', [c.emergencia, c.emergenciaTel].filter(Boolean).join(' · ')) : null),
-        h('div', { class: 'row' },
-          c.tel ? link(telLink(c.tel), '📞 Llamar') : null,
-          c.tel ? link(waLink(c.tel), '💬 WhatsApp') : null,
-          c.emergenciaTel ? link(telLink(c.emergenciaTel), '🚑 Llamar') : null,
-          h('button', { class: 'btn small', onclick: () => openContactDialog(pr) }, 'Editar')));
-    }) : [h('div', { class: 'empty' }, state.profiles.length ? 'Nadie coincide con la búsqueda.' : 'Todavía no hay hermanos. Se agregan en Hermanos.')]));
-  }
-  fill();
-  const withPhone = state.profiles.filter(pr => (nube.contactos.get(pr.id) || {}).tel).length;
-  return h('div', null,
-    h('h1', null, 'Directorio'),
-    h('p', { class: 'sub' }, `Solo los ancianos ven esta sección. ${withPhone} de ${state.profiles.length} con teléfono.`),
-    h('div', { style: { marginBottom: '12px' } }, filter),
-    box);
-}
-
 // ---------- cuentas de la congregación (función "Cuentas") ----------
 // Movimientos en cuentas/{id}: entrada o salida de un fondo (efectivo o banco), o transferencia
 // entre los dos. El saldo inicial (cuentasConfig/inicial) cuenta desde su fecha.
@@ -2441,11 +2428,12 @@ function renderAccounts() {
 
 // ---------- territorios (todos ven el mapa; la función "Territorios" los cambia) ----------
 // Mapa con Leaflet y OpenStreetMap (vendor/leaflet). Cada territorio: territorios/{id} con
-// numero, nombre (la colonia), tarjeta (número de tarjeta), notas, coords (JSON de [[lat, lng], …]),
-// estado ('asignado' o 'disponible'), asignadoA, capitan (uid de la cuenta del capitán, o ''),
-// desde, historial [{ quien, desde, hasta, completo }], veces (cuántas veces se completó),
-// trabajadas (JSON de calles [[lat, lng], …] trabajadas en la asignación actual), avance (JSON
-// { p, n, f }: hasta dónde se llegó) y noPredicar (JSON [{ p, n }]: casas donde no se predica).
+// numero, nombre (la colonia), tarjeta (número de tarjeta), notas, y su forma: coords (zona, JSON de
+// [[lat, lng], …]) o calles (JSON de calles [[lat, lng], …], cuando el territorio son solo unas calles).
+// Estado: estado ('asignado' o 'disponible'), asignadoA, capitan (uid de la cuenta del capitán, o ''),
+// desde, historial [{ quien, desde, hasta, completo }] y veces (cuántas veces se completó).
+// Marcas: trabajadas (JSON de calles ya predicadas en esta vuelta), avance (JSON { p, n, f }: hasta
+// dónde se llegó) y noPredicar (JSON [{ p, n, k }]: casas marcadas; k 'no' = no predicar, 'nota' = nota).
 // Vueltas: un territorio está "completado" si lleva más veces que el que menos lleva; cuando todos
 // llevan las mismas, todos vuelven solos a disponible (empieza otra vuelta).
 // Cada salida registrada va en trabajos/{id} (territorio, fecha, completo, calles, avance, notas, por).
@@ -2456,21 +2444,30 @@ const TERR = {
   terminado: { label: 'Completado', color: '#2f6fd6' },
 };
 const byNumero = (a, b) => (a.numero || '').localeCompare(b.numero || '', 'es', { numeric: true });
-let terr = null; // mapa abierto: { L, map, group, marks, selected, draw, work, mark, refresh }
+let terr = null; // mapa abierto: { L, map, group, marks, tmp, selected, mode, refresh }
 const parseJ = (s, d) => { try { const v = JSON.parse(s || 'null'); return v == null ? d : v; } catch (e) { return d; } };
 const vecesDe = t => t.veces ?? (t.estado === 'terminado' ? 1 : 0); // los de antes de la 1.17 no tienen "veces"
 const vueltaBase = () => nube.territorios.length ? Math.min(...nube.territorios.map(vecesDe)) : 0;
 const estadoDe = (t, base = vueltaBase()) => t.estado === 'asignado' ? 'asignado' : vecesDe(t) > base ? 'terminado' : 'disponible';
-const callesOf = t => parseJ(t.trabajadas, []);
+const streetsOf = t => parseJ(t.calles, []).filter(l => l.length > 1);  // forma del territorio con calles
+const callesOf = t => parseJ(t.trabajadas, []);                         // calles ya trabajadas
 const avanceOf = t => parseJ(t.avance, null);
-const noPredOf = t => parseJ(t.noPredicar, []);
+const housesOf = t => parseJ(t.noPredicar, []).map(x => ({ k: 'no', ...x }));
+const hasShape = t => coordsOf(t).length >= 3 || streetsOf(t).length > 0;
 const isMyTerritory = t => !!(t.capitan && nube.user && t.capitan === nube.user.uid);
 const dayCount = n => `${n} día${n === 1 ? '' : 's'}`;
 const terrTitle = t => `Territorio ${t.numero}${t.nombre ? ' · ' + t.nombre : ''}`;
-// Lo que cuenta en la nube de un territorio, sin el id (para escribirlo completo)
-const terrData = t => ({ numero: t.numero, nombre: t.nombre || '', tarjeta: t.tarjeta || '', notas: t.notas || '', coords: t.coords || '[]',
+const HOUSE = { no: { icon: '⛔', label: 'No predicar' }, nota: { icon: '📌', label: 'Nota' } };
+// Lo que cuenta en la nube de un territorio, sin el id (para crearlo completo)
+const terrData = t => ({ numero: t.numero, nombre: t.nombre || '', tarjeta: t.tarjeta || '', notas: t.notas || '', coords: t.coords || '[]', calles: t.calles || '',
   estado: t.estado === 'asignado' ? 'asignado' : 'disponible', asignadoA: t.asignadoA || '', capitan: t.capitan || '', desde: t.desde || null,
   historial: t.historial || [], veces: vecesDe(t), trabajadas: t.trabajadas || '', avance: t.avance || '', noPredicar: t.noPredicar || '' });
+// Capa del mapa con la forma del territorio: zona (polígono) o calles (líneas gruesas)
+function terrShape(L, t, style) {
+  const c = coordsOf(t);
+  if (c.length >= 3) return L.polygon(c, style);
+  return L.featureGroup(streetsOf(t).map(l => L.polyline(l, { ...style, color: style.fillColor || style.color, weight: (style.weight || 2) + 5, opacity: style.fillOpacity < 0.1 ? 0.3 : 0.9 })));
+}
 
 function loadScript(src, css) {
   return (loadScript[src] = loadScript[src] || new Promise((res, rej) => {
@@ -2495,7 +2492,10 @@ function decodePoly(str) {
   return pts;
 }
 const coordsOf = t => { try { return JSON.parse(t.coords || '[]'); } catch (e) { return []; } };
-const shareUrl = t => `${WEB_URL}#ver&n=${encodeURIComponent(t.numero)}&t=${encodeURIComponent(t.nombre || '')}&p=${encodeURIComponent(encodePoly(coordsOf(t)))}`;
+// Enlace del QR: zona (p) o calles (l, separadas por ~) y casas de no predicar (x)
+const shareUrl = t => { const no = housesOf(t).filter(x => x.k === 'no').map(x => x.p);
+  return `${WEB_URL}#ver&n=${encodeURIComponent(t.numero)}&t=${encodeURIComponent(t.nombre || '')}&p=${encodeURIComponent(encodePoly(coordsOf(t)))}`
+    + (streetsOf(t).length ? `&l=${encodeURIComponent(streetsOf(t).map(encodePoly).join('~'))}` : '') + (no.length ? `&x=${encodeURIComponent(encodePoly(no))}` : ''); };
 
 function baseMap(L, el) {
   const map = L.map(el);
@@ -2560,7 +2560,8 @@ async function territoryCardsPDF(list) {
   savePDF(doc, list.length === 1 ? `Territorio ${list[0].numero}` : `Tarjetas de territorio`);
 }
 
-function openTerritoryDataDialog(t, coords) {
+// Datos de un territorio. shape: { coords } o { calles } recién dibujados (territorio nuevo o redibujado)
+function openTerritoryDataDialog(t, shape) {
   const num = h('input', { type: 'text', maxlength: 20, value: t ? t.numero : '', placeholder: 'Ej.: 12', style: { width: '110px' } });
   const card = h('input', { type: 'text', maxlength: 20, value: t ? t.tarjeta || '' : '', placeholder: 'Ej.: 12-A', style: { width: '110px' } });
   const name = h('input', { type: 'text', maxlength: 100, value: t ? t.nombre : '', placeholder: 'Ej.: Colonia Centro' });
@@ -2583,11 +2584,11 @@ function openTerritoryDataDialog(t, coords) {
         const data = { numero, nombre: squash(name.value), tarjeta: squash(card.value), notas: notes.value.trim() };
         e.target.disabled = true;
         try {
-          if (t) await F.updateDoc(congRef('territorios', t.id), coords ? { ...data, coords: JSON.stringify(coords) } : data);
+          if (t) await F.updateDoc(congRef('territorios', t.id), data);
           else {
             // Entra a la vuelta actual como pendiente (con las mismas veces que el que menos lleva)
             const r = await F.addDoc(F.collection(F.db, 'congregaciones', nube.cong, 'territorios'),
-              terrData({ ...data, coords: JSON.stringify(coords), desde: todayISO(), veces: vueltaBase() }));
+              terrData({ ...data, coords: JSON.stringify(shape.coords || []), calles: shape.calles ? JSON.stringify(shape.calles) : '', desde: todayISO(), veces: vueltaBase() }));
             if (terr) terr.selected = r.id;
           }
           toast('Territorio guardado'); close();
@@ -2608,8 +2609,8 @@ function openAssignDialog(t) {
   const dlg = h('dialog', { class: 'dlg' },
     h('div', { class: 'dlg-body' }, h('h3', null, `Asignar el territorio ${t.numero}`),
       h('label', { class: 'field' }, '¿A quién?', capSel, who),
-      caps.length ? h('span', { class: 'small-text' }, 'El capitán lo verá en su app y podrá registrar lo que se trabaje.')
-        : h('span', { class: 'small-text' }, 'Todavía no hay capitanes. El coordinador los nombra en Hermanos (función “Capitán” en la cuenta).'),
+      caps.length ? h('span', { class: 'small-text' }, 'El capitán lo verá en su app, en “Mis territorios”, y podrá registrar lo que se trabaje.')
+        : h('span', { class: 'small-text' }, 'Todavía no hay capitanes. El coordinador los nombra en Hermanos: en la cuenta del hermano, marca “Capitán”.'),
       h('label', { class: 'field' }, 'Desde', since)),
     h('div', { class: 'dlg-foot' },
       h('button', { class: 'btn', onclick: close }, 'Cancelar'),
@@ -2635,20 +2636,39 @@ function unassignTerritory(t) {
   updateTerritory(t, { estado: 'disponible', asignadoA: '', capitan: '', desde: todayISO(), historial }, `Territorio ${t.numero}: ya no está asignado`);
 }
 
-// Registrar una salida: calles trabajadas, hasta dónde se llegó, nota y si se completó.
-// Al completarlo cuenta una vez más en la vuelta, se libera y se borran sus marcas de avance.
-function openWorkDialog(t, lines, flag) {
-  const fecha = h('input', { type: 'date', value: todayISO(), max: todayISO() });
-  const full = h('input', { type: 'radio', name: 'completo' }), part = h('input', { type: 'radio', name: 'completo' });
-  const notes = h('textarea', { rows: 3, maxlength: 1000, placeholder: 'Ej.: Se quedaron en la esquina de Hidalgo y Juárez; faltó la calle 5.' });
+// Diálogo pequeño con una nota (casa marcada o hasta dónde se llegó)
+function openNoteDialog(title, fields, onSave) {
+  const notes = h('textarea', { rows: 3, maxlength: 200, placeholder: fields.placeholder });
   const err = h('div', { class: 'err' });
   const close = () => { dlg.close(); dlg.remove(); };
   const dlg = h('dialog', { class: 'dlg' },
-    h('div', { class: 'dlg-body' }, h('h3', null, `Registrar: ${terrTitle(t)}`),
-      h('p', { class: 'small-text muted', style: { margin: 0 } }, `${lines.length} calle${lines.length === 1 ? '' : 's'} marcada${lines.length === 1 ? '' : 's'}${flag ? ' · con punto de hasta dónde se llegó' : ''}.`),
+    h('div', { class: 'dlg-body' }, h('h3', null, title), fields.extra || null, h('label', { class: 'field' }, 'Nota', notes), err),
+    h('div', { class: 'dlg-foot' },
+      h('button', { class: 'btn', onclick: close }, 'Cancelar'),
+      h('button', { class: 'btn primary', onclick: async e => {
+        e.target.disabled = true;
+        if (await onSave(notes.value.trim())) close(); else e.target.disabled = false;
+      } }, 'Guardar')));
+  document.body.append(dlg); dlg.showModal(); notes.focus();
+}
+
+// Registrar una salida: fecha, si se completó o quedó una parte, y una nota. Guarda también las
+// calles trabajadas y hasta dónde se llegó (lo marcado en el mapa). Al completarlo, cuenta una vez
+// más en la vuelta, se libera y se borran sus marcas de avance (las casas marcadas se quedan).
+function openWorkDialog(t) {
+  const fecha = h('input', { type: 'date', value: todayISO(), max: todayISO() });
+  const full = h('input', { type: 'radio', name: 'completo' }), part = h('input', { type: 'radio', name: 'completo' });
+  const notes = h('textarea', { rows: 3, maxlength: 1000, placeholder: 'Ej.: Faltó la calle 5; no había nadie en la manzana 3.' });
+  const err = h('div', { class: 'err' });
+  const lines = callesOf(t), av = avanceOf(t);
+  const close = () => { dlg.close(); dlg.remove(); };
+  const dlg = h('dialog', { class: 'dlg' },
+    h('div', { class: 'dlg-body' }, h('h3', null, `Registrar salida · ${terrTitle(t)}`),
+      h('p', { class: 'small-text muted', style: { margin: 0 } },
+        `En el mapa hay ${lines.length} calle${lines.length === 1 ? '' : 's'} trabajada${lines.length === 1 ? '' : 's'}${av ? ' y un punto de “hasta aquí”' : ''}. Si falta marcar algo, cancela y usa los botones de arriba del mapa.`),
       h('label', { class: 'field' }, 'Fecha', fecha),
-      h('div', { class: 'field' }, h('span', null, '¿Se completó?'),
-        h('div', { class: 'radios' }, h('label', null, full, 'Sí, todo el territorio'), h('label', null, part, 'No, quedó una parte'))),
+      h('div', { class: 'field' }, h('span', null, '¿Se completó el territorio?'),
+        h('div', { class: 'radios' }, h('label', null, full, 'Sí, todo'), h('label', null, part, 'No, quedó una parte'))),
       h('label', { class: 'field' }, 'Notas', notes), err),
     h('div', { class: 'dlg-foot' },
       h('button', { class: 'btn', onclick: close }, 'Cancelar'),
@@ -2658,15 +2678,12 @@ function openWorkDialog(t, lines, flag) {
         e.target.disabled = true;
         try {
           await F.addDoc(F.collection(F.db, 'congregaciones', nube.cong, 'trabajos'), {
-            territorio: t.id, numero: t.numero, fecha: f, completo, calles: JSON.stringify(lines),
-            avance: flag ? JSON.stringify({ p: flag, n: nota, f }) : '', notas: nota,
+            territorio: t.id, numero: t.numero, fecha: f, completo, calles: JSON.stringify(lines), avance: t.avance || '', notas: nota,
             por: nube.user.uid, porNombre: (nube.me && nube.me.nombre) || '', capitan: t.asignadoA || '', creado: F.serverTimestamp() });
-          const patch = completo
-            ? { estado: 'disponible', asignadoA: '', capitan: '', desde: f, veces: Math.max(vecesDe(t), vueltaBase() + 1), trabajadas: '', avance: '',
-              historial: [...(t.historial || []), { quien: t.asignadoA || (nube.me && nube.me.nombre) || '', desde: t.desde || f, hasta: f, completo: true }].slice(-50) }
-            : { trabajadas: JSON.stringify([...callesOf(t), ...lines]), ...(flag || nota ? { avance: JSON.stringify({ p: flag || (avanceOf(t) || {}).p || null, n: nota, f }) } : {}) };
-          await F.updateDoc(congRef('territorios', t.id), patch);
-          toast(completo ? `Territorio ${t.numero} completado` : 'Registro guardado');
+          if (completo) await F.updateDoc(congRef('territorios', t.id), {
+            estado: 'disponible', asignadoA: '', capitan: '', desde: f, veces: Math.max(vecesDe(t), vueltaBase() + 1), trabajadas: '', avance: '',
+            historial: [...(t.historial || []), { quien: t.asignadoA || (nube.me && nube.me.nombre) || '', desde: t.desde || f, hasta: f, completo: true }].slice(-50) });
+          toast(completo ? `Territorio ${t.numero} completado` : 'Salida registrada');
           close();
         } catch (ex) { err.textContent = errMsg(ex); e.target.disabled = false; }
       } }, 'Guardar')));
@@ -2685,22 +2702,24 @@ function workStats(year) {
   return out;
 }
 
+// Sección Territorios. Arriba del mapa, al elegir un territorio, salen los botones para trabajarlo:
+// trazar calle trabajada, marcar casa, hasta aquí y registrar salida. Cada uno se guarda al momento.
+// Modos del mapa (terr.mode.kind): 'zona' y 'calles' (forma del territorio), 'trabajada' (calles
+// predicadas), 'casa' y 'avance' (un toque).
 function renderTerritories() {
   const editor = can('territorios');
   const canWork = t => editor || (can('capitan') && isMyTerritory(t));
   if (terr && terr.map) terr.map.remove();
-  terr = { selected: terr && terr.selected, filter: (terr && terr.filter) || 'todos', q: (terr && terr.q) || '', year: (terr && terr.year) || new Date().getFullYear() };
+  terr = { selected: terr && terr.selected, filter: (terr && terr.filter) || 'todos', q: (terr && terr.q) || '', year: (terr && terr.year) || new Date().getFullYear(), mode: null };
   const mapEl = h('div', { style: { height: '58vh', minHeight: '320px', borderRadius: '12px', zIndex: 0 } });
-  const drawBar = h('div');
-  const panel = h('div');
-  const list = h('div');
+  const actions = h('div'), modeBar = h('div'), panel = h('div'), list = h('div'), mine = h('div'), summary = h('div');
   const counts = h('div', { class: 'totals' });
-  const summary = h('div');
-  const mine = h('div');
   const tools = h('div', { class: 'row' });
-  const search = h('input', { type: 'search', value: terr.q, placeholder: 'Buscar por número, colonia o tarjeta…', style: { flex: 1, minWidth: '200px' },
+  const search = h('input', { type: 'search', value: terr.q, placeholder: '🔎 Buscar por número, colonia o tarjeta…', style: { flex: 1, minWidth: '200px' },
     oninput: () => { terr.q = search.value; refresh(); focusMatches(); } });
   const matches = t => { const q = norm(terr.q); return !q || [t.numero, t.nombre, t.tarjeta].some(x => norm(x || '').includes(q)); };
+  const current = () => nube.territorios.find(x => x.id === terr.selected) || null;
+  const fresh = t => t && (nube.territorios.find(x => x.id === t.id) || t); // por si cambió mientras se marcaba
 
   loadLeaflet().then(L => {
     const map = baseMap(L, mapEl);
@@ -2717,12 +2736,6 @@ function renderTerritories() {
     setTimeout(() => map.invalidateSize(), 50); // por si la página aún acomodaba su tamaño
   }).catch(() => { mapEl.textContent = 'No se pudo cargar el mapa. Revisa tu conexión a internet.'; });
 
-  // Un toque en el mapa: según lo que se esté haciendo (dibujar zona, registrar calles, marcar casa)
-  function onTap(ll) {
-    if (terr.draw) addPoint(ll);
-    else if (terr.work) workTap(ll);
-    else if (terr.mark) markTap(ll);
-  }
   const pin = (L, ll, emoji, tip) => L.marker(ll, { icon: L.divIcon({ className: 'terr-pin', html: emoji, iconSize: [26, 26], iconAnchor: [13, 24] }) })
     .bindTooltip(tip || '', { direction: 'top', offset: [0, -20] });
 
@@ -2730,227 +2743,234 @@ function renderTerritories() {
     const L = terr.L, base = vueltaBase(), searching = !!terr.q.trim();
     terr.group.clearLayers(); terr.marks.clearLayers();
     for (const t of nube.territorios) {
-      const c = coordsOf(t);
-      if (c.length < 3) continue;
-      const sel = t.id === terr.selected, hit = searching && matches(t), color = TERR[estadoDe(t, base)].color;
-      const dim = searching && !hit;
-      L.polygon(c, { color: sel || hit ? '#000' : color, weight: sel ? 4 : hit ? 3 : dim ? 1 : 2, fillColor: color, fillOpacity: sel ? 0.5 : dim ? 0.08 : hit ? 0.55 : 0.35, bubblingMouseEvents: false })
-        .bindTooltip(String(t.numero), { permanent: true, direction: 'center', className: 'terr-label' + (dim ? ' dim' : '') })
-        .on('click', ev => { if (terr.draw || terr.work || terr.mark) return onTap(ev.latlng); select(t.id, false); })
+      if (!hasShape(t)) continue;
+      const sel = t.id === terr.selected, hit = searching && matches(t), color = TERR[estadoDe(t, base)].color, dim = searching && !hit;
+      const shape = terrShape(L, t, { color: sel || hit ? '#000' : color, weight: sel ? 4 : hit ? 3 : dim ? 1 : 2, fillColor: color,
+        fillOpacity: sel ? 0.5 : dim ? 0.08 : hit ? 0.55 : 0.35, bubblingMouseEvents: false });
+      // El número va una sola vez (en un territorio de calles, sobre la primera)
+      (shape instanceof L.Polygon ? shape : shape.getLayers()[0]).bindTooltip(String(t.numero), { permanent: true, direction: 'center', className: 'terr-label' + (dim ? ' dim' : '') });
+      shape.on('click', ev => { if (terr.mode) return onTap(ev.latlng); select(t.id, false); })
         .addTo(terr.group);
     }
-    // Del territorio elegido: calles trabajadas, hasta dónde se llegó y casas donde no se predica
-    const t = nube.territorios.find(x => x.id === terr.selected);
+    // Del territorio elegido: calles trabajadas, hasta dónde se llegó y casas marcadas
+    const t = current();
     if (!t) return;
-    for (const line of callesOf(t)) if (line.length > 1) L.polyline(line, { color: '#7b2cbf', weight: 6, opacity: 0.8, interactive: false }).addTo(terr.marks);
+    for (const line of callesOf(t)) if (line.length > 1) L.polyline(line, { color: '#7b2cbf', weight: 6, opacity: 0.85, interactive: false }).addTo(terr.marks);
     const av = avanceOf(t);
-    if (av && av.p) pin(L, av.p, '🚩', `Se quedaron aquí${av.f ? ' (' + fmtShort(av.f) + ')' : ''}${av.n ? ': ' + av.n : ''}`).addTo(terr.marks);
-    for (const x of noPredOf(t)) pin(L, x.p, '⛔', `No predicar${x.n ? ': ' + x.n : ''}`).addTo(terr.marks);
+    if (av && av.p) pin(L, av.p, '🚩', `Hasta aquí${av.f ? ' (' + fmtShort(av.f) + ')' : ''}${av.n ? ': ' + av.n : ''}`).addTo(terr.marks);
+    for (const x of housesOf(t)) pin(L, x.p, HOUSE[x.k].icon, `${HOUSE[x.k].label}${x.n ? ': ' + x.n : ''}`).addTo(terr.marks);
   }
 
   function select(id, zoom = true) {
+    if (terr.mode) return;
     terr.selected = id;
-    const t = nube.territorios.find(x => x.id === id);
-    if (zoom && t && terr.map && coordsOf(t).length >= 3) terr.map.fitBounds(terr.L.polygon(coordsOf(t)).getBounds(), { padding: [40, 40], maxZoom: 18 });
+    const t = current();
+    if (zoom && t && terr.map && hasShape(t)) terr.map.fitBounds(terrShape(terr.L, t, {}).getBounds(), { padding: [40, 40], maxZoom: 18 });
     refresh();
-    if (window.innerWidth < 1000) panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    actions.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   }
   // Al buscar: si solo hay uno, se elige; si hay varios, el mapa los encuadra
   function focusMatches() {
     if (!terr.map || !terr.q.trim()) return;
-    const found = nube.territorios.filter(t => matches(t) && coordsOf(t).length >= 3);
+    const found = nube.territorios.filter(t => matches(t) && hasShape(t));
     if (found.length === 1) return select(found[0].id);
-    if (found.length) terr.map.fitBounds(terr.L.featureGroup(found.map(t => terr.L.polygon(coordsOf(t)))).getBounds(), { padding: [30, 30], maxZoom: 17 });
+    if (found.length) terr.map.fitBounds(terr.L.featureGroup(found.map(t => terrShape(terr.L, t, {}))).getBounds(), { padding: [30, 30], maxZoom: 17 });
   }
 
-  // ----- dibujar una zona tocando sus esquinas -----
-  function startDraw(t) {
-    if (!terr.map) return;
-    stopModes();
-    terr.draw = { t, points: [], shape: null, dots: [] };
+  // ----- modos del mapa -----
+  const MODES = {
+    zona: { help: 'Toca las esquinas de la zona en orden.', ready: m => m.points.length >= 3 },
+    calles: { help: 'Toca el mapa siguiendo cada calle del territorio, punto por punto. Para otra calle, toca “＋ Otra calle”.', lines: true, ready: m => m.lines.some(l => l.length > 1) },
+    trabajada: { help: 'Toca el mapa siguiendo la calle que ya se predicó, punto por punto (de esquina a esquina). Para otra calle, toca “＋ Otra calle”.', lines: true, ready: m => m.lines.some(l => l.length > 1) },
+    casa: { help: 'Toca en el mapa la casa que quieres marcar.' },
+    avance: { help: 'Toca en el mapa el lugar exacto donde se quedaron.' },
+  };
+  function startMode(kind, t) {
+    if (!terr.map) return toast('Espera a que cargue el mapa.');
+    terr.mode = { kind, t, points: [], lines: [[]] };
     terr.map.getContainer().style.cursor = 'crosshair';
-    barUpdate();
+    redrawTmp(); refresh();
+    modeBar.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
-  function addPoint(ll) {
-    const d = terr.draw;
-    d.points.push([ll.lat, ll.lng]);
-    d.dots.push(terr.L.circleMarker(ll, { radius: 5, color: '#000', fillColor: '#fff', fillOpacity: 1, weight: 2 }).addTo(terr.map));
-    redrawShape(); barUpdate();
-  }
-  function redrawShape() {
-    const d = terr.draw;
-    if (d.shape) d.shape.remove();
-    d.shape = d.points.length > 1 ? terr.L.polygon(d.points, { color: '#000', dashArray: '6 4', weight: 2, fillOpacity: 0.15 }).addTo(terr.map) : null;
-  }
-  function stopModes() {
-    const d = terr.draw;
-    if (d) { if (d.shape) d.shape.remove(); d.dots.forEach(x => x.remove()); }
-    terr.draw = null; terr.work = null; terr.mark = null;
+  function stopMode() {
+    terr.mode = null;
     if (terr.tmp) terr.tmp.clearLayers();
     if (terr.map) terr.map.getContainer().style.cursor = '';
-    barUpdate();
+    refresh();
   }
-
-  // ----- registrar lo trabajado: calles punto por punto y hasta dónde se llegó -----
-  function startWork(t) {
-    if (!terr.map) return openWorkDialog(t, [], null);
-    stopModes(); select(t.id);
-    terr.work = { t, lines: [[]], flag: null, flagMode: false };
-    terr.map.getContainer().style.cursor = 'crosshair';
-    workRedraw(); barUpdate();
+  function onTap(ll) {
+    const m = terr.mode;
+    if (!m) return;
+    const p = [+ll.lat.toFixed(6), +ll.lng.toFixed(6)];
+    if (m.kind === 'zona') m.points.push(p);
+    else if (MODES[m.kind].lines) m.lines[m.lines.length - 1].push(p);
+    else {
+      const t = fresh(m.t); stopMode();
+      if (m.kind === 'casa') {
+        const no = h('input', { type: 'radio', name: 'casa', checked: true }), nota = h('input', { type: 'radio', name: 'casa' });
+        return openNoteDialog('Marcar casa', { placeholder: 'Ej.: Pidió que no lo visiten / Hablar con el señor Juan',
+          extra: h('div', { class: 'radios' }, h('label', null, no, '⛔ No predicar aquí'), h('label', null, nota, '📌 Solo una nota')) },
+          n => updateTerritory(fresh(t), { noPredicar: JSON.stringify([...housesOf(fresh(t)), { p, n: squash(n).slice(0, 200), k: no.checked ? 'no' : 'nota' }]) }, 'Casa marcada'));
+      }
+      return openNoteDialog('Hasta aquí llegaron', { placeholder: 'Ej.: Se quedaron en la esquina de Hidalgo y Juárez' },
+        n => updateTerritory(t, { avance: JSON.stringify({ p, n: n.slice(0, 200), f: todayISO() }) }, 'Guardado: hasta aquí llegaron'));
+    }
+    redrawTmp(); barUpdate();
   }
-  function workTap(ll) {
-    const w = terr.work, p = [+ll.lat.toFixed(6), +ll.lng.toFixed(6)];
-    if (w.flagMode) { w.flag = p; w.flagMode = false; }
-    else w.lines[w.lines.length - 1].push(p);
-    workRedraw(); barUpdate();
+  function undo() {
+    const m = terr.mode, last = m.lines[m.lines.length - 1];
+    if (m.kind === 'zona') m.points.pop();
+    else if (last.length) last.pop();
+    else if (m.lines.length > 1) { m.lines.pop(); m.lines[m.lines.length - 1].pop(); }
+    redrawTmp(); barUpdate();
   }
-  function workUndo() {
-    const w = terr.work, last = w.lines[w.lines.length - 1];
-    if (last.length) last.pop();
-    else if (w.lines.length > 1) { w.lines.pop(); w.lines[w.lines.length - 1].pop(); }
-    else if (w.flag) w.flag = null;
-    workRedraw(); barUpdate();
-  }
-  function workRedraw() {
-    const w = terr.work, L = terr.L;
+  function redrawTmp() {
+    const m = terr.mode, L = terr.L;
     terr.tmp.clearLayers();
-    for (const line of w.lines) {
-      if (line.length > 1) L.polyline(line, { color: '#7b2cbf', weight: 6, opacity: 0.9, dashArray: '10 6', interactive: false }).addTo(terr.tmp);
-      for (const p of line) L.circleMarker(p, { radius: 4, color: '#7b2cbf', fillColor: '#fff', fillOpacity: 1, weight: 2, interactive: false }).addTo(terr.tmp);
+    if (!m) return;
+    const color = m.kind === 'trabajada' ? '#7b2cbf' : '#000';
+    if (m.kind === 'zona' && m.points.length > 1) L.polygon(m.points, { color, dashArray: '6 4', weight: 2, fillOpacity: 0.15, interactive: false }).addTo(terr.tmp);
+    for (const line of m.kind === 'zona' ? [m.points] : m.lines) {
+      if (m.kind !== 'zona' && line.length > 1) L.polyline(line, { color, weight: 6, opacity: 0.9, dashArray: '10 6', interactive: false }).addTo(terr.tmp);
+      for (const pt of line) L.circleMarker(pt, { radius: 5, color, fillColor: '#fff', fillOpacity: 1, weight: 2, interactive: false }).addTo(terr.tmp);
     }
-    if (w.flag) pin(L, w.flag, '🚩', 'Hasta aquí').addTo(terr.tmp);
   }
-
-  // ----- casas donde no se predica -----
-  function startMark(t) {
-    if (!terr.map) return;
-    stopModes(); select(t.id);
-    terr.mark = { t };
-    terr.map.getContainer().style.cursor = 'crosshair';
-    barUpdate();
+  async function finishMode() {
+    const m = terr.mode, t = fresh(m.t), lines = m.lines.filter(l => l.length > 1);
+    stopMode();
+    if (m.kind === 'zona') return t ? updateTerritory(t, { coords: JSON.stringify(m.points), calles: '' }, 'Zona guardada') : openTerritoryDataDialog(null, { coords: m.points });
+    if (m.kind === 'calles') return t ? updateTerritory(t, { calles: JSON.stringify(lines), coords: '[]' }, 'Calles del territorio guardadas') : openTerritoryDataDialog(null, { calles: lines });
+    if (m.kind === 'trabajada') updateTerritory(t, { trabajadas: JSON.stringify([...callesOf(t), ...lines]) }, `${lines.length === 1 ? 'Calle trabajada guardada' : lines.length + ' calles trabajadas guardadas'}`);
   }
-  async function markTap(ll) {
-    const t = terr.mark.t;
-    stopModes();
-    const nota = prompt('Nota para esta casa (opcional): por ejemplo “pidió que no lo visiten”.');
-    if (nota === null) return;
-    const list = [...noPredOf(t), { p: [+ll.lat.toFixed(6), +ll.lng.toFixed(6)], n: squash(nota).slice(0, 200) }];
-    updateTerritory(t, { noPredicar: JSON.stringify(list) }, 'Casa marcada: no predicar');
-  }
-
   function barUpdate() {
-    const d = terr.draw, w = terr.work, m = terr.mark;
-    const bar = (text, ...btns) => h('div', { class: 'notice warn row spread', style: { margin: '0 0 8px' } }, h('span', null, text), h('span', { class: 'row' }, ...btns));
-    if (d) return drawBar.replaceChildren(bar(`${d.t ? `Redibujando el territorio ${d.t.numero}: ` : ''}Toca las esquinas de la zona en orden (${d.points.length} puesta${d.points.length === 1 ? '' : 's'}).`,
-      h('button', { class: 'btn small', disabled: !d.points.length, onclick: () => { d.points.pop(); d.dots.pop().remove(); redrawShape(); barUpdate(); } }, '↶ Deshacer'),
-      h('button', { class: 'btn small', onclick: stopModes }, 'Cancelar'),
-      h('button', { class: 'btn small primary', disabled: d.points.length < 3, onclick: () => {
-        const pts = d.points.map(([a, b]) => [+a.toFixed(6), +b.toFixed(6)]), t = d.t;
-        stopModes();
-        if (t) updateTerritory(t, { coords: JSON.stringify(pts) }, 'Zona actualizada');
-        else openTerritoryDataDialog(null, pts);
-      } }, 'Listo')));
-    if (w) {
-      const n = w.lines.filter(l => l.length > 1).length, cur = w.lines[w.lines.length - 1];
-      return drawBar.replaceChildren(bar(w.flagMode ? 'Toca el lugar donde se quedaron.'
-        : `Territorio ${w.t.numero}: toca el mapa siguiendo cada calle que se trabajó, punto por punto (${n} calle${n === 1 ? '' : 's'}). Si no hace falta marcar calles, toca “Siguiente”.`,
-        h('button', { class: 'btn small', onclick: workUndo }, '↶ Deshacer'),
-        h('button', { class: 'btn small', disabled: cur.length < 2, onclick: () => { w.lines.push([]); barUpdate(); } }, '＋ Otra calle'),
-        h('button', { class: 'btn small' + (w.flagMode ? ' primary' : ''), onclick: () => { w.flagMode = !w.flagMode; barUpdate(); } }, '🚩 Hasta aquí'),
-        h('button', { class: 'btn small', onclick: stopModes }, 'Cancelar'),
-        h('button', { class: 'btn small primary', onclick: () => {
-          const lines = w.lines.filter(l => l.length > 1), flag = w.flag, t = nube.territorios.find(x => x.id === w.t.id) || w.t;
-          stopModes(); openWorkDialog(t, lines, flag);
-        } }, 'Siguiente')));
-    }
-    if (m) return drawBar.replaceChildren(bar(`Territorio ${m.t.numero}: toca la casa donde no se predica.`, h('button', { class: 'btn small', onclick: stopModes }, 'Cancelar')));
-    drawBar.replaceChildren();
+    const m = terr.mode;
+    if (!m) return modeBar.replaceChildren();
+    const info = MODES[m.kind], cur = m.lines[m.lines.length - 1];
+    const what = { zona: m.t ? `Redibujar la zona del territorio ${m.t.numero}` : 'Nuevo territorio: dibujar la zona', calles: m.t ? `Redibujar las calles del territorio ${m.t.numero}` : 'Nuevo territorio: trazar sus calles',
+      trabajada: `Trazar calle trabajada · territorio ${m.t && m.t.numero}`, casa: `Marcar casa · territorio ${m.t && m.t.numero}`, avance: `Hasta aquí · territorio ${m.t && m.t.numero}` }[m.kind];
+    const needsSave = m.kind === 'zona' || info.lines;
+    modeBar.replaceChildren(h('div', { class: 'card mode-bar' },
+      h('strong', null, what), h('div', { class: 'small-text', style: { margin: '4px 0 8px' } }, info.help),
+      h('div', { class: 'row' },
+        needsSave ? h('button', { class: 'btn small', onclick: undo }, '↶ Deshacer') : null,
+        info.lines ? h('button', { class: 'btn small', disabled: cur.length < 2, onclick: () => { m.lines.push([]); barUpdate(); } }, '＋ Otra calle') : null,
+        h('button', { class: 'btn small', onclick: stopMode }, 'Cancelar'),
+        needsSave ? h('button', { class: 'btn small primary', disabled: !info.ready(m), onclick: finishMode }, '✓ Guardar') : null)));
   }
 
-  // ----- resumen, panel del territorio elegido y lista -----
+  // Elegir cómo dibujar un territorio: zona (cuadro) o sus calles
+  function askShape(t) {
+    const close = () => { dlg.close(); dlg.remove(); };
+    const opt = (kind, title, text) => h('button', { class: 'btn', style: { textAlign: 'left', display: 'block', width: '100%', padding: '12px' }, onclick: () => { close(); startMode(kind, t); } },
+      h('strong', null, title), h('div', { class: 'small-text muted' }, text));
+    const dlg = h('dialog', { class: 'dlg' },
+      h('div', { class: 'dlg-body' }, h('h3', null, t ? `Redibujar el territorio ${t.numero}` : 'Nuevo territorio'), h('p', { class: 'small-text', style: { margin: 0 } }, '¿Cómo es el territorio?'),
+        opt('zona', '▱ Una zona', 'Tocas las esquinas y se forma el área (por ejemplo, unas manzanas).'),
+        opt('calles', '〰 Unas calles', 'Trazas solo las calles que forman el territorio.')),
+      h('div', { class: 'dlg-foot' }, h('button', { class: 'btn', onclick: close }, 'Cancelar')));
+    document.body.append(dlg); dlg.showModal();
+  }
+
+  // ----- arriba del mapa: lo que se puede hacer con el territorio elegido -----
+  function actionsUpdate() {
+    const t = current(), base = vueltaBase();
+    if (terr.mode) return actions.replaceChildren();
+    if (!t) return actions.replaceChildren(h('div', { class: 'card', style: { padding: '12px 14px', marginBottom: '10px' } },
+      h('div', { class: 'small-text' }, '👆 Toca un territorio en el mapa o en la lista para ver sus datos',
+        nube.territorios.some(canWork) ? ' y trabajar en él (marcar calles, casas y registrar salidas).' : '.'),
+      editor ? h('button', { class: 'btn small primary', style: { marginTop: '8px' }, onclick: () => askShape(null) }, '+ Nuevo territorio') : null));
+    const st = estadoDe(t, base);
+    const big = (icon, text, fn, primary) => h('button', { class: 'btn' + (primary ? ' primary' : ''), onclick: fn }, h('span', { style: { fontSize: '20px' } }, icon), text);
+    actions.replaceChildren(h('div', { class: 'card', style: { padding: '12px 14px', marginBottom: '10px' } },
+      h('div', { class: 'row spread' },
+        h('div', null, h('strong', { style: { fontSize: '17px' } }, terrTitle(t)),
+          ' ', h('span', { class: 'badge', style: { background: TERR[st].color, color: '#fff' } }, TERR[st].label),
+          st === 'asignado' ? h('span', { class: 'small-text' }, ` a ${t.asignadoA}`) : null),
+        h('button', { class: 'btn small', onclick: () => { terr.selected = null; refresh(); } }, '✕')),
+      canWork(t) ? h('div', { class: 'terr-actions' },
+        big('〰', 'Trazar calle trabajada', () => startMode('trabajada', t)),
+        big('🏠', 'Marcar casa', () => startMode('casa', t)),
+        big('🚩', 'Hasta aquí llegaron', () => startMode('avance', t)),
+        big('✅', 'Registrar salida', () => openWorkDialog(t), true))
+        : h('div', { class: 'small-text muted', style: { marginTop: '6px' } }, 'Para registrar aquí, el siervo de territorios tiene que asignártelo.'),
+      editor ? h('div', { class: 'row', style: { marginTop: '8px' } },
+        st !== 'asignado' ? h('button', { class: 'btn small primary', onclick: () => openAssignDialog(t) }, 'Asignar') : h('button', { class: 'btn small', onclick: () => unassignTerritory(t) }, 'Quitar asignación'),
+        h('button', { class: 'btn small', onclick: () => panel.scrollIntoView({ behavior: 'smooth' }) }, 'Más opciones ↓')) : null));
+  }
+
+  // ----- resumen, detalle del territorio elegido y lista -----
   function refresh() {
     if (terr.map) drawLayers();
-    const all = [...nube.territorios].sort(byNumero), today = todayISO(), base = vueltaBase();
-    const stats = workStats(terr.year), thisYear = workStats(new Date().getFullYear());
+    barUpdate(); actionsUpdate();
+    const all = [...nube.territorios].sort(byNumero), today = todayISO(), base = vueltaBase(), year = new Date().getFullYear();
+    const stats = workStats(terr.year), thisYear = workStats(year);
     const n = k => all.filter(t => estadoDe(t, base) === k).length;
     counts.replaceChildren(...Object.entries(TERR).map(([k, v]) => h('span', null,
       h('span', { style: { display: 'inline-block', width: '10px', height: '10px', borderRadius: '50%', background: v.color, marginRight: '5px' } }),
       h('strong', null, n(k)), ' ', v.label.toLowerCase() + (n(k) === 1 ? '' : 's'))));
     const pending = all.filter(t => estadoDe(t, base) === 'disponible');
+    const sum = k => [...thisYear.values()].reduce((a, s) => a + s[k], 0);
     summary.replaceChildren(all.length ? h('div', { class: 'small-text', style: { margin: '-4px 0 10px' } },
       h('strong', null, `Vuelta ${base + 1}: `), `${n('terminado')} de ${all.length} completados.`,
-      pending.length ? ` Siguientes en orden: ${pending.slice(0, 5).map(t => t.numero).join(', ')}.` : '',
-      ` En ${new Date().getFullYear()}: ${[...thisYear.values()].reduce((a, s) => a + s.completos, 0)} completados y ${[...thisYear.values()].reduce((a, s) => a + s.salidas, 0)} salidas registradas.`) : '');
-    // Capitán: sus territorios, para registrar rápido
+      pending.length ? ` Siguen en orden: ${pending.slice(0, 5).map(t => t.numero).join(', ')}.` : '',
+      ` En ${year}: ${sum('completos')} completados y ${sum('salidas')} salidas registradas.`) : '');
+    // Capitán: sus territorios
     const myOnes = all.filter(isMyTerritory);
     mine.replaceChildren(myOnes.length ? h('div', { class: 'card', style: { padding: '12px 14px', marginBottom: '12px' } },
       h('strong', null, 'Mis territorios'),
       myOnes.map(t => h('div', { class: 'row spread', style: { marginTop: '8px' } },
         h('span', null, h('strong', null, terrTitle(t)), h('span', { class: 'muted small-text' }, ` · desde el ${fmtShort(t.desde)} (${dayCount(daysBetween(t.desde, today))})`)),
-        h('span', { class: 'row' },
-          h('button', { class: 'btn small', onclick: () => select(t.id) }, 'Ver'),
-          h('button', { class: 'btn small primary', onclick: () => startWork(t) }, 'Registrar trabajo'))))) : '');
+        h('button', { class: 'btn small primary', onclick: () => select(t.id) }, 'Trabajar aquí')))) : '');
 
-    const t = all.find(x => x.id === terr.selected);
-    const st = t ? estadoDe(t, base) : null, since = t && t.desde ? daysBetween(t.desde, today) : null;
-    const av = t && avanceOf(t), np = t ? noPredOf(t) : [], ys = t && thisYear.get(t.id);
+    const t = current();
+    const st = t ? estadoDe(t, base) : null, av = t && avanceOf(t), hs = t ? housesOf(t) : [], ys = t && thisYear.get(t.id);
     const works = t ? nube.trabajos.filter(w => w.territorio === t.id).sort((a, b) => b.fecha.localeCompare(a.fecha)).slice(0, 15) : [];
     panel.replaceChildren(t ? h('div', { class: 'card', style: { padding: '14px', marginTop: '12px' } },
-      h('div', { class: 'row spread', style: { alignItems: 'flex-start' } },
-        h('div', null,
-          h('strong', { style: { fontSize: '18px' } }, terrTitle(t)),
-          t.tarjeta ? h('span', { class: 'muted' }, ` · Tarjeta ${t.tarjeta}`) : null,
-          h('div', { style: { marginTop: '4px' } },
-            h('span', { class: 'badge', style: { background: TERR[st].color, color: '#fff' } }, TERR[st].label),
-            ' ', st === 'asignado' ? `a ${t.asignadoA}` : '',
-            since != null ? h('span', { class: 'muted small-text' }, ` · desde el ${fmtShort(t.desde)} (${dayCount(since)})`) : null),
-          h('div', { class: 'small-text muted', style: { marginTop: '4px' } },
-            `En ${new Date().getFullYear()}: completado ${ys ? ys.completos : 0} ${ys && ys.completos === 1 ? 'vez' : 'veces'}, ${ys ? ys.salidas : 0} salida${ys && ys.salidas === 1 ? '' : 's'} registrada${ys && ys.salidas === 1 ? '' : 's'}.`),
-          av && (av.n || av.p) ? h('div', { class: 'small-text', style: { marginTop: '6px' } }, '🚩 ', h('strong', null, 'Se quedaron: '), av.n || 'marcado en el mapa', av.f ? h('span', { class: 'muted' }, ` (${fmtShort(av.f)})`) : null) : null,
-          t.notas ? h('div', { class: 'small-text', style: { marginTop: '6px' } }, richText(t.notas)) : null),
-        h('button', { class: 'btn small', onclick: () => { terr.selected = null; refresh(); } }, '✕')),
-      h('div', { class: 'row', style: { marginTop: '10px' } },
-        editor && st !== 'asignado' ? h('button', { class: 'btn small primary', onclick: () => openAssignDialog(t) }, 'Asignar') : null,
-        canWork(t) ? h('button', { class: 'btn small primary', onclick: () => startWork(t) }, '✎ Registrar trabajo') : null,
-        editor && st === 'asignado' ? h('button', { class: 'btn small', onclick: () => unassignTerritory(t) }, 'Quitar asignación') : null,
+      h('strong', { style: { fontSize: '17px' } }, terrTitle(t)),
+      h('div', { class: 'small-text', style: { marginTop: '6px', display: 'grid', gap: '4px' } },
+        h('div', null, `Número de tarjeta: ${t.tarjeta || '—'}`),
+        h('div', null, `Estado: ${TERR[st].label}${st === 'asignado' ? ` a ${t.asignadoA}` : ''}${t.desde ? ` · desde el ${fmtShort(t.desde)} (${dayCount(daysBetween(t.desde, today))})` : ''}`),
+        h('div', null, `En ${year}: completado ${ys ? ys.completos : 0} ${ys && ys.completos === 1 ? 'vez' : 'veces'} · ${ys ? ys.salidas : 0} salida${ys && ys.salidas === 1 ? '' : 's'} registrada${ys && ys.salidas === 1 ? '' : 's'}.`),
+        av ? h('div', null, '🚩 Hasta aquí llegaron', av.f ? ` (${fmtShort(av.f)})` : '', av.n ? `: ${av.n}` : '') : null,
+        callesOf(t).length ? h('div', null, `〰 ${callesOf(t).length} calle${callesOf(t).length === 1 ? '' : 's'} trabajada${callesOf(t).length === 1 ? '' : 's'} en esta vuelta (en morado en el mapa).`) : null,
+        t.notas ? h('div', null, richText(t.notas)) : null),
+      h('div', { class: 'hist', style: { marginTop: '10px' } },
+        h('strong', null, `Casas marcadas (${hs.length})`),
+        hs.length ? hs.map((x, i) => h('div', null, h('span', null, `${HOUSE[x.k].icon} ${HOUSE[x.k].label}`, x.n ? h('span', { class: 'muted' }, ` · ${x.n}`) : null),
+          canWork(t) ? h('button', { class: 'btn small', onclick: () => {
+            if (confirm('¿Quitar esta casa marcada?')) updateTerritory(t, { noPredicar: JSON.stringify(hs.filter((_, j) => j !== i)) }, 'Marca quitada');
+          } }, 'Quitar') : null)) : h('div', { class: 'muted' }, 'Ninguna. Usa “🏠 Marcar casa”.')),
+      h('div', { class: 'hist', style: { marginTop: '10px' } },
+        h('strong', null, 'Salidas registradas'),
+        works.length ? works.map(w => h('div', null,
+          h('span', null, w.completo ? '✅ Completado' : '◐ Quedó una parte', w.capitan || w.porNombre ? ` · ${w.capitan || w.porNombre}` : '', w.notas ? h('span', { class: 'muted' }, ` · ${w.notas}`) : null),
+          h('span', { class: 'row', style: { gap: '6px' } }, h('span', { class: 'muted' }, fmtShort(w.fecha)),
+            editor ? h('button', { class: 'btn small', title: 'Borrar este registro', onclick: async () => {
+              if (!confirm(`¿Borrar la salida del ${fmtShort(w.fecha)}?${w.completo ? ' El territorio sigue contando como completado; si no lo fue, usa “Regresar a disponible”.' : ''}`)) return;
+              try { await F.deleteDoc(congRef('trabajos', w.id)); toast('Registro borrado'); } catch (e) { toast(errMsg(e)); }
+            } }, '✕') : null))) : h('div', { class: 'muted' }, 'Todavía no hay. Usa “✅ Registrar salida”.')),
+      (t.historial || []).length ? h('div', { class: 'hist', style: { marginTop: '10px' } },
+        h('strong', null, 'Asignaciones anteriores'),
+        [...t.historial].reverse().map(x => h('div', null, h('span', null, x.quien || '—', x.completo ? ' ✅' : x.completo === false ? ' (sin completar)' : ''),
+          h('span', { class: 'muted' }, `${x.desde ? fmtShort(x.desde) : '?'} – ${x.hasta ? fmtShort(x.hasta) : '?'}`)))) : null,
+      h('div', { class: 'row', style: { marginTop: '12px' } },
         editor && st === 'terminado' ? h('button', { class: 'btn small', onclick: () => {
           if (confirm(`¿Regresar el territorio ${t.numero} a disponible en esta vuelta? Sus registros no se borran.`)) updateTerritory(t, { veces: vueltaBase() }, 'Ahora está disponible');
         } }, 'Regresar a disponible') : null,
-        canWork(t) ? h('button', { class: 'btn small', onclick: () => startMark(t) }, '⛔ No predicar') : null,
         h('button', { class: 'btn small', onclick: () => openQRDialog(t) }, '▦ QR'),
         h('button', { class: 'btn small', onclick: () => territoryCardsPDF([t]) }, '🖨 Tarjeta'),
         editor ? h('button', { class: 'btn small', onclick: () => openTerritoryDataDialog(t) }, 'Editar datos') : null,
-        editor ? h('button', { class: 'btn small', onclick: () => startDraw(t) }, 'Redibujar zona') : null,
-        editor && (callesOf(t).length || av) ? h('button', { class: 'btn small', onclick: () => {
-          if (confirm('¿Borrar del mapa las calles marcadas y el punto de hasta dónde se llegó? Los registros no se borran.')) updateTerritory(t, { trabajadas: '', avance: '' }, 'Marcas borradas');
-        } }, 'Borrar marcas') : null,
+        editor ? h('button', { class: 'btn small', onclick: () => askShape(t) }, 'Redibujar') : null,
+        canWork(t) && (callesOf(t).length || av) ? h('button', { class: 'btn small', onclick: () => {
+          if (confirm('¿Borrar del mapa las calles trabajadas y el “hasta aquí”? Las salidas registradas no se borran.')) updateTerritory(t, { trabajadas: '', avance: '' }, 'Marcas borradas');
+        } }, 'Borrar calles y avance') : null,
         editor ? h('button', { class: 'btn small danger', onclick: async () => {
           if (!confirm(`¿Borrar el territorio ${t.numero}? Se pierde también su historial.`)) return;
           try { await F.deleteDoc(congRef('territorios', t.id)); terr.selected = null; toast('Territorio borrado'); } catch (e) { toast(errMsg(e)); }
-        } }, 'Borrar') : null),
-      np.length ? h('div', { class: 'hist', style: { marginTop: '10px' } },
-        h('strong', null, `No predicar (${np.length})`),
-        np.map((x, i) => h('div', null, h('span', null, '⛔ ', x.n || 'Sin nota'),
-          canWork(t) ? h('button', { class: 'btn small', onclick: () => {
-            if (confirm('¿Quitar esta casa de “no predicar”?')) updateTerritory(t, { noPredicar: JSON.stringify(np.filter((_, j) => j !== i)) }, 'Marca quitada');
-          } }, 'Quitar') : null))) : null,
-      works.length ? h('div', { class: 'hist', style: { marginTop: '10px' } },
-        h('strong', null, 'Registros'),
-        works.map(w => h('div', null,
-          h('span', null, w.completo ? '✓ Completado' : '◐ Una parte', w.capitan || w.porNombre ? ` · ${w.capitan || w.porNombre}` : '', w.notas ? h('span', { class: 'muted' }, ` · ${w.notas}`) : null),
-          h('span', { class: 'row', style: { gap: '6px' } }, h('span', { class: 'muted' }, fmtShort(w.fecha)),
-            editor ? h('button', { class: 'btn small', title: 'Borrar este registro', onclick: async () => {
-              if (!confirm(`¿Borrar el registro del ${fmtShort(w.fecha)}?${w.completo ? ' El territorio sigue contando como completado; si no lo fue, usa “Regresar a disponible”.' : ''}`)) return;
-              try { await F.deleteDoc(congRef('trabajos', w.id)); toast('Registro borrado'); } catch (e) { toast(errMsg(e)); }
-            } }, '✕') : null)))) : null,
-      (t.historial || []).length ? h('div', { class: 'hist', style: { marginTop: '10px' } },
-        h('strong', null, 'Asignaciones anteriores'),
-        [...t.historial].reverse().map(x => h('div', null, h('span', null, x.quien || '—', x.completo ? ' ✓' : x.completo === false ? ' (sin completar)' : ''),
-          h('span', { class: 'muted' }, `${x.desde ? fmtShort(x.desde) : '?'} – ${x.hasta ? fmtShort(x.hasta) : '?'}`)))) : null) : '');
+        } }, 'Borrar territorio') : null)) : '');
 
     const shown = all.filter(t => (terr.filter === 'todos' || estadoDe(t, base) === terr.filter) && matches(t));
-    const years = [...new Set([new Date().getFullYear(), ...nube.trabajos.map(w => +String(w.fecha).slice(0, 4)).filter(Boolean)])].sort((a, b) => b - a);
+    const years = [...new Set([year, ...nube.trabajos.map(w => +String(w.fecha).slice(0, 4)).filter(Boolean)])].sort((a, b) => b - a);
     list.replaceChildren(
       h('div', { class: 'row spread', style: { alignItems: 'flex-end' } },
         h('div', { class: 'chips', style: { maxWidth: '520px', flex: 1 } }, [['todos', 'Todos'], ...Object.entries(TERR).map(([k, v]) => [k, v.label + 's'])].map(([k, label]) =>
@@ -2969,7 +2989,7 @@ function renderTerritories() {
             h('td', null, s ? `${s.completos}${s.ultimo ? ' · ' + fmtShort(s.ultimo) : ''}` : 0),
             h('td', null, s ? s.salidas : 0));
         })
-          : h('tr', null, h('td', { colspan: 8, class: 'empty' }, all.length ? 'Ninguno con este filtro.' : editor ? 'Todavía no hay territorios. Toca “+ Nuevo territorio” y dibuja su zona en el mapa.' : 'Todavía no hay territorios.'))))));
+          : h('tr', null, h('td', { colspan: 8, class: 'empty' }, all.length ? 'Ninguno con este filtro.' : editor ? 'Todavía no hay territorios. Toca “+ Nuevo territorio”.' : 'Todavía no hay territorios.'))))));
   }
   terr.refresh = refresh;
   refresh();
@@ -2977,20 +2997,21 @@ function renderTerritories() {
   return h('div', null,
     h('div', { class: 'row spread', style: { marginBottom: '10px' } },
       h('div', null, h('h1', null, 'Territorios'),
-        h('p', { class: 'sub', style: { margin: 0 } }, editor ? 'Toca un territorio en el mapa o en la lista para asignarlo o registrar lo trabajado.'
-          : can('capitan') ? 'Tus territorios asignados salen arriba. Toca uno para ver sus marcas o registrar lo trabajado.' : 'Toca un territorio para ver sus datos y su QR.')),
+        h('p', { class: 'sub', style: { margin: 0 } }, editor ? 'Elige un territorio para asignarlo, marcar lo trabajado y registrar salidas.'
+          : can('capitan') ? 'Tus territorios salen en “Mis territorios”. Elige uno para marcar lo trabajado y registrar la salida.' : 'Toca un territorio para ver sus datos y su QR.')),
       tools),
     mine,
     counts,
     summary,
-    h('div', { class: 'row', style: { marginBottom: '8px' } }, search),
-    drawBar,
+    h('div', { class: 'row', style: { marginBottom: '10px' } }, search),
+    actions,
+    modeBar,
     mapEl,
     panel,
     h('div', { class: 'row spread', style: { margin: '18px 0 8px' } },
       h('h2', { class: 'group', style: { margin: 0 } }, 'Lista'),
       h('div', { class: 'row' },
-        editor ? h('button', { class: 'btn small primary', onclick: () => startDraw(null) }, '+ Nuevo territorio') : null,
+        editor ? h('button', { class: 'btn small primary', onclick: () => askShape(null) }, '+ Nuevo territorio') : null,
         h('button', { class: 'btn small', onclick: () => {
           const base = vueltaBase(), all = [...nube.territorios].sort(byNumero).filter(t => (terr.filter === 'todos' || estadoDe(t, base) === terr.filter) && matches(t));
           if (all.length) territoryCardsPDF(all); else toast('No hay territorios para imprimir');
@@ -3009,8 +3030,10 @@ function renderSharedTerritory() {
   document.getElementById('app').replaceChildren(tools, mapEl);
   loadLeaflet().then(L => {
     const map = baseMap(L, mapEl);
-    if (pts.length >= 3) {
-      const poly = L.polygon(pts, { color: '#e08a00', weight: 3, fillOpacity: 0.25 }).addTo(map);
+    const lines = (q.get('l') || '').split('~').filter(Boolean).map(decodePoly).filter(l => l.length > 1);
+    if (pts.length >= 3 || lines.length) {
+      const poly = (pts.length >= 3 ? L.polygon(pts, { color: '#e08a00', weight: 3, fillOpacity: 0.25 }) : L.featureGroup(lines.map(l => L.polyline(l, { color: '#e08a00', weight: 8, opacity: 0.9 })))).addTo(map);
+      for (const p of decodePoly(q.get('x') || '')) L.marker(p, { icon: L.divIcon({ className: 'terr-pin', html: '⛔', iconSize: [26, 26], iconAnchor: [13, 24] }) }).bindTooltip('No predicar').addTo(map);
       map.fitBounds(poly.getBounds(), { padding: [30, 30], maxZoom: 18 });
       const c = poly.getBounds().getCenter();
       tools.append(locateButton(L, map),
@@ -3140,7 +3163,8 @@ function attachPicker(inp, getList, onChoose) {
       typed ? null : nomChips(fill),
       ...(items.length ? items.map((x, i) => h('button', { class: 'pick-item' + (i === at ? ' on' : '') + (x.why ? ' other' : ''), type: 'button',
         onmousedown: e => e.preventDefault(), onclick: () => choose(x.pr) },
-        h('span', { class: 'nm' }, x.pr.name, x.why ? h('span', { class: 'tag-fam', style: { color: 'var(--orange)' } }, x.why) : null),
+        h('span', { class: 'nm' }, x.pr.name, x.pref && !x.why ? h('span', { class: 'tag-fam', style: { color: 'var(--accent)' } }, nomLabel(x.pr.nombramiento)) : null,
+          x.why ? h('span', { class: 'tag-fam', style: { color: 'var(--orange)' } }, x.why) : null),
         h('span', { class: 'hint ' + (x.why ? 's-recent' : x.days === Infinity ? 's-stale' : 's-ok') }, x.days === Infinity ? 'nunca' : `hace ${x.days} d`)))
         : [h('div', { class: 'pick-empty' }, typed ? 'Nadie con ese nombre.' : 'Nadie disponible. Escribe un nombre para buscar entre todos.')]));
   };
@@ -3433,12 +3457,14 @@ function navItems() {
   if (!nube.acceso) return [];
   const items = [['inicio', 'Inicio'], ['list', 'Semanas']];
   // Hermanos: perfiles y, para el coordinador, cuentas por aprobar y funciones (antes "Usuarios")
-  if (can('programa')) items.push(['mecanicas', 'Mecánicas'], ['people', 'Hermanos', isAdmin() ? nube.miembros.filter(m => m.estado !== 'activo').length : 0], ['families', 'Familias']);
+  if (can('programa')) items.push(['mecanicas', 'Mecánicas']);
+  // Hermanos incluye el directorio: lo ven todos los ancianos (cualquier función)
+  if (isElder()) items.push(['people', 'Hermanos', isAdmin() ? nube.miembros.filter(m => m.estado !== 'activo').length : 0]);
+  if (can('programa')) items.push(['families', 'Familias']);
   if (isElder()) items.push(['grupos', 'Grupos']);
   if (can('secretario')) items.push(['report', 'Informes']);
   else if (reportsByMembers()) items.push(['report', 'Informe']);
   items.push(['anuncios', 'Anuncios', unreadAnnouncements()]);
-  if (isElder()) items.push(['directorio', 'Directorio']);
   if (can('cuentas')) items.push(['cuentas', 'Cuentas']);
   items.push(['territorios', 'Territorios']);
   items.push(['settings', 'Ajustes']);
@@ -3481,11 +3507,11 @@ function render() {
   if (view.name === 'report') return app.replaceChildren(renderReport());
   if (view.name === 'grupos') return app.replaceChildren(renderGroups());
   if (view.name === 'anuncios') { app.replaceChildren(renderAnnouncements()); return buildNav(); }
-  if (view.name === 'directorio') return app.replaceChildren(renderDirectory());
   if (view.name === 'cuentas') return app.replaceChildren(renderAccounts());
   if (view.name === 'territorios') return app.replaceChildren(renderTerritories());
   if (view.name === 'mecanicas') return app.replaceChildren(renderMecanicas());
   if (view.name === 'settings') return app.replaceChildren(program ? renderSettings() : renderPubSettings());
+  if (view.name === 'people') { refreshDatalist(); return app.replaceChildren(renderPeople()); }
   if (!program) return app.replaceChildren(renderPubList());
   refreshDatalist();
   const p = view.name === 'edit' && state.programs.find(x => x.id === view.id);
@@ -3648,10 +3674,10 @@ function renderEditor(p) {
       .map(pr => {
         const l = ctx.last.get(pr.id);
         return { pr, fam: !!partner && sameFamily(partner, pr.id), days: l ? daysBetween(l.q.date, p.date) : Infinity,
-          rest: ctx.recent.get(pr.id), able: !priv || canDo(pr, priv), fits: !!rule && fitsRule(pr, rule) };
+          rest: ctx.recent.get(pr.id), able: !priv || canDo(pr, priv), fits: !!rule && fitsRule(pr, rule), pref: !!priv && prefersMe(pr, priv) };
       })
       .filter(it => (it.fam || sexFilter === 'all' || it.pr.sex === sexFilter) && (!privOnly || it.able) && nomOk(it.pr))
-      .sort((a, b) => b.fam - a.fam || b.able - a.able || b.fits - a.fits || b.days - a.days || a.pr.name.localeCompare(b.pr.name, 'es'));
+      .sort((a, b) => b.fam - a.fam || b.able - a.able || b.fits - a.fits || b.pref - a.pref || b.days - a.days || a.pr.name.localeCompare(b.pr.name, 'es'));
     const item = it => h('button', { onclick: () => insertProfile(it.pr), title: it.rest ? restText(it.rest, p).slice(2) : null },
       h('span', { class: 'nm' }, it.pr.name, ' ', h('small', null, `${it.pr.sex === 'M' ? '♂' : '♀'}${it.pr.age != null ? ' ' + it.pr.age : ''}`),
         it.fam ? h('span', { class: 'tag-fam' }, 'Familia') : null,
@@ -3759,6 +3785,7 @@ function renderEditor(p) {
         h('span', { class: 'nm' }, it.pr.name, ' ',
           h('small', null, `${it.pr.sex === 'M' ? '♂' : '♀'}${it.pr.age != null ? ' ' + it.pr.age : ''}`),
           it.rule && it.fits && !it.why ? h('span', { class: 'tag-fam' }, '✓ ' + it.rule.nombre) : null,
+          it.pref && !it.why ? h('span', { class: 'tag-fam', style: { color: 'var(--accent)' } }, nomLabel(it.pr.nombramiento)) : null,
           it.why ? h('span', { class: 'tag-fam', style: { color: 'var(--orange)' } }, it.why) : null),
         h('span', { class: 'hint ' + (it.why ? 's-recent' : it.days === Infinity || it.days >= s.staleDays ? 's-stale' : 's-ok') },
           it.days === Infinity ? 'nunca' : `hace ${it.days} d`)))
@@ -3944,8 +3971,10 @@ function renderEditor(p) {
     grid);
 }
 
+// Los ancianos (cualquier función) ven la lista y el directorio; solo Programa VyM cambia los demás datos
 function renderPeople() {
-  let sort = 'stale', sexF = 'all';
+  const prog = !FB_CONFIG || can('programa'), elder = FB_CONFIG && isElder();
+  let sort = prog ? 'stale' : 'az', sexF = 'all';
   const filter = h('input', { type: 'search', placeholder: 'Buscar…', oninput: () => fill() });
   const tbody = h('tbody');
   const today = todayISO();
@@ -3967,14 +3996,21 @@ function renderPeople() {
   function fill() {
     const f = norm(filter.value);
     const byName = (a, b) => a.pr.name.localeCompare(b.pr.name, 'es');
-    const rows = stats().filter(x => (!f || norm(x.pr.name).includes(f)) && (sexF === 'all' || x.pr.sex === sexF) && nomOk(x.pr)).sort(
+    const contact = pr => elder ? nube.contactos.get(pr.id) || {} : {};
+    const rows = stats().filter(x => (!f || norm(x.pr.name).includes(f) || norm(Object.values(contact(x.pr)).join(' ')).includes(f)) && (sexF === 'all' || x.pr.sex === sexF) && nomOk(x.pr)).sort(
       sort === 'stale' ? (a, b) => b.days - a.days || byName(a, b)
         : sort === 'count' ? (a, b) => b.count - a.count || byName(a, b)
           : sort === 'age' ? (a, b) => (b.pr.age ?? -1) - (a.pr.age ?? -1) || byName(a, b) : byName);
     tbody.replaceChildren(...(rows.length ? rows.map(x => {
       const badge = x.days === Infinity ? ['s-never', x.next ? 'Programado' : 'Nunca']
         : x.days >= state.settings.staleDays ? ['s-stale', 'Hace mucho'] : x.recent ? ['s-recent', 'Reciente'] : ['s-ok', 'Normal'];
-      const acc = FB_CONFIG && isAdmin() ? memberOfProfile(x.pr.id) : null, grp = grupoOf(x.pr.id);
+      const acc = FB_CONFIG && isAdmin() ? memberOfProfile(x.pr.id) : null, grp = grupoOf(x.pr.id), c = contact(x.pr);
+      const link = (href, text) => h('a', { href, target: href.startsWith('http') ? '_blank' : null, rel: 'noopener', onclick: e => e.stopPropagation() }, text);
+      const phone = c.tel ? h('div', { class: 'small-text' }, '📞 ', link(telLink(c.tel), c.tel), ' · ', link(waLink(c.tel), 'WhatsApp')) : null;
+      if (!prog) return h('tr', { onclick: () => openProfileDialog(x.pr) },
+        h('td', null, h('strong', null, x.pr.name), x.pr.nombramiento ? h('span', { class: 'tag-fam', style: { color: 'var(--accent)' } }, nomLabel(x.pr.nombramiento)) : null, phone,
+          c.dir ? h('div', { class: 'small-text muted' }, c.dir) : null),
+        h('td', null, x.pr.sex === 'M' ? 'Masculino' : 'Femenino'), h('td', null, x.pr.age ?? '—'), h('td', { class: 'small-text' }, grp ? grp.nombre : '—'));
       return h('tr', { onclick: () => openProfileDialog(x.pr) },
         h('td', null, h('strong', null, x.pr.name),
           x.pr.nombramiento ? h('span', { class: 'tag-fam', style: { color: 'var(--accent)' } }, nomLabel(x.pr.nombramiento)) : null,
@@ -3982,6 +4018,7 @@ function renderPeople() {
           grp ? h('span', { class: 'tag-fam' }, grp.nombre) : null,
           acc ? h('div', { class: 'muted small-text', title: 'Tiene cuenta en la app' }, '🔑 ', acc.email,
             acc.admin ? ' · Coordinador' : (acc.permisos || []).length ? ' · ' + acc.permisos.map(k => (PERMS.find(p => p[0] === k) || [k, k])[1]).join(', ') : '') : null,
+          phone,
           Array.isArray(x.pr.puede)
             ? h('div', { class: 'muted small-text' }, x.pr.puede.length ? x.pr.puede.map(privLabel).join(' · ') : 'Sin asignaciones')
             : h('div', { class: 'small-text', style: { color: 'var(--orange)' } }, 'Privilegios sin marcar'),
@@ -4004,21 +4041,22 @@ function renderPeople() {
   return h('div', null,
     h('div', { class: 'row spread', style: { marginBottom: '14px' } },
       h('div', null, h('h1', null, 'Hermanos'),
-        h('p', { class: 'sub', style: { margin: 0 } }, 'Datos, nombramiento, asignaciones que puede recibir y, si tiene, su cuenta de la app. Toca a un hermano para editarlo o ver su historial.')),
-      h('button', { class: 'btn primary', onclick: () => openProfileDialog(null) }, '+ Nuevo hermano')),
+        h('p', { class: 'sub', style: { margin: 0 } }, prog ? `Datos, nombramiento, asignaciones que puede recibir${elder ? ', teléfono y dirección (solo los ancianos los ven)' : ''} y, si tiene, su cuenta de la app. Toca a un hermano para editarlo.`
+          : 'Teléfono, dirección y contacto de emergencia de cada hermano. Solo los ancianos ven esta información. Toca a un hermano para ver o cambiar sus datos de contacto.')),
+      prog ? h('button', { class: 'btn primary', onclick: () => openProfileDialog(null) }, '+ Nuevo hermano') : null),
     FB_CONFIG && isAdmin() ? accountsPanel() : null,
     h('div', { class: 'card', style: { padding: '14px' } },
       chips,
       h('div', { class: 'row', style: { marginBottom: '10px' } }, filter,
         h('select', { onchange: e => { sexF = e.target.value; fill(); } },
           h('option', { value: 'all' }, 'Todos'), h('option', { value: 'M' }, 'Hombres'), h('option', { value: 'F' }, 'Mujeres')),
-        h('select', { onchange: e => { sort = e.target.value; fill(); } },
+        prog ? h('select', { onchange: e => { sort = e.target.value; fill(); } },
           h('option', { value: 'stale' }, 'Más tiempo sin participar'),
           h('option', { value: 'count' }, 'Más veces asignado'),
           h('option', { value: 'age' }, 'Edad'),
-          h('option', { value: 'az' }, 'Alfabético'))),
+          h('option', { value: 'az' }, 'Alfabético')) : null),
       h('div', { class: 'tablewrap' }, h('table', { class: 'stats' },
-        h('thead', null, h('tr', null, ['Nombre', 'Sexo', 'Edad', 'Familia', 'Veces', 'Última vez', 'Hace', 'Última asignación', 'Próxima', 'Estado'].map(t => h('th', null, t)))),
+        h('thead', null, h('tr', null, (prog ? ['Nombre', 'Sexo', 'Edad', 'Familia', 'Veces', 'Última vez', 'Hace', 'Última asignación', 'Próxima', 'Estado'] : ['Nombre', 'Sexo', 'Edad', 'Grupo']).map(t => h('th', null, t)))),
         tbody))));
 }
 
@@ -4134,6 +4172,7 @@ function renderSettings() {
         } }, '⬇ Descargar respaldo'),
         h('button', { class: 'btn', onclick: () => fileIn.click() }, '⬆ Cargar respaldo'), fileIn)),
     filtersCard(),
+    nomPrefsCard(),
     version);
 }
 
@@ -4192,6 +4231,23 @@ function filtersCard() {
           if (!confirm('¿Volver a los filtros que trae la app? Se pierden los cambios que hayas hecho.')) return;
           s.filters = DEFAULT_FILTERS.map(f => ({ ...f })); save(); fill();
         } }, 'Volver a los predeterminados')))];
+}
+
+// Ajustes: en qué asignaciones salen primero los nombrados (aparte de los filtros por edad)
+function nomPrefsCard() {
+  const s = state.settings;
+  if (!s.nomPrefs) s.nomPrefs = { ...DEFAULT_NOM_PREFS };
+  const opts = [['', 'No preferir'], ['nom', 'Ancianos y siervos ministeriales'], ['anciano', 'Ancianos'], ['sm', 'Siervos ministeriales']];
+  const row = ([k, label]) => h('label', { class: 'row spread', style: { gap: '10px', color: 'var(--text)', fontSize: '14px' } }, label,
+    h('select', { onchange: e => { s.nomPrefs[k] = e.target.value; save(); } }, opts.map(([v, t]) => h('option', { value: v, selected: (s.nomPrefs[k] || '') === v ? true : null }, t))));
+  return [
+    h('h2', { class: 'group' }, 'Preferir nombrados'),
+    h('div', { class: 'card settings', style: { marginTop: 0 } },
+      h('p', { class: 'muted small-text', style: { margin: 0 } }, 'En las asignaciones que elijas, las sugerencias ponen primero a los ancianos, a los siervos ministeriales o a los dos. Los demás siguen saliendo, después. Va aparte de los filtros por edad.'),
+      h('strong', { class: 'small-text' }, 'Asignaciones mecánicas'),
+      PRIVS.filter(([k]) => MEC_PRIVS.includes(k)).map(row),
+      h('strong', { class: 'small-text' }, 'Programa de Vida y Ministerio'),
+      PRIVS.filter(([k]) => !MEC_PRIVS.includes(k)).map(row))];
 }
 
 // Revisa jw.org al abrir, como máximo cada 12 horas (o siempre si faltan semanas próximas).

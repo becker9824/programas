@@ -193,6 +193,8 @@ test('capitán: registra solo en el territorio que se le asignó; el siervo ve y
   await assertFails(setDoc(cdoc(p, 'trabajos', 'w3'), work('t20', { por: 'otro' })));
   await assertSucceeds(updateDoc(cdoc(p, 'territorios', 't20'), { trabajadas: '[[[19.4,-99.1],[19.41,-99.1]]]', avance: '{"n":"esquina"}', noPredicar: '[{"p":[19.4,-99.1],"n":""}]' }));
   await assertFails(updateDoc(cdoc(p, 'territorios', 't20'), { numero: '99' }));
+  await assertFails(updateDoc(cdoc(p, 'territorios', 't20'), { calles: '[[[19.4,-99.1],[19.41,-99.1]]]' })); // la forma solo la cambia el siervo
+  await assertSucceeds(updateDoc(cdoc(a, 'territorios', 't21'), { calles: '[[[19.4,-99.1],[19.41,-99.1]]]', coords: '[]' }));
   await assertFails(updateDoc(cdoc(p, 'territorios', 't20'), { capitan: 'otro' }));
   await assertFails(updateDoc(cdoc(p, 'territorios', 't21'), { avance: '{}' }));
   await assertSucceeds(updateDoc(cdoc(p, 'territorios', 't20'), { estado: 'disponible', asignadoA: '', capitan: '', veces: 1, trabajadas: '', avance: '' }));
