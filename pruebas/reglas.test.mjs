@@ -177,6 +177,19 @@ test('territorios: los ve cualquier miembro, los cambia la función "Territorios
   await assertFails(deleteDoc(cdoc(db('pub'), 'territorios', 't1')));
 });
 
+test('grupos: los arma el secretario, los ven los ancianos; la función Capitán existe', async () => {
+  const g = { nombre: 'Grupo 1', superintendente: 'p2', auxiliar: null, miembros: ['p1', 'p2'] };
+  await assertSucceeds(setDoc(cdoc(db('secre'), 'grupos', 'g1'), g));
+  await assertSucceeds(getDoc(cdoc(db('prog'), 'grupos', 'g1')));
+  await assertFails(setDoc(cdoc(db('prog'), 'grupos', 'g2'), g));
+  await assertFails(setDoc(cdoc(db('secre'), 'grupos', 'g2'), { ...g, nombre: '' }));
+  await assertFails(setDoc(cdoc(db('secre'), 'grupos', 'g2'), { ...g, extra: 1 }));
+  await assertFails(getDoc(cdoc(db('pub'), 'grupos', 'g1')));
+  await assertSucceeds(updateDoc(cdoc(db('admin'), 'miembros', 'pub'), { permisos: ['capitan'] }));
+  await assertSucceeds(updateDoc(cdoc(db('admin'), 'miembros', 'pub'), { permisos: [] }));
+  await assertSucceeds(deleteDoc(cdoc(db('secre'), 'grupos', 'g1')));
+});
+
 test('el coordinador puede hacer coordinador a otro; alguien de fuera no ve nada', async () => {
   const a = db('admin'), o = db('otro');
   await assertSucceeds(updateDoc(cdoc(a, 'miembros', 'pub'), { admin: true }));

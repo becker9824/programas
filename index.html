@@ -142,6 +142,9 @@
   .chips button { flex: 1; border: 1px solid var(--border); background: var(--surface); color: var(--text); border-radius: 999px;
     padding: 4px 6px; font: inherit; font-size: 13px; cursor: pointer; }
   .chips button.on { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
+  .nom-chips { flex-wrap: wrap; }
+  .nom-chips button { flex: 0 1 auto; font-size: 12px; padding: 3px 9px; }
+  .pick .nom-chips { padding: 0 8px; margin-bottom: 4px; }
   .sugg { display: flex; flex-direction: column; gap: 2px; max-height: 58vh; overflow-y: auto; }
   .sugg button { display: flex; justify-content: space-between; align-items: center; gap: 8px; background: none; border: 0; text-align: left;
     padding: 6px 8px; border-radius: 6px; font: inherit; color: var(--text); cursor: pointer; }
@@ -314,7 +317,7 @@
 
 <script>
 const KEY = 'programas-app-v2';
-const APP_VERSION = '1.15.0'; // igual que "version" en package.json (publicar.ps1 lo revisa)
+const APP_VERSION = '1.16.0'; // igual que "version" en package.json (publicar.ps1 lo revisa)
 // Con FIREBASE_CONFIG (firebase-config.js) los datos viven en la nube de la congregación;
 // sin él, la app funciona como antes, solo en esta PC. "?emu" usa el Firebase local de prueba.
 const EMU = /[?&]emu\b/.test(location.search);
@@ -412,6 +415,7 @@ const ICONS = {
   people: '<circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/>',
   families: '<circle cx="9" cy="8" r="3.5"/><circle cx="17" cy="9" r="2.5"/><path d="M2 20c0-3.5 3-5.5 7-5.5s7 2 7 5.5"/><path d="M16 14.5c3 0 6 1.5 6 4.5"/>',
   users: '<path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/><path d="M9 12l2 2 4-4"/>',
+  grupos: '<circle cx="12" cy="7" r="3"/><circle cx="5" cy="10" r="2.2"/><circle cx="19" cy="10" r="2.2"/><path d="M7 20c0-3 2.2-5 5-5s5 2 5 5"/><path d="M1.5 19c0-2.4 1.5-4 3.5-4M22.5 19c0-2.4-1.5-4-3.5-4"/>',
   report: '<rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4h6v3H9zM9 12h6M9 16h4"/>',
   anuncios: '<path d="M3 11v2a1 1 0 001 1h3l7 4V6l-7 4H4a1 1 0 00-1 1z"/><path d="M18 9a3 3 0 010 6"/>',
   directorio: '<path d="M5 4h12a2 2 0 012 2v14H7a2 2 0 01-2-2z"/><path d="M5 18a2 2 0 012-2h12"/><circle cx="12" cy="9" r="2"/>',
@@ -520,13 +524,26 @@ const PRIVS = [
   ['audio', 'Audio y video'],
 ];
 const MEC_PRIVS = ['presidente_fin', 'atalaya', 'microfonos', 'acomodador', 'audio'];
-// Para marcar varios de un jalón en el perfil
+// Para marcar varios de un jalón en el perfil: [nombre, privilegios, nombramiento, bautizado]
 const PRIV_PRESETS = [
-  ['Anciano', ['presidente', 'oracion', 'tesoros', 'lectura', 'vida', 'conductor', 'lector', ...MEC_PRIVS]],
-  ['Siervo ministerial', ['oracion', 'tesoros', 'lectura', 'vida', 'lector', ...MEC_PRIVS]],
-  ['Varón bautizado', ['oracion', 'lectura', 'estudiante', 'lector', 'atalaya', 'microfonos', 'acomodador', 'audio']],
-  ['Estudiante', ['estudiante']],
+  ['Anciano', ['presidente', 'oracion', 'tesoros', 'lectura', 'vida', 'conductor', 'lector', ...MEC_PRIVS], 'anciano', true],
+  ['Siervo ministerial', ['oracion', 'tesoros', 'lectura', 'vida', 'lector', ...MEC_PRIVS], 'sm', true],
+  ['Varón bautizado', ['oracion', 'lectura', 'estudiante', 'lector', 'atalaya', 'microfonos', 'acomodador', 'audio'], '', true],
+  ['Estudiante', ['estudiante'], '', null],
 ];
+// Datos de cada hermano (perfil.nombramiento, perfil.situacion)
+const NOMBRAMIENTOS = [['', 'Ninguno'], ['anciano', 'Anciano'], ['sm', 'Siervo ministerial']];
+const SITUACIONES = [['', '(Sin indicar)'], ['ama', 'Ama de casa'], ['estudiante', 'Estudiante'], ['trabaja', 'Trabaja'], ['jubilado', 'Jubilado(a)'], ['otra', 'Otra']];
+const nomLabel = k => (NOMBRAMIENTOS.find(([key]) => key === (k || '')) || ['', ''])[1];
+const sitLabel = k => k ? (SITUACIONES.find(([key]) => key === k) || ['', ''])[1] : '';
+// Filtro de nombrados en las listas para elegir (programa y mecánicas): '', 'nom', 'anciano' o 'sm'
+const NOM_FILTERS = [['', 'Todos'], ['nom', 'Nombrados'], ['anciano', 'Ancianos'], ['sm', 'Siervos ministeriales']];
+let nomFilter = '';
+const nomOk = pr => !nomFilter || (nomFilter === 'nom' ? !!pr.nombramiento : pr.nombramiento === nomFilter);
+// Botones del filtro; no quitan el foco del campo donde se está escribiendo
+const nomChips = onChange => h('div', { class: 'chips nom-chips' }, NOM_FILTERS.map(([k, t]) =>
+  h('button', { type: 'button', class: nomFilter === k ? 'on' : '', onmousedown: e => e.preventDefault(),
+    onclick: () => { nomFilter = k; onChange(); } }, t)));
 const privLabel = k => (PRIVS.find(([key]) => key === k) || [k, k])[1];
 function privFor(row, slot) {
   if (row.kind === 'prayer') return 'oracion';
@@ -1190,6 +1207,37 @@ function openProfileDialog(prof, opts = {}) {
   const famSel = h('select', null, h('option', { value: '' }, '(Sin familia)'),
     [...state.families].sort((a, b) => a.name.localeCompare(b.name, 'es')).map(f =>
       h('option', { value: f.id, selected: prof && prof.familyId === f.id ? true : null }, f.name)));
+  const nomSel = h('select', null, NOMBRAMIENTOS.map(([v, t]) => h('option', { value: v, selected: (prof && prof.nombramiento || '') === v ? true : null }, t)));
+  const sitSel = h('select', null, SITUACIONES.map(([v, t]) => h('option', { value: v, selected: (prof && prof.situacion || '') === v ? true : null }, t)));
+  const bautI = h('input', { type: 'checkbox', checked: !!(prof && prof.bautizado) });
+  // Solo los varones pueden tener nombramiento
+  const syncNom = () => { const f = sexF.checked; nomSel.disabled = f; if (f) nomSel.value = ''; };
+  sexM.addEventListener('change', syncNom); sexF.addEventListener('change', syncNom); syncNom();
+  // Grupo: se guarda en grupos/{id}.miembros; lo cambian el secretario y el coordinador
+  const oldGroup = prof ? grupoOf(prof.id) : null;
+  const groupSel = h('select', { disabled: FB_CONFIG && !can('secretario') ? true : null }, h('option', { value: '' }, '(Sin grupo)'),
+    [...nube.grupos].sort(byGrupo).map(g => h('option', { value: g.id, selected: oldGroup && oldGroup.id === g.id ? true : null }, g.nombre)));
+  // Cuenta (solo el coordinador): funciones de quien ya tiene cuenta, o unir una cuenta sin hermano
+  const account = FB_CONFIG && isAdmin() ? (prof && memberOfProfile(prof.id)) || null : null;
+  const freeAccounts = FB_CONFIG && isAdmin() ? nube.miembros.filter(m => m.estado === 'activo' && (!m.perfil || !profById(m.perfil))).sort(byNombre) : [];
+  const accountSel = h('select', null, h('option', { value: '' }, '— Sin cuenta —'), freeAccounts.map(m => h('option', { value: m.id }, `${m.nombre} (${m.email})`)));
+  const accountField = !FB_CONFIG || !isAdmin() ? null : account
+    ? h('div', { class: 'field' }, h('span', null, 'Cuenta y funciones en la app'),
+      h('div', { class: 'small-text', style: { color: 'var(--text)' } }, account.email),
+      memberFunctions(account),
+      h('div', { class: 'row', style: { gap: '6px', marginTop: '4px' } },
+        h('button', { class: 'btn small', type: 'button', onclick: async e => {
+          if (!confirm(`¿Separar la cuenta ${account.email} de este hermano? La cuenta sigue en la congregación, pero ya no verá sus asignaciones ni su informe.`)) return;
+          e.target.disabled = true; await memberUpdate(account, { perfil: null }, 'Cuenta separada'); dlg.close();
+        } }, 'Separar la cuenta'),
+        account.id === nube.user.uid ? null : h('button', { class: 'btn small danger', type: 'button', onclick: async e => {
+          if (!confirm(`¿Quitar la cuenta ${account.email} de la congregación? Ya no podrá entrar. El hermano sigue en la lista.`)) return;
+          e.target.disabled = true;
+          try { await F.deleteDoc(congRef('miembros', account.id)); toast('Se quitó la cuenta'); dlg.close(); } catch (ex) { toast(errMsg(ex)); }
+        } }, 'Quitar la cuenta')))
+    : h('div', { class: 'field' }, h('span', null, 'Cuenta'),
+      freeAccounts.length ? h('label', { class: 'field' }, 'Unir con una cuenta que ya está en la congregación', accountSel) : null,
+      h('span', { class: 'small-text' }, `Sin cuenta también sale en el programa y las asignaciones. Si tiene correo, que cree su cuenta con el código ${(nube.congData && nube.congData.codigo) || ''}; luego apruébala arriba en Hermanos.`));
   // Privilegios: casillas, con botones para marcar varios a la vez
   const has = prof && Array.isArray(prof.puede) ? new Set(prof.puede) : new Set();
   const privBoxes = PRIVS.map(([k, label]) => {
@@ -1199,8 +1247,10 @@ function openProfileDialog(prof, opts = {}) {
   const privField = h('div', { class: 'field' },
     h('span', null, 'Puede recibir'),
     h('div', { class: 'row', style: { gap: '6px', margin: '2px 0 4px' } },
-      PRIV_PRESETS.map(([name, keys]) => h('button', { class: 'btn small', type: 'button', onclick: () => {
+      PRIV_PRESETS.map(([name, keys, nom, baut]) => h('button', { class: 'btn small', type: 'button', onclick: () => {
         privBoxes.forEach(p => { p.box.checked = keys.includes(p.k); });
+        if (!sexF.checked) nomSel.value = nom;
+        if (baut != null) bautI.checked = baut;
       } }, name)),
       h('button', { class: 'btn small', type: 'button', onclick: () => privBoxes.forEach(p => { p.box.checked = false; }) }, 'Ninguno')),
     h('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(210px, 1fr))', gap: '4px 12px' } }, privBoxes.map(p => p.el)),
@@ -1212,7 +1262,7 @@ function openProfileDialog(prof, opts = {}) {
 
   const dlg = h('dialog', { class: 'dlg' },
     h('div', { class: 'dlg-body' },
-      h('h3', null, prof ? 'Editar perfil' : 'Nuevo perfil'),
+      h('h3', null, prof ? 'Editar hermano' : 'Nuevo hermano'),
       h('label', { class: 'field' }, 'Nombre', nameI),
       h('div', { class: 'row', style: { gap: '24px', alignItems: 'flex-start' } },
         h('label', { class: 'field' }, 'Edad', ageI),
@@ -1220,9 +1270,15 @@ function openProfileDialog(prof, opts = {}) {
           h('div', { class: 'radios' }, h('label', null, sexM, 'Masculino'), h('label', null, sexF, 'Femenino')))),
       h('div', { class: 'row', style: { gap: '20px', alignItems: 'flex-end' } },
         h('label', { class: 'field' }, 'Informe mensual', tipoSel),
-        state.families.length ? h('label', { class: 'field' }, 'Familia', famSel) : null),
+        h('label', { class: 'field' }, 'Nombramiento', nomSel),
+        h('label', { class: 'field' }, 'Situación', sitSel),
+        h('label', { class: 'row', style: { gap: '6px', color: 'var(--text)', fontSize: '14px', paddingBottom: '8px' } }, bautI, 'Bautizado')),
+      h('div', { class: 'row', style: { gap: '20px', alignItems: 'flex-end' } },
+        state.families.length ? h('label', { class: 'field' }, 'Familia', famSel) : null,
+        nube.grupos.length ? h('label', { class: 'field' }, 'Grupo', groupSel) : null),
       privField,
       h('label', { class: 'field' }, 'Notas', notesI),
+      accountField,
       err,
       prof ? h('div', { class: 'hist' },
         h('strong', null, `Historial (${hist.length})`),
@@ -1230,9 +1286,11 @@ function openProfileDialog(prof, opts = {}) {
           : h('div', { class: 'muted' }, 'Todavía no tiene asignaciones.')) : null),
     h('div', { class: 'dlg-foot' },
       prof ? h('button', { class: 'btn danger', style: { marginRight: 'auto' }, onclick: () => {
-        if (!confirm(`¿Eliminar el perfil de ${prof.name}?${hist.length ? ' Se quitará de las ' + hist.length + ' asignaciones donde aparece.' : ''}`)) return;
+        if (!confirm(`¿Eliminar a ${prof.name}?${hist.length ? ' Se quitará de las ' + hist.length + ' asignaciones donde aparece.' : ''}${account ? ' Su cuenta sigue en la congregación, sin hermano.' : ''}`)) return;
         state.profiles = state.profiles.filter(x => x !== prof);
         for (const q of state.programs) for (const r of q.rows) { if (r.a === prof.id) r.a = null; if (r.b === prof.id) r.b = null; }
+        if (account) memberUpdate(account, { perfil: null });
+        if (oldGroup && (!FB_CONFIG || can('secretario'))) setGroupMember(prof.id, oldGroup, null);
         save(); saved = true; dlg.close(); render();
       } }, 'Eliminar') : null,
       h('button', { class: 'btn', onclick: () => dlg.close() }, 'Cancelar'),
@@ -1244,14 +1302,19 @@ function openProfileDialog(prof, opts = {}) {
     if (!name) return err.textContent = 'Escribe el nombre.';
     if (!sexV) return err.textContent = 'Elige el sexo.';
     const other = profByName(name);
-    if (other && other !== prof) return err.textContent = 'Ya existe un perfil con ese nombre.';
+    if (other && other !== prof) return err.textContent = 'Ya existe un hermano con ese nombre.';
     const age = ageI.value === '' ? null : Math.max(0, Math.round(+ageI.value));
     const p = prof || { id: uid() };
-    Object.assign(p, { name, sex: sexV, age, notes: squash(notesI.value), familyId: famSel.value || null, tipo: tipoSel.value });
+    Object.assign(p, { name, sex: sexV, age, notes: squash(notesI.value), familyId: famSel.value || null, tipo: tipoSel.value,
+      nombramiento: sexV === 'M' ? nomSel.value : '', situacion: sitSel.value, bautizado: bautI.checked });
     // Si nunca se marcaron y se deja todo en blanco, sigue "sin configurar" (sale para todo)
     const puede = privBoxes.filter(x => x.box.checked).map(x => x.k);
     if (puede.length || Array.isArray(p.puede)) p.puede = puede;
     if (!prof) state.profiles.push(p);
+    const newGroup = nube.grupos.find(g => g.id === groupSel.value) || null;
+    if (!groupSel.disabled && newGroup !== oldGroup) setGroupMember(p.id, oldGroup, newGroup);
+    const link = !account && nube.miembros.find(m => m.id === accountSel.value);
+    if (link) memberUpdate(link, { perfil: p.id }, `${p.name} ya está unido a la cuenta ${link.email}`);
     save(); refreshDatalist(); saved = true; dlg.close();
     if (opts.onSave) opts.onSave(p); else render();
   }
@@ -1269,15 +1332,55 @@ function openProfileDialog(prof, opts = {}) {
 // Desde la 1.3 los datos van por partes (perfiles/, familias/, semanas/, config/ajustes) en vez de
 // un solo privado/estado (que tenía límite de 1 MB); privado/estado queda como copia de la 1.2.
 const nube = { user: null, cong: null, congData: null, me: null, acceso: '', listo: false, publico: null,
-  miembros: [], anuncios: [], contactos: new Map(), cuentas: [], cuentasIni: null, territorios: [], sent: {}, ultimoPub: '', registro: null, inicial: null, unsubMe: null, unsubDatos: [] };
+  miembros: [], anuncios: [], contactos: new Map(), cuentas: [], cuentasIni: null, territorios: [], grupos: [], sent: {}, ultimoPub: '', registro: null, inicial: null, unsubMe: null, unsubDatos: [] };
 // Funciones que el coordinador puede dar a cada cuenta (el coordinador tiene todas)
 const PERMS = [
-  ['programa', 'Programa VyM', 'Semanas, perfiles, familias y ajustes de la reunión'],
+  ['programa', 'Programa VyM', 'Semanas, hermanos, familias y ajustes de la reunión'],
   ['secretario', 'Secretario', 'Informes de todos: verlos y capturarlos'],
   ['ancianos', 'Anciano', 'Anuncios y directorio (las otras funciones ya los incluyen)'],
   ['cuentas', 'Cuentas', 'Entradas, salidas y saldos de la congregación'],
   ['territorios', 'Territorios', 'Dibujar, asignar y terminar territorios (todos pueden ver el mapa)'],
+  ['capitan', 'Capitán', 'Ve los territorios que se le asignan y registra lo que se trabajó'],
 ];
+// Cuentas de la congregación (solo el coordinador las ve: nube.miembros)
+const memberOfProfile = pid => nube.miembros.find(m => m.estado === 'activo' && m.perfil === pid);
+async function memberUpdate(m, data, msg) {
+  try { await F.updateDoc(congRef('miembros', m.id), data); if (msg) toast(msg); }
+  catch (e) { toast(errMsg(e)); render(); }
+}
+// Casillas de Coordinador y de cada función; cada cambio se guarda al momento y solo toca esa función
+function memberFunctions(m) {
+  const self = m.id === nube.user.uid, perms = m.permisos || [];
+  const admins = nube.miembros.filter(x => x.estado === 'activo' && x.admin).length;
+  const boxes = PERMS.map(([key, label, desc]) => {
+    const box = h('input', { type: 'checkbox', checked: m.admin || perms.includes(key), disabled: m.admin ? true : null, onchange: e => {
+      const on = e.target.checked;
+      memberUpdate(m, { permisos: on ? F.arrayUnion(key) : F.arrayRemove(key) }, on ? `${m.nombre}: ahora tiene “${label}”` : `${m.nombre}: ya no tiene “${label}”`);
+      on ? perms.push(key) : perms.splice(perms.indexOf(key), 1);
+    } });
+    return { key, box, el: h('label', { class: 'row', title: desc, style: { gap: '6px' } }, box, label) };
+  });
+  const adminBox = h('input', { type: 'checkbox', checked: !!m.admin, disabled: self && admins <= 1 ? true : null, onchange: e => {
+    const on = e.target.checked;
+    if (on && !confirm(`${m.nombre} podrá ver y cambiar todo, incluidos los informes, las cuentas de usuario y quién tiene cada función. ¿Hacerlo coordinador?`)) return e.target.checked = false;
+    if (!on && self && !confirm('Dejarás de ser coordinador y ya no verás estas opciones. ¿Continuar?')) return e.target.checked = true;
+    memberUpdate(m, { admin: on }, on ? `${m.nombre} ahora es coordinador` : `${m.nombre} ya no es coordinador`);
+    m.admin = on;
+    boxes.forEach(b => { b.box.disabled = on; b.box.checked = on || perms.includes(b.key); });
+  } });
+  return h('div', { class: 'row', style: { gap: '14px', color: 'var(--text)', fontSize: '14px' } },
+    h('label', { class: 'row', style: { gap: '6px' }, title: self && admins <= 1 ? 'La congregación necesita al menos un coordinador' : 'Puede todo' }, adminBox, h('strong', null, 'Coordinador')),
+    boxes.map(b => b.el));
+}
+// Grupos de servicio del campo: grupos/{id} = { nombre, superintendente, auxiliar, miembros: [perfiles] }
+const byGrupo = (a, b) => (a.nombre || '').localeCompare(b.nombre || '', 'es', { numeric: true });
+const grupoOf = pid => nube.grupos.find(g => (g.miembros || []).includes(pid)) || null;
+function setGroupMember(pid, from, to) {
+  const w = [];
+  if (from) w.push(F.updateDoc(congRef('grupos', from.id), { miembros: F.arrayRemove(pid) }));
+  if (to) w.push(F.updateDoc(congRef('grupos', to.id), { miembros: F.arrayUnion(pid) }));
+  return Promise.all(w).catch(e => toast(errMsg(e)));
+}
 // Colecciones que se guardan por documento: [colección, parte de state, permisos para leer]
 const COLLS = [['perfiles', 'profiles', ['programa', 'secretario', 'ancianos']], ['familias', 'families', ['programa']], ['semanas', 'programs', ['programa']]];
 let F = null; // funciones de Firebase, cargadas al abrir
@@ -1391,7 +1494,7 @@ async function startCloud() {
   F.onAuthStateChanged(F.auth, async user => {
     stopListening(); if (nube.unsubMe) { nube.unsubMe(); nube.unsubMe = null; }
     Object.assign(nube, { user, cong: null, congData: null, me: null, acceso: '', listo: false, miembros: [], anuncios: [],
-      contactos: new Map(), cuentas: [], cuentasIni: null, territorios: [], publico: null, sent: {}, ultimoPub: '' });
+      contactos: new Map(), cuentas: [], cuentasIni: null, territorios: [], grupos: [], publico: null, sent: {}, ultimoPub: '' });
     if (!user) return renderAuth();
     screen(h('div', { class: 'card auth-card' }, h('p', { class: 'muted' }, 'Cargando tu cuenta…')));
     let joinErr = '';
@@ -1445,8 +1548,12 @@ function enterCongregation() {
   listen('cong', congRef(), s => { nube.congData = s.data() || {}; return true; });
   if (isAdmin()) listen('miembros', F.collection(F.db, 'congregaciones', nube.cong, 'miembros'), s => {
     nube.miembros = s.docs.map(d => ({ id: d.id, ...d.data() }));
-    if (nube.listo && view.name !== 'users') buildNav();
-    return view.name === 'users';
+    if (nube.listo && view.name !== 'people') buildNav();
+    return view.name === 'people';
+  });
+  if (isElder()) listen('grupos', F.collection(F.db, 'congregaciones', nube.cong, 'grupos'), s => {
+    nube.grupos = s.docs.map(d => ({ id: d.id, ...d.data() }));
+    return ['grupos', 'people'].includes(view.name);
   });
   for (const [col, key, perms] of COLLS) if (perms.some(can)) listen(col, F.collection(F.db, 'congregaciones', nube.cong, col), s => receiveDocs(col, key, s));
   listen('anuncios', F.collection(F.db, 'congregaciones', nube.cong, 'anuncios'), s => {
@@ -1708,7 +1815,7 @@ function myAssignments(weeks) {
 function nextAssignmentCard(weeks) {
   const title = h('div', { class: 'small-text muted' }, 'Tu próxima asignación');
   if (!nube.me || !nube.me.perfil) return h('div', { class: 'card mine' }, title,
-    h('div', null, 'Un administrador todavía no ha unido tu cuenta con tu perfil. Cuando lo haga, aquí verás tus asignaciones.'));
+    h('div', null, 'Un administrador todavía no ha unido tu cuenta con tu nombre en la lista de hermanos. Cuando lo haga, aquí verás tus asignaciones.'));
   const [x, ...rest] = myAssignments(weeks);
   if (!x) return h('div', { class: 'card mine' }, title, h('div', null, 'No tienes asignaciones en las próximas semanas.'));
   return h('div', { class: 'card mine' }, title,
@@ -1888,7 +1995,7 @@ function renderReport() {
   async function load() {
     if (!ownAllowed) return box.replaceChildren(h('div', { class: 'card settings muted' }, !reportsByMembers()
       ? 'En tu congregación los informes los registra el secretario.'
-      : 'Un encargado todavía no ha unido tu cuenta con tu perfil. Cuando lo haga, podrás enviar tu informe aquí.'));
+      : 'Un encargado todavía no ha unido tu cuenta con tu nombre en la lista de hermanos. Cuando lo haga, podrás enviar tu informe aquí.'));
     box.replaceChildren(h('div', { class: 'card settings muted' }, 'Cargando…'));
     let prev = null, last = null;
     try {
@@ -1980,7 +2087,7 @@ function congregationReports() {
           p.r ? [h('td', { class: 'small-text' }, grupoLabel(p.r.grupo)), h('td', null, p.r.participo ? 'Sí' : 'No'),
             h('td', null, p.r.horas ?? '—'), h('td', null, p.r.cursos || 0), h('td', { class: 'small-text' }, p.r.notas || '')]
             : h('td', { colspan: 5 }, h('span', { class: 'badge s-warn' }, 'Sin informe'))))
-          : h('tr', null, h('td', { colspan: 6, class: 'empty' }, 'Todavía no hay publicadores. Se crean en Perfiles.'))))));
+          : h('tr', null, h('td', { colspan: 6, class: 'empty' }, 'Todavía no hay publicadores. Se agregan en Hermanos.'))))));
   }
   reload();
   const el = h('div', { style: { marginTop: '28px' } },
@@ -2133,7 +2240,7 @@ function renderDirectory() {
           c.tel ? link(waLink(c.tel), '💬 WhatsApp') : null,
           c.emergenciaTel ? link(telLink(c.emergenciaTel), '🚑 Llamar') : null,
           h('button', { class: 'btn small', onclick: () => openContactDialog(pr) }, 'Editar')));
-    }) : [h('div', { class: 'empty' }, state.profiles.length ? 'Nadie coincide con la búsqueda.' : 'Todavía no hay perfiles. Se crean en Perfiles.')]));
+    }) : [h('div', { class: 'empty' }, state.profiles.length ? 'Nadie coincide con la búsqueda.' : 'Todavía no hay hermanos. Se agregan en Hermanos.')]));
   }
   fill();
   const withPhone = state.profiles.filter(pr => (nube.contactos.get(pr.id) || {}).tel).length;
@@ -2649,6 +2756,113 @@ function renderSharedTerritory() {
   }).catch(() => { mapEl.textContent = 'No se pudo cargar el mapa. Revisa tu conexión a internet.'; });
 }
 
+// ---------- sección Grupos (grupos de servicio del campo) ----------
+// Los ven los ancianos; los arman el secretario y el coordinador. Cada hermano está en un solo grupo.
+function groupStats(people) {
+  const n = f => people.filter(f).length;
+  return [['Hermanos', people.length], ['Publicadores', n(p => p.tipo !== 'no')], ['Precursores regulares', n(p => p.tipo === 'reg')],
+    ['Ancianos', n(p => p.nombramiento === 'anciano')], ['Siervos ministeriales', n(p => p.nombramiento === 'sm')], ['Bautizados', n(p => p.bautizado)]];
+}
+const statsRow = people => h('div', { class: 'totals' }, groupStats(people).map(([label, v]) => h('span', null, h('strong', null, v), ' ', label.toLowerCase())));
+
+function openGroupDialog(g) {
+  const byName = (a, b) => a.name.localeCompare(b.name, 'es');
+  const nameI = h('input', { type: 'text', maxlength: 60, value: g ? g.nombre : '', placeholder: 'Ej.: Grupo 1 o Grupo Centro' });
+  const men = state.profiles.filter(p => p.sex === 'M').sort(byName);
+  const sel = cur => h('select', null, h('option', { value: '' }, '(Nadie)'),
+    men.map(p => h('option', { value: p.id, selected: p.id === cur ? true : null }, p.name + (p.nombramiento ? ` · ${nomLabel(p.nombramiento)}` : ''))));
+  const sgSel = sel(g && g.superintendente), auxSel = sel(g && g.auxiliar);
+  const search = h('input', { type: 'search', placeholder: 'Buscar…', oninput: () => fillList() });
+  const chosen = new Set(g ? g.miembros || [] : []);
+  const list = h('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '4px 12px', maxHeight: '38vh', overflow: 'auto' } });
+  const count = h('span', { class: 'muted small-text' });
+  function fillList() {
+    const f = norm(search.value);
+    list.replaceChildren(...[...state.profiles].sort(byName).filter(p => !f || norm(p.name).includes(f)).map(p => {
+      const other = grupoOf(p.id);
+      return h('label', { class: 'row', style: { gap: '6px', color: 'var(--text)', fontSize: '14px' } },
+        h('input', { type: 'checkbox', checked: chosen.has(p.id), onchange: e => { e.target.checked ? chosen.add(p.id) : chosen.delete(p.id); count.textContent = `${chosen.size} marcados`; } }),
+        p.name, other && (!g || other.id !== g.id) ? h('span', { class: 'tag-fam' }, other.nombre) : null);
+    }));
+    count.textContent = `${chosen.size} marcados`;
+  }
+  fillList();
+  const err = h('div', { class: 'err' });
+  const close = () => { dlg.close(); dlg.remove(); };
+  const dlg = h('dialog', { class: 'dlg' },
+    h('div', { class: 'dlg-body' }, h('h3', null, g ? `Editar ${g.nombre}` : 'Nuevo grupo'),
+      h('label', { class: 'field' }, 'Nombre', nameI),
+      h('div', { class: 'row', style: { gap: '16px' } },
+        h('label', { class: 'field', style: { flex: 1 } }, 'Superintendente de grupo', sgSel),
+        h('label', { class: 'field', style: { flex: 1 } }, 'Auxiliar de grupo', auxSel)),
+      h('div', { class: 'field' }, h('div', { class: 'row spread' }, h('span', null, 'Hermanos del grupo'), count),
+        search, list,
+        h('span', { class: 'small-text' }, 'Si marcas a alguien que está en otro grupo, se cambia a este.')),
+      err),
+    h('div', { class: 'dlg-foot' },
+      g ? h('button', { class: 'btn danger', style: { marginRight: 'auto' }, onclick: async () => {
+        if (!confirm(`¿Borrar ${g.nombre}? Sus hermanos quedan sin grupo.`)) return;
+        try { await F.deleteDoc(congRef('grupos', g.id)); toast('Grupo borrado'); close(); } catch (e) { err.textContent = errMsg(e); }
+      } }, 'Borrar') : null,
+      h('button', { class: 'btn', onclick: close }, 'Cancelar'),
+      h('button', { class: 'btn primary', onclick: async e => {
+        const nombre = squash(nameI.value);
+        if (!nombre) return err.textContent = 'Escribe el nombre del grupo.';
+        if (nube.grupos.some(x => norm(x.nombre) === norm(nombre) && (!g || x.id !== g.id))) return err.textContent = 'Ya hay un grupo con ese nombre.';
+        // El superintendente y el auxiliar también son del grupo
+        for (const id of [sgSel.value, auxSel.value]) if (id) chosen.add(id);
+        if (sgSel.value && sgSel.value === auxSel.value) return err.textContent = 'El superintendente y el auxiliar deben ser hermanos distintos.';
+        const data = { nombre, superintendente: sgSel.value || null, auxiliar: auxSel.value || null, miembros: [...chosen] };
+        e.target.disabled = true;
+        try {
+          const id = g ? g.id : F.doc(F.collection(F.db, 'congregaciones', nube.cong, 'grupos')).id;
+          // Quien se pasó a este grupo sale del anterior
+          await Promise.all(nube.grupos.filter(x => x.id !== id).map(x => {
+            const moved = (x.miembros || []).filter(pid => chosen.has(pid));
+            const patch = moved.length ? { miembros: F.arrayRemove(...moved) } : {};
+            if (chosen.has(x.superintendente)) patch.superintendente = null;
+            if (chosen.has(x.auxiliar)) patch.auxiliar = null;
+            return Object.keys(patch).length ? F.updateDoc(congRef('grupos', x.id), patch) : null;
+          }));
+          await F.setDoc(congRef('grupos', id), data);
+          toast('Grupo guardado'); close();
+        } catch (ex) { err.textContent = errMsg(ex); e.target.disabled = false; }
+      } }, 'Guardar')));
+  document.body.append(dlg); dlg.showModal(); if (!g) nameI.focus();
+}
+
+function renderGroups() {
+  const editor = can('secretario');
+  const groups = [...nube.grupos].sort(byGrupo);
+  const name = id => { const p = id && profById(id); return p ? p.name : '—'; };
+  const free = state.profiles.filter(p => !grupoOf(p.id)).sort((a, b) => a.name.localeCompare(b.name, 'es'));
+  const tags = p => [p.nombramiento ? h('span', { class: 'tag-fam', style: { color: 'var(--accent)' } }, nomLabel(p.nombramiento)) : null,
+    p.tipo === 'reg' ? h('span', { class: 'tag-fam' }, 'Precursor regular') : p.tipo === 'no' ? h('span', { class: 'tag-fam' }, 'No publicador') : null];
+  const card = g => {
+    const people = (g.miembros || []).map(profById).filter(Boolean).sort((a, b) => a.name.localeCompare(b.name, 'es'));
+    return h('div', { class: 'card', style: { padding: '14px', marginBottom: '12px' } },
+      h('div', { class: 'row spread', style: { alignItems: 'flex-start' } },
+        h('div', null, h('strong', { style: { fontSize: '17px' } }, g.nombre),
+          h('div', { class: 'small-text', style: { marginTop: '4px' } }, 'Superintendente: ', h('strong', null, name(g.superintendente)), ' · Auxiliar: ', h('strong', null, name(g.auxiliar)))),
+        editor ? h('button', { class: 'btn small', onclick: () => openGroupDialog(g) }, 'Editar') : null),
+      statsRow(people),
+      h('div', { class: 'hist', style: { marginTop: '8px' } },
+        people.length ? people.map(p => h('div', null, h('span', null, p.name, p.id === g.superintendente ? ' (superintendente)' : p.id === g.auxiliar ? ' (auxiliar)' : '', ...tags(p)),
+          h('span', { class: 'muted' }, p.age != null ? `${p.age} años` : '')))
+          : h('div', { class: 'muted' }, 'Todavía no tiene hermanos.')));
+  };
+  return h('div', null,
+    h('div', { class: 'row spread', style: { marginBottom: '14px' } },
+      h('div', null, h('h1', null, 'Grupos'),
+        h('p', { class: 'sub', style: { margin: 0 } }, editor ? 'Arma los grupos de servicio del campo: su superintendente, su auxiliar y sus hermanos.' : 'Grupos de servicio del campo. Los arman el secretario y el coordinador.')),
+      editor ? h('button', { class: 'btn primary', onclick: () => openGroupDialog(null) }, '+ Nuevo grupo') : null),
+    h('div', { class: 'card', style: { padding: '14px', marginBottom: '14px' } }, h('strong', null, 'Toda la congregación'), statsRow(state.profiles)),
+    groups.length ? groups.map(card) : h('div', { class: 'card empty', style: { padding: '20px' } }, editor ? 'Todavía no hay grupos. Toca “+ Nuevo grupo”.' : 'Todavía no hay grupos.'),
+    free.length && groups.length ? h('div', { class: 'card', style: { padding: '14px' } },
+      h('strong', null, `Sin grupo (${free.length})`),
+      h('div', { class: 'small-text', style: { marginTop: '6px' } }, free.map(p => p.name).join(' · '))) : null);
+}
+
 // ---------- sección Mecánicas (función Programa VyM) ----------
 // Lista de recomendados al tocar un espacio (como en el programa). getList(texto) devuelve
 // [{ pr, why, days }]; los que tienen "why" salen al final con el motivo.
@@ -2657,9 +2871,10 @@ function attachPicker(inp, getList, onChoose) {
   const close = () => { if (el) { el.remove(); el = null; } };
   const fill = () => {
     const typed = norm(inp.value), all = getList();
-    items = (typed ? all.filter(x => (' ' + norm(x.pr.name)).includes(' ' + typed)) : all.filter(x => !x.why).slice(0, 8)).slice(0, 30);
+    items = (typed ? all.filter(x => (' ' + norm(x.pr.name)).includes(' ' + typed)) : all.filter(x => !x.why && nomOk(x.pr)).slice(0, 8)).slice(0, 30);
     at = Math.min(at, Math.max(items.length - 1, 0));
     el.replaceChildren(h('div', { class: 'pick-head' }, typed ? 'Coincidencias' : 'Recomendados'),
+      typed ? null : nomChips(fill),
       ...(items.length ? items.map((x, i) => h('button', { class: 'pick-item' + (i === at ? ' on' : '') + (x.why ? ' other' : ''), type: 'button',
         onmousedown: e => e.preventDefault(), onclick: () => choose(x.pr) },
         h('span', { class: 'nm' }, x.pr.name, x.why ? h('span', { class: 'tag-fam', style: { color: 'var(--orange)' } }, x.why) : null),
@@ -2781,7 +2996,7 @@ function renderMecanicas() {
         const val = squash(e.target.value);
         if (!val) { mecSet(p, mtg, key, null); save(); return; }
         const pr = profByName(val);
-        if (pr) { mecSet(p, mtg, key, pr.id); save(); render(); } else { toast('No hay un perfil con ese nombre'); e.target.value = id && profById(id) ? profById(id).name : ''; }
+        if (pr) { mecSet(p, mtg, key, pr.id); save(); render(); } else { toast('No hay un hermano con ese nombre'); e.target.value = id && profById(id) ? profById(id).name : ''; }
       } });
     attachPicker(inp, () => mecCandidates(p, mtg, key), pid => { mecSet(p, mtg, key, pid); save(); render(); });
     wrap.append(inp);
@@ -2868,7 +3083,7 @@ function renderHome() {
   }
   if (isAdmin()) {
     const waiting = nube.miembros.filter(m => m.estado !== 'activo').length;
-    if (waiting) tiles.push(tile('users', 'Usuarios', `${waiting} esperando aprobación`, 'Toca para revisarlas', () => go({ name: 'users' }), 'warn'));
+    if (waiting) tiles.push(tile('users', 'Cuentas nuevas', `${waiting} esperando aprobación`, 'Toca para revisarlas en Hermanos', () => go({ name: 'people' }), 'warn'));
   }
   if (can('secretario')) tiles.push(tile('report', 'Informes de la congregación', fmtMonth(defaultMonth()), 'Ver quién falta y capturar', () => go({ name: 'report' })));
   if (can('cuentas') && nube.cuentasIni) {
@@ -2892,18 +3107,16 @@ function renderHome() {
 }
 
 // ---------- usuarios (solo admins) ----------
-function renderUsers() {
+// Coordinador, arriba de la lista de Hermanos: código, cuentas por aprobar y cuentas que no están
+// unidas a ningún hermano. Las funciones de las demás cuentas se cambian en el diálogo de cada hermano.
+function accountsPanel() {
   const ms = [...nube.miembros].sort(byNombre);
-  const pending = ms.filter(m => m.estado !== 'activo'), active = ms.filter(m => m.estado === 'activo');
-  const admins = active.filter(m => m.admin).length;
+  const pending = ms.filter(m => m.estado !== 'activo');
+  const loose = ms.filter(m => m.estado === 'activo' && (!m.perfil || !profById(m.perfil)));
   const profiles = [...state.profiles].sort((a, b) => a.name.localeCompare(b.name, 'es'));
-  const linked = new Map(active.filter(m => m.perfil).map(m => [m.perfil, m]));
-  const update = async (m, data, msg) => {
-    try { await F.updateDoc(congRef('miembros', m.id), data); if (msg) toast(msg); }
-    catch (e) { toast(errMsg(e)); render(); }
-  };
+  const linked = new Map(ms.filter(m => m.estado === 'activo' && m.perfil).map(m => [m.perfil, m]));
   const profileSelect = (m, value, onchange) => h('select', { onchange: e => onchange(e.target.value || null) },
-    h('option', { value: '' }, '— Sin perfil —'),
+    h('option', { value: '' }, '— Sin hermano —'),
     profiles.map(p => {
       const other = linked.get(p.id);
       return h('option', { value: p.id, selected: p.id === value ? true : null }, p.name + (other && other.id !== m.id ? ` (cuenta de ${other.nombre})` : ''));
@@ -2914,62 +3127,37 @@ function renderUsers() {
     const sel = profileSelect(m, perfil, v => { perfil = v; });
     return h('div', { class: 'urow' },
       h('div', { class: 'info' }, h('strong', null, m.nombre), h('div', { class: 'muted small-text' }, m.email)),
-      h('label', { class: 'field' }, 'Unir con el perfil', sel),
-      h('button', { class: 'btn small', onclick: () => openProfileDialog(null, { name: m.nombre, onSave: p => { perfil = p.id; render(); } }) }, '+ Crear perfil'),
-      h('button', { class: 'btn small primary', onclick: () => update(m, { estado: 'activo', perfil }, `${m.nombre} ya puede entrar`) }, 'Aprobar'),
+      h('label', { class: 'field' }, 'Es el hermano', sel),
+      h('button', { class: 'btn small', onclick: () => openProfileDialog(null, { name: m.nombre, onSave: p => { perfil = p.id; render(); } }) }, '+ Nuevo hermano'),
+      h('button', { class: 'btn small primary', onclick: () => memberUpdate(m, { estado: 'activo', perfil }, `${m.nombre} ya puede entrar`) }, 'Aprobar'),
       h('button', { class: 'btn small danger', onclick: async () => {
         if (!confirm(`¿Rechazar la solicitud de ${m.nombre}?`)) return;
         try { await F.deleteDoc(congRef('miembros', m.id)); } catch (e) { toast(errMsg(e)); }
       } }, 'Rechazar'));
   };
 
-  const activeRow = m => {
-    const self = m.id === nube.user.uid, perms = m.permisos || [];
-    const adminBox = h('input', { type: 'checkbox', checked: !!m.admin, disabled: self && admins <= 1 ? true : null, onchange: e => {
-      const on = e.target.checked;
-      if (on && !confirm(`${m.nombre} podrá ver y cambiar todo, incluidos los informes, las cuentas de usuario y quién tiene cada función. ¿Hacerlo coordinador?`)) return e.target.checked = false;
-      if (!on && self && !confirm('Dejarás de ser coordinador y ya no verás estas opciones. ¿Continuar?')) return e.target.checked = true;
-      update(m, { admin: on }, on ? `${m.nombre} ahora es coordinador` : `${m.nombre} ya no es coordinador`);
-    } });
-    // Agrega o quita solo esta función en el servidor, sin tocar las demás
-    const permBox = ([key, label, desc]) => h('label', { class: 'row', title: desc, style: { gap: '6px' } },
-      h('input', { type: 'checkbox', checked: m.admin || perms.includes(key), disabled: m.admin ? true : null, onchange: e => {
-        const on = e.target.checked;
-        update(m, { permisos: on ? F.arrayUnion(key) : F.arrayRemove(key) }, on ? `${m.nombre}: ahora tiene “${label}”` : `${m.nombre}: ya no tiene “${label}”`);
-      } }), label);
-    return h('div', { class: 'urow' },
-      h('div', { class: 'info' }, h('strong', null, m.nombre, self ? ' (tú)' : ''), h('div', { class: 'muted small-text' }, m.email)),
-      h('label', { class: 'field' }, 'Perfil', profileSelect(m, m.perfil, v => update(m, { perfil: v }, 'Perfil actualizado'))),
-      h('div', { class: 'field' }, h('span', null, 'Funciones'),
-        h('div', { class: 'row', style: { gap: '14px', color: 'var(--text)', fontSize: '14px' } },
-          h('label', { class: 'row', style: { gap: '6px' }, title: self && admins <= 1 ? 'La congregación necesita al menos un coordinador' : 'Puede todo' }, adminBox, h('strong', null, 'Coordinador')),
-          PERMS.map(permBox))),
-      self ? null : h('button', { class: 'btn small danger', onclick: async () => {
-        if (!confirm(`¿Quitar a ${m.nombre} de la congregación? Ya no podrá entrar.`)) return;
-        try { await F.deleteDoc(congRef('miembros', m.id)); toast('Se quitó la cuenta'); } catch (e) { toast(errMsg(e)); }
-      } }, 'Quitar'));
-  };
+  const looseRow = m => h('div', { class: 'urow' },
+    h('div', { class: 'info' }, h('strong', null, m.nombre, m.id === nube.user.uid ? ' (tú)' : ''), h('div', { class: 'muted small-text' }, m.email)),
+    h('label', { class: 'field' }, 'Es el hermano', profileSelect(m, null, v => memberUpdate(m, { perfil: v }, 'Cuenta unida al hermano'))),
+    h('div', { class: 'field' }, h('span', null, 'Funciones'), memberFunctions(m)),
+    m.id === nube.user.uid ? null : h('button', { class: 'btn small danger', onclick: async () => {
+      if (!confirm(`¿Quitar a ${m.nombre} de la congregación? Ya no podrá entrar.`)) return;
+      try { await F.deleteDoc(congRef('miembros', m.id)); toast('Se quitó la cuenta'); } catch (e) { toast(errMsg(e)); }
+    } }, 'Quitar'));
 
   const code = (nube.congData && nube.congData.codigo) || '';
   return h('div', null,
-    h('h1', null, 'Usuarios'),
-    h('p', { class: 'sub' }, 'Aprueba cuentas nuevas, únelas a su perfil y elige qué función tiene cada quien. Solo el coordinador ve esta sección.'),
     h('div', { class: 'card', style: { padding: '14px', marginBottom: '14px' } },
       h('div', { class: 'row spread' },
         h('div', null, h('div', { class: 'muted small-text' }, 'Código para crear cuenta'), h('div', { class: 'code' }, code || '—')),
         h('div', { class: 'row' },
           h('button', { class: 'btn small', onclick: () => navigator.clipboard.writeText(code).then(() => toast('Código copiado')) }, 'Copiar'),
           h('button', { class: 'btn small', onclick: changeCode }, 'Cambiar código'))),
-      h('p', { class: 'muted small-text', style: { margin: '8px 0 0' } }, 'Compártelo solo con hermanos de la congregación. Aunque alguien lo tenga, no entra hasta que el coordinador lo apruebe.')),
-    h('h2', { class: 'group' }, `Esperando aprobación (${pending.length})`),
-    h('div', { class: 'card', style: { padding: '4px 14px' } },
-      pending.length ? pending.map(pendingRow) : h('div', { class: 'empty' }, 'No hay cuentas esperando.')),
-    h('h2', { class: 'group' }, `Cuentas activas (${active.length})`),
-    h('div', { class: 'card', style: { padding: '4px 14px' } }, active.map(activeRow)),
-    h('p', { class: 'muted small-text', style: { marginTop: '10px' } },
-      'Sin funciones, la persona solo ve el programa, su próxima asignación y su informe. ',
-      PERMS.map(([, label, desc]) => `${label}: ${desc.toLowerCase()}. `).join(''),
-      'El coordinador puede todo.'));
+      h('p', { class: 'muted small-text', style: { margin: '8px 0 0' } }, 'Compártelo solo con hermanos de la congregación. Aunque alguien lo tenga, no entra hasta que el coordinador lo apruebe. Las funciones de cada cuenta se cambian tocando al hermano en la lista.')),
+    pending.length ? [h('h2', { class: 'group' }, `Cuentas esperando aprobación (${pending.length})`),
+      h('div', { class: 'card', style: { padding: '4px 14px', marginBottom: '14px' } }, pending.map(pendingRow))] : null,
+    loose.length ? [h('h2', { class: 'group' }, `Cuentas sin hermano (${loose.length})`),
+      h('div', { class: 'card', style: { padding: '4px 14px', marginBottom: '14px' } }, loose.map(looseRow))] : null);
 }
 
 // ---------- vistas ----------
@@ -2978,11 +3166,12 @@ function go(v) { view = v; render(); window.scrollTo(0, 0); }
 // Cada quien ve solo las secciones de sus funciones
 // Secciones del menú: [vista, nombre, aviso con número]. Cada quien ve solo las de sus funciones.
 function navItems() {
-  if (!FB_CONFIG) return [['list', 'Semanas'], ['mecanicas', 'Mecánicas'], ['people', 'Perfiles'], ['families', 'Familias'], ['settings', 'Ajustes']];
+  if (!FB_CONFIG) return [['list', 'Semanas'], ['mecanicas', 'Mecánicas'], ['people', 'Hermanos'], ['families', 'Familias'], ['settings', 'Ajustes']];
   if (!nube.acceso) return [];
   const items = [['inicio', 'Inicio'], ['list', 'Semanas']];
-  if (can('programa')) items.push(['mecanicas', 'Mecánicas'], ['people', 'Perfiles'], ['families', 'Familias']);
-  if (isAdmin()) items.push(['users', 'Usuarios', nube.miembros.filter(m => m.estado !== 'activo').length]);
+  // Hermanos: perfiles y, para el coordinador, cuentas por aprobar y funciones (antes "Usuarios")
+  if (can('programa')) items.push(['mecanicas', 'Mecánicas'], ['people', 'Hermanos', isAdmin() ? nube.miembros.filter(m => m.estado !== 'activo').length : 0], ['families', 'Familias']);
+  if (isElder()) items.push(['grupos', 'Grupos']);
   if (can('secretario')) items.push(['report', 'Informes']);
   else if (reportsByMembers()) items.push(['report', 'Informe']);
   items.push(['anuncios', 'Anuncios', unreadAnnouncements()]);
@@ -3027,7 +3216,7 @@ function render() {
   const program = !FB_CONFIG || can('programa');
   if (view.name === 'inicio') return app.replaceChildren(renderHome());
   if (view.name === 'report') return app.replaceChildren(renderReport());
-  if (view.name === 'users') return app.replaceChildren(renderUsers());
+  if (view.name === 'grupos') return app.replaceChildren(renderGroups());
   if (view.name === 'anuncios') { app.replaceChildren(renderAnnouncements()); return buildNav(); }
   if (view.name === 'directorio') return app.replaceChildren(renderDirectory());
   if (view.name === 'cuentas') return app.replaceChildren(renderAccounts());
@@ -3104,8 +3293,8 @@ function renderEditor(p) {
   const toolbar = h('div', { class: 'row' });
   const suggList = h('div', { class: 'sugg' });
   const suggFor = h('p');
-  const suggFilter = h('input', { type: 'search', placeholder: 'Buscar perfil…', oninput: () => updateSide() });
-  const chips = h('div', { class: 'chips' });
+  const suggFilter = h('input', { type: 'search', placeholder: 'Buscar hermano…', oninput: () => updateSide() });
+  const chips = h('div', { class: 'chips' }), nomBox = h('div');
   const totalEl = h('span', { class: 'total' });
   const heading = h('div', { class: 'ph2' });
   const rebuild = () => { save(); build(); };
@@ -3181,6 +3370,7 @@ function renderEditor(p) {
     const f = norm(suggFilter.value);
     chips.replaceChildren(...[['all', 'Todos'], ['M', 'Hombres'], ['F', 'Mujeres']].map(([v, t]) =>
       h('button', { class: sexFilter === v ? 'on' : '', onclick: () => { sexFilter = v; updateSide(); } }, t)));
+    nomBox.replaceChildren(nomChips(() => { updateSide(); if (pick) fillPick(); }));
     const fr = focus && p.rows.find(r => r.id === focus.rowId);
     const priv = fr ? privFor(fr, focus.slot) : null;
     privToggle.replaceChildren(priv ? h('label', { class: 'row small-text muted', style: { gap: '6px', margin: '0 0 8px' } },
@@ -3197,7 +3387,7 @@ function renderEditor(p) {
         return { pr, fam: !!partner && sameFamily(partner, pr.id), days: l ? daysBetween(l.q.date, p.date) : Infinity,
           rest: ctx.recent.get(pr.id), able: !priv || canDo(pr, priv), fits: !!rule && fitsRule(pr, rule) };
       })
-      .filter(it => (it.fam || sexFilter === 'all' || it.pr.sex === sexFilter) && (!privOnly || it.able))
+      .filter(it => (it.fam || sexFilter === 'all' || it.pr.sex === sexFilter) && (!privOnly || it.able) && nomOk(it.pr))
       .sort((a, b) => b.fam - a.fam || b.able - a.able || b.fits - a.fits || b.days - a.days || a.pr.name.localeCompare(b.pr.name, 'es'));
     const item = it => h('button', { onclick: () => insertProfile(it.pr), title: it.rest ? restText(it.rest, p).slice(2) : null },
       h('span', { class: 'nm' }, it.pr.name, ' ', h('small', null, `${it.pr.sex === 'M' ? '♂' : '♀'}${it.pr.age != null ? ' ' + it.pr.age : ''}`),
@@ -3220,9 +3410,9 @@ function renderEditor(p) {
         `Descansando (menos de ${s.restDays} días)`) : null,
       ...resting.map(it => { const b = item(it); b.style.opacity = '.6'; return b; }),
       priv && unset ? h('div', { class: 'small-text muted', style: { padding: '8px' } },
-        `${unset} perfil${unset > 1 ? 'es' : ''} sin privilegios marcados sale${unset > 1 ? 'n' : ''} para todo. Márcalos en Perfiles.`) : null,
+        `${unset} perfil${unset > 1 ? 'es' : ''} sin privilegios marcados sale${unset > 1 ? 'n' : ''} para todo. Márcalos en Hermanos.`) : null,
     ].filter(Boolean)
-      : [h('p', null, state.profiles.length ? 'Nadie disponible con estos filtros.' : 'Aún no hay perfiles. Créalos en la pestaña “Perfiles” o escribiendo un nombre nuevo en el programa.')]));
+      : [h('p', null, state.profiles.length ? 'Nadie disponible con estos filtros.' : 'Aún no hay hermanos. Agrégalos en la pestaña “Hermanos” o escribiendo un nombre nuevo en el programa.')]));
   }
 
   function setFocus(row, slot) {
@@ -3284,7 +3474,7 @@ function renderEditor(p) {
     const best = candidatesFor(p, row, slot, ctx, counts, partner).filter(c => c.pr.id !== current);
     const priv = privFor(row, slot), rule = ruleFor(row), men = slotNeedsMen(row, slot);
     let items;
-    if (!typed) items = best.slice(0, 8).map(c => ({ ...c, why: '' }));
+    if (!typed) items = best.filter(c => nomOk(c.pr)).slice(0, 8).map(c => ({ ...c, why: '' }));
     else {
       const shown = new Set();
       items = best.filter(c => nameMatch(c.pr.name, typed)).map(c => { shown.add(c.pr.id); return { ...c, why: '' }; });
@@ -3300,6 +3490,7 @@ function renderEditor(p) {
     pick.items = items; pick.at = Math.min(pick.at, Math.max(items.length - 1, 0));
     pick.el.replaceChildren(
       h('div', { class: 'pick-head' }, typed ? 'Coincidencias' : `Recomendados${rule ? ` · filtro “${rule.nombre}”` : ''}`),
+      typed ? null : nomChips(() => { fillPick(); updateSide(); }),
       ...(items.length ? items.map((it, i) => h('button', { class: 'pick-item' + (i === pick.at ? ' on' : '') + (it.why ? ' other' : ''),
         type: 'button', onmousedown: e => e.preventDefault(), onclick: () => choose(it.pr) },
         h('span', { class: 'nm' }, it.pr.name, ' ',
@@ -3308,7 +3499,7 @@ function renderEditor(p) {
           it.why ? h('span', { class: 'tag-fam', style: { color: 'var(--orange)' } }, it.why) : null),
         h('span', { class: 'hint ' + (it.why ? 's-recent' : it.days === Infinity || it.days >= s.staleDays ? 's-stale' : 's-ok') },
           it.days === Infinity ? 'nunca' : `hace ${it.days} d`)))
-        : [h('div', { class: 'pick-empty' }, typed ? 'Nadie con ese nombre. Al salir del campo se puede crear el perfil.' : 'Nadie disponible. Escribe un nombre para buscar entre todos.')]));
+        : [h('div', { class: 'pick-empty' }, typed ? 'Nadie con ese nombre. Al salir del campo se puede agregar el hermano.' : 'Nadie disponible. Escribe un nombre para buscar entre todos.')]));
   }
   function choose(pr) {
     const { row, slot, inp } = pick;
@@ -3467,8 +3658,8 @@ function renderEditor(p) {
   const side = h('aside', { class: 'card side' },
     h('h3', null, 'Sugerencias'),
     suggFor,
-    chips, privToggle, suggFilter, suggList,
-    h('button', { class: 'btn small', style: { marginTop: '10px', width: '100%' }, onclick: () => openProfileDialog(null, { onSave: () => updateSide() }) }, '+ Nuevo perfil'));
+    chips, nomBox, privToggle, suggFilter, suggList,
+    h('button', { class: 'btn small', style: { marginTop: '10px', width: '100%' }, onclick: () => openProfileDialog(null, { onSave: () => updateSide() }) }, '+ Nuevo hermano'));
   const grid = h('div', { class: 'editor' },
       h('div', { class: 'card sheet' },
         h('div', { class: 'ph1' }, h('span', null, s.pdfTitle || 'Programa'), s.congregation ? h('span', null, s.congregation) : null),
@@ -3513,16 +3704,21 @@ function renderPeople() {
   function fill() {
     const f = norm(filter.value);
     const byName = (a, b) => a.pr.name.localeCompare(b.pr.name, 'es');
-    const rows = stats().filter(x => (!f || norm(x.pr.name).includes(f)) && (sexF === 'all' || x.pr.sex === sexF)).sort(
+    const rows = stats().filter(x => (!f || norm(x.pr.name).includes(f)) && (sexF === 'all' || x.pr.sex === sexF) && nomOk(x.pr)).sort(
       sort === 'stale' ? (a, b) => b.days - a.days || byName(a, b)
         : sort === 'count' ? (a, b) => b.count - a.count || byName(a, b)
           : sort === 'age' ? (a, b) => (b.pr.age ?? -1) - (a.pr.age ?? -1) || byName(a, b) : byName);
     tbody.replaceChildren(...(rows.length ? rows.map(x => {
       const badge = x.days === Infinity ? ['s-never', x.next ? 'Programado' : 'Nunca']
         : x.days >= state.settings.staleDays ? ['s-stale', 'Hace mucho'] : x.recent ? ['s-recent', 'Reciente'] : ['s-ok', 'Normal'];
+      const acc = FB_CONFIG && isAdmin() ? memberOfProfile(x.pr.id) : null, grp = grupoOf(x.pr.id);
       return h('tr', { onclick: () => openProfileDialog(x.pr) },
         h('td', null, h('strong', null, x.pr.name),
+          x.pr.nombramiento ? h('span', { class: 'tag-fam', style: { color: 'var(--accent)' } }, nomLabel(x.pr.nombramiento)) : null,
           x.pr.tipo === 'reg' || x.pr.tipo === 'no' ? h('span', { class: 'tag-fam' }, x.pr.tipo === 'reg' ? 'Precursor regular' : 'No publicador') : null,
+          grp ? h('span', { class: 'tag-fam' }, grp.nombre) : null,
+          acc ? h('div', { class: 'muted small-text', title: 'Tiene cuenta en la app' }, '🔑 ', acc.email,
+            acc.admin ? ' · Coordinador' : (acc.permisos || []).length ? ' · ' + acc.permisos.map(k => (PERMS.find(p => p[0] === k) || [k, k])[1]).join(', ') : '') : null,
           Array.isArray(x.pr.puede)
             ? h('div', { class: 'muted small-text' }, x.pr.puede.length ? x.pr.puede.map(privLabel).join(' · ') : 'Sin asignaciones')
             : h('div', { class: 'small-text', style: { color: 'var(--orange)' } }, 'Privilegios sin marcar'),
@@ -3536,16 +3732,20 @@ function renderPeople() {
         h('td', { class: 'small-text' }, x.last ? roleLabel(x.last.row, x.last.slot) : '—'),
         h('td', null, x.next ? fmtShort(x.next.q.date) : '—'),
         h('td', null, h('span', { class: 'badge ' + badge[0] }, badge[1])));
-    }) : [h('tr', null, h('td', { colspan: 10, class: 'empty' }, state.profiles.length ? 'Ningún perfil coincide.' : 'Aún no hay perfiles. Pulsa “+ Nuevo perfil”.'))]));
+    }) : [h('tr', null, h('td', { colspan: 10, class: 'empty' }, state.profiles.length ? 'Nadie coincide.' : 'Aún no hay hermanos. Pulsa “+ Nuevo hermano”.'))]));
+    chips.replaceChildren(nomChips(() => fill()));
   }
+  const chips = h('div');
 
   fill();
   return h('div', null,
     h('div', { class: 'row spread', style: { marginBottom: '14px' } },
-      h('div', null, h('h1', null, 'Perfiles'),
-        h('p', { class: 'sub', style: { margin: 0 } }, 'Ordenados por el tiempo que llevan sin participar. Toca un perfil para editarlo o ver su historial.')),
-      h('button', { class: 'btn primary', onclick: () => openProfileDialog(null) }, '+ Nuevo perfil')),
+      h('div', null, h('h1', null, 'Hermanos'),
+        h('p', { class: 'sub', style: { margin: 0 } }, 'Datos, nombramiento, asignaciones que puede recibir y, si tiene, su cuenta de la app. Toca a un hermano para editarlo o ver su historial.')),
+      h('button', { class: 'btn primary', onclick: () => openProfileDialog(null) }, '+ Nuevo hermano')),
+    FB_CONFIG && isAdmin() ? accountsPanel() : null,
     h('div', { class: 'card', style: { padding: '14px' } },
+      chips,
       h('div', { class: 'row', style: { marginBottom: '10px' } }, filter,
         h('select', { onchange: e => { sexF = e.target.value; fill(); } },
           h('option', { value: 'all' }, 'Todos'), h('option', { value: 'M' }, 'Hombres'), h('option', { value: 'F' }, 'Mujeres')),
@@ -3592,7 +3792,7 @@ function renderFamilies() {
         h('div', { class: 'row' },
           h('button', { class: 'btn small', onclick: () => openFamilyDialog(f) }, 'Renombrar'),
           h('button', { class: 'btn small danger', onclick: () => {
-            if (!confirm(`¿Eliminar “${f.name}”? Los perfiles no se borran, solo dejan de estar en esta familia.`)) return;
+            if (!confirm(`¿Eliminar “${f.name}”? Los hermanos no se borran, solo dejan de estar en esta familia.`)) return;
             state.families = state.families.filter(x => x !== f);
             for (const p of state.profiles) if (p.familyId === f.id) p.familyId = null;
             save(); render();
@@ -3605,7 +3805,7 @@ function renderFamilies() {
         const pr = profById(e.target.value); if (!pr) return;
         pr.familyId = f.id; save(); render();
       } }, h('option', { value: '' }, '+ Agregar miembro…'), free.map(p => h('option', { value: p.id }, p.name)))
-        : h('div', { class: 'muted small-text' }, state.profiles.length ? 'Todos los perfiles ya tienen familia.' : 'Primero crea perfiles en la pestaña “Perfiles”.'));
+        : h('div', { class: 'muted small-text' }, state.profiles.length ? 'Todos los hermanos ya tienen familia.' : 'Primero agrega hermanos en la pestaña “Hermanos”.'));
   };
   return h('div', null,
     h('div', { class: 'row spread', style: { marginBottom: '14px' } },
@@ -3721,7 +3921,7 @@ function filtersCard() {
     h('h2', { class: 'group' }, 'Filtros de sugerencias'),
     h('div', { class: 'card settings', style: { marginTop: 0 } },
       h('p', { class: 'muted small-text', style: { margin: 0 } },
-        'Si el título o la descripción de una parte tiene alguna de estas palabras, las sugerencias ponen primero a quien tenga esa edad. Para que funcionen, los perfiles necesitan tener la edad.'),
+        'Si el título o la descripción de una parte tiene alguna de estas palabras, las sugerencias ponen primero a quien tenga esa edad. Para que funcionen, los hermanos necesitan tener la edad.'),
       box,
       h('div', { class: 'row' },
         h('button', { class: 'btn small', onclick: () => { s.filters.push({ nombre: 'Nuevo filtro', palabras: '', min: null, max: null, sexo: '' }); save(); fill(); } }, '+ Agregar filtro'),

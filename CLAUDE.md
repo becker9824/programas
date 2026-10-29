@@ -82,10 +82,13 @@ App para organizar las asignaciones de la reunión semanal Vida y Ministerio Cri
 - Proyecto Firebase `programas-congregacion`. Reglas: `npx.cmd firebase deploy --only firestore:rules` (después de cambiar `firestore.rules`).
 - Web para celulares: https://becker9824.github.io/programas/ (GitHub Pages desde `main`; se actualiza sola al hacer push). Si cambia `index.html`, subir `CACHE` en `sw.js`.
 - Con `window.FIREBASE_CONFIG` (`firebase-config.js`) la app usa Firebase: cuentas con correo, roles y datos compartidos. Si es `null`, funciona como antes (solo esta PC, `localStorage`).
-- Registro: código de la congregación + nombre + correo + contraseña → queda `pendiente` hasta que un admin lo aprueba y lo une a su perfil (sección Usuarios). El primer admin usa “Nueva congregación”.
+- Registro: código de la congregación + nombre + correo + contraseña → queda `pendiente` hasta que un admin lo aprueba y lo une a su hermano (arriba en la sección Hermanos). El primer admin usa “Nueva congregación”.
 - Firestore: `codigos/{código}`, `usuarios/{uid}`, `congregaciones/{id}` (`nombre`, `codigo`, `creador`, `modo`: `todos`|`encargados`) con `miembros/{uid}`, `perfiles/{id}`, `familias/{id}`, `semanas/{id}`, `config/ajustes` (settings, canciones…), `publico/programa` (semanas con nombres, lo genera `publishProgram()` al guardar) e `informes/{perfil}_{AAAA-MM}`. `privado/estado` es la copia de la 1.2; se pasa sola al formato nuevo (`firstLoad`) y queda con `migrado: true`.
 - En la app, `state` sigue teniendo la misma forma; `uploadState()` sube solo los documentos que cambiaron y `receiveDocs()` mete los cambios de otros.
-- Funciones (`miembros.permisos`, lista `PERMS`): `programa` (semanas, perfiles, familias, ajustes de la reunión) y `secretario` (informes de todos). `admin: true` = coordinador: todo + Usuarios + ajustes de la congregación. Al agregar una función nueva: `PERMS`, `validPerms()` en las reglas y pruebas.
+- Funciones (`miembros.permisos`, lista `PERMS`): `programa` (semanas, perfiles, familias, ajustes de la reunión) y `secretario` (informes de todos). `capitan` (territorios que se le asignan; fase 2). `admin: true` = coordinador: todo + cuentas y funciones + ajustes de la congregación. Al agregar una función nueva: `PERMS`, `validPerms()` en las reglas y pruebas.
+- Hermanos (1.16.0): Perfiles y Usuarios se unieron en la vista `people` ("Hermanos"). El perfil tiene además `nombramiento` (`anciano`|`sm`|''), `situacion` y `bautizado`. El coordinador ve arriba `accountsPanel()` (código, cuentas por aprobar, cuentas sin hermano) y, en el diálogo de cada hermano, su cuenta (`memberFunctions`, separar o quitar). Siguen existiendo hermanos sin cuenta.
+- Filtro de nombrados (`nomFilter`, `nomChips`): Todos/Nombrados/Ancianos/Siervos en las listas para elegir del programa y de Mecánicas, aparte de los filtros por edad.
+- Grupos (1.16.0): `grupos/{id}` = { nombre, superintendente, auxiliar, miembros: [perfiles] }; los ven los ancianos (`isElder`) y los arma `secretario`. Cada hermano está en un solo grupo (`grupoOf`, `setGroupMember`). Sección `renderGroups`, con estadísticas.
 - Sin funciones: Semanas (solo lectura + “Tu próxima asignación”), Informe (si `modo` es `todos` y tiene perfil) y Ajustes de solo lectura.
 - La seguridad está en `firestore.rules`, no en la interfaz. Pruebas: `npm run prueba-reglas` (proyecto `demo-reglas`).
 - Prueba local sin tocar el Firebase real: `npm run nube-local` y abrir `http://localhost:8765/?emu` (con `servidor.ps1`) o `npx electron . --emu`. Cuentas en `pruebas/cuentas-prueba.txt`.
@@ -94,6 +97,6 @@ App para organizar las asignaciones de la reunión semanal Vida y Ministerio Cri
 ## Pendiente / ideas
 - Pulir detalles mínimos del diseño que el usuario vaya encontrando.
 - Ajustar Cuentas si el usuario manda sus hojas S-26/S-30.
-- Traer semanas de jw.org también desde la web (necesita un proxy, p. ej. Cloudflare Worker).
+- Fase 2 de territorios (pedida 2026-10-28): número de territorio, colonia, número de tarjeta y notas; buscador que marca en el mapa; rayitas en calles trabajadas; casas donde no se predica; punto hasta donde se llegó con nota; capitanes (función `capitan`) registran lo trabajado en los territorios que se les asignan, sin aprobación (el siervo ve y corrige); vueltas en orden que regresan solas a disponible al completarse todos; historial y veces trabajado al año.
 - Opción para elegir sala auxiliar en las hojas de asignación.
 - Borrar los datos de prueba de Firebase cuando el usuario lo pida.
