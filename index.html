@@ -322,7 +322,7 @@
 
 <script>
 const KEY = 'programas-app-v2';
-const APP_VERSION = '1.18.0'; // igual que "version" en package.json (publicar.ps1 lo revisa)
+const APP_VERSION = '1.19.0'; // igual que "version" en package.json (publicar.ps1 lo revisa)
 // Con FIREBASE_CONFIG (firebase-config.js) los datos viven en la nube de la congregación;
 // sin él, la app funciona como antes, solo en esta PC. "?emu" usa el Firebase local de prueba.
 const EMU = /[?&]emu\b/.test(location.search);
@@ -2497,12 +2497,86 @@ const shareUrl = t => { const no = housesOf(t).filter(x => x.k === 'no').map(x =
   return `${WEB_URL}#ver&n=${encodeURIComponent(t.numero)}&t=${encodeURIComponent(t.nombre || '')}&p=${encodeURIComponent(encodePoly(coordsOf(t)))}`
     + (streetsOf(t).length ? `&l=${encodeURIComponent(streetsOf(t).map(encodePoly).join('~'))}` : '') + (no.length ? `&x=${encodeURIComponent(encodePoly(no))}` : ''); };
 
+// Estilos del mapa (gratis y sin claves). Se recuerda el último que eligió cada quien.
+// Las imágenes del mapa se buscan primero en la memoria del equipo (TILE_CACHE): así funciona el
+// mapa de un territorio guardado "para usar sin internet".
+const ESRI = 'https://server.arcgisonline.com/ArcGIS/rest/services/';
+const MAP_STYLES = {
+  'Claro': { url: ESRI + 'World_Street_Map/MapServer/tile/{z}/{y}/{x}', attr: '© Esri · OpenStreetMap' },
+  'Calles': { url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png', attr: '© OpenStreetMap' },
+  'Gris': { url: ESRI + 'Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}', max: 16, attr: '© Esri',
+    labels: [ESRI + 'Canvas/World_Light_Gray_Reference/MapServer/tile/{z}/{y}/{x}'] },
+  'Oscuro': { url: ESRI + 'Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}', max: 16, attr: '© Esri',
+    labels: [ESRI + 'Canvas/World_Dark_Gray_Reference/MapServer/tile/{z}/{y}/{x}'] },
+  // Satélite con los nombres de calles y lugares encima
+  'Satélite': { url: ESRI + 'World_Imagery/MapServer/tile/{z}/{y}/{x}', attr: 'Imágenes © Esri',
+    labels: [ESRI + 'Reference/World_Transportation/MapServer/tile/{z}/{y}/{x}', ESRI + 'Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}'] },
+};
+const TILE_CACHE = 'mapas-v1';
+const tileUrl = (url, sub, c) => L.Util.template(url, { s: sub ? sub[Math.abs(c.x + c.y) % sub.length] : '', x: c.x, y: c.y, z: c.z });
+async function cachedTile(src) {
+  try { if (!window.caches) return null; const r = await (await caches.open(TILE_CACHE)).match(src); return r ? r.blob() : null; } catch (e) { return null; }
+}
+function tileLayer(L, url, sub, opts) {
+  const Layer = L.TileLayer.extend({
+    createTile(coords, done) {
+      const img = document.createElement('img'), src = tileUrl(url, sub, coords);
+      img.alt = ''; img.setAttribute('role', 'presentation');
+      img.onload = () => done(null, img); img.onerror = e => done(e, img);
+      cachedTile(src).then(blob => {
+        if (!blob) return img.src = src;
+        const u = URL.createObjectURL(blob);
+        img.addEventListener('load', () => URL.revokeObjectURL(u), { once: true });
+        img.src = u;
+      });
+      return img;
+    },
+  });
+  return new Layer(url, { maxZoom: 19, ...opts });
+}
+// Las capas de un estilo: la base y, en satélite, los nombres de calles encima
+const styleLayers = (L, name) => {
+  const s = MAP_STYLES[name];
+  const o = s.max ? { maxNativeZoom: s.max } : {};
+  return [tileLayer(L, s.url, s.sub, { attribution: s.attr, ...o }), ...(s.labels || []).map(u => tileLayer(L, u, null, o))];
+};
 function baseMap(L, el) {
   const map = L.map(el);
-  const streets = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap' }).addTo(map);
-  const sat = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19, attribution: 'Imágenes © Esri' });
-  L.control.layers({ 'Calles': streets, 'Satélite': sat }).addTo(map);
+  let saved = 'Claro';
+  try { saved = localStorage.getItem('mapa-estilo') || saved; } catch (e) {}
+  if (!MAP_STYLES[saved]) saved = 'Claro';
+  const groups = Object.fromEntries(Object.keys(MAP_STYLES).map(name => [name, L.layerGroup(styleLayers(L, name))]));
+  groups[saved].addTo(map);
+  map._estilo = saved;
+  L.control.layers(groups).addTo(map);
+  map.on('baselayerchange', e => { map._estilo = e.name; try { localStorage.setItem('mapa-estilo', e.name); } catch (x) {} });
   return map;
+}
+// Guarda en el equipo las imágenes del mapa de una zona (zoom 15 a 18) con el estilo que se está
+// viendo, para que se vea aunque no haya señal en la calle. Una zona de territorio son unas decenas.
+async function saveMapOffline(L, map, bounds) {
+  if (!window.caches) return toast('Este equipo no permite guardar mapas.');
+  const s = MAP_STYLES[map._estilo] || MAP_STYLES.Claro;
+  const urls = [];
+  const b = bounds.pad(0.25);
+  for (let z = 15; z <= Math.min(18, s.max || 18); z++) {
+    const a = map.project(b.getNorthWest(), z).divideBy(256).floor(), c = map.project(b.getSouthEast(), z).divideBy(256).floor();
+    for (let x = a.x; x <= c.x; x++) for (let y = a.y; y <= c.y; y++) {
+      const co = { x, y, z };
+      urls.push(tileUrl(s.url, s.sub, co));
+      (s.labels || []).forEach(u => urls.push(tileUrl(u, null, co)));
+    }
+  }
+  if (urls.length > 600) return toast('La zona es muy grande para guardarla.');
+  const cache = await caches.open(TILE_CACHE);
+  let ok = 0;
+  toast(`Guardando el mapa (${urls.length} partes)…`);
+  for (let i = 0; i < urls.length; i += 6) {
+    await Promise.all(urls.slice(i, i + 6).map(async u => {
+      try { if (await cache.match(u)) return ok++; const r = await fetch(u); if (r.ok) { await cache.put(u, r); ok++; } } catch (e) {}
+    }));
+  }
+  toast(ok === urls.length ? 'Listo: este mapa ya se ve sin internet.' : `Se guardó ${ok} de ${urls.length}. Inténtalo de nuevo con mejor señal.`);
 }
 // "Dónde estoy": un punto azul en la ubicación del celular
 function locateButton(L, map) {
@@ -2533,30 +2607,96 @@ function openQRDialog(t) {
   document.body.append(dlg); dlg.showModal();
 }
 
-// Tarjetas para imprimir: 6 por hoja, con número, nombre, notas y QR
+// Imagen del mapa de un territorio para la tarjeta impresa: imágenes del mapa claro con la zona o
+// sus calles y las casas de no predicar encima. Devuelve un JPEG (data URL) o null si no se pudo.
+async function territoryMapImage(t, W, H) {
+  const pts = [...coordsOf(t), ...streetsOf(t).flat(), ...housesOf(t).map(x => x.p)];
+  if (!pts.length) return null;
+  const merc = ([lat, lng], z) => {
+    const s = 256 * 2 ** z, sin = Math.sin(lat * Math.PI / 180);
+    return [(lng + 180) / 360 * s, (0.5 - Math.log((1 + sin) / (1 - sin)) / (4 * Math.PI)) * s];
+  };
+  // El acercamiento más grande en el que cabe todo, con orilla
+  let z = 18, box;
+  for (; z >= 10; z--) {
+    const xy = pts.map(p => merc(p, z)), xs = xy.map(p => p[0]), ys = xy.map(p => p[1]);
+    box = [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)];
+    if (box[2] - box[0] <= W * 0.8 && box[3] - box[1] <= H * 0.8) break;
+  }
+  const ox = (box[0] + box[2]) / 2 - W / 2, oy = (box[1] + box[3]) / 2 - H / 2;
+  const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+  const g = cv.getContext('2d');
+  g.fillStyle = '#f2f2f2'; g.fillRect(0, 0, W, H);
+  const style = MAP_STYLES.Claro, jobs = [];
+  for (let tx = Math.floor(ox / 256); tx <= Math.floor((ox + W) / 256); tx++) for (let ty = Math.floor(oy / 256); ty <= Math.floor((oy + H) / 256); ty++) {
+    const src = tileUrl(style.url, style.sub, { x: tx, y: ty, z });
+    jobs.push((async () => {
+      const blob = await cachedTile(src);
+      const img = new Image(); img.crossOrigin = 'anonymous';
+      await new Promise(ok => { img.onload = img.onerror = ok; img.src = blob ? URL.createObjectURL(blob) : src; setTimeout(ok, 8000); });
+      if (img.naturalWidth) g.drawImage(img, tx * 256 - ox, ty * 256 - oy, 256, 256);
+    })());
+  }
+  await Promise.all(jobs);
+  const at = p => { const [x, y] = merc(p, z); return [x - ox, y - oy]; };
+  const c = coordsOf(t);
+  g.lineJoin = g.lineCap = 'round';
+  if (c.length >= 3) {
+    g.beginPath(); c.forEach((p, i) => g[i ? 'lineTo' : 'moveTo'](...at(p))); g.closePath();
+    g.fillStyle = 'rgba(224,138,0,.22)'; g.fill(); g.strokeStyle = '#c56f00'; g.lineWidth = 5; g.stroke();
+  }
+  g.strokeStyle = 'rgba(224,138,0,.9)'; g.lineWidth = 12;
+  for (const l of streetsOf(t)) { g.beginPath(); l.forEach((p, i) => g[i ? 'lineTo' : 'moveTo'](...at(p))); g.stroke(); }
+  for (const x of housesOf(t).filter(x => x.k === 'no')) {
+    const [px, py] = at(x.p);
+    g.fillStyle = '#d32f2f'; g.beginPath(); g.arc(px, py, 13, 0, 7); g.fill();
+    g.fillStyle = '#fff'; g.fillRect(px - 8, py - 2.5, 16, 5);
+  }
+  g.fillStyle = 'rgba(255,255,255,.8)'; g.fillRect(W - 230, H - 26, 230, 26);
+  g.fillStyle = '#555'; g.font = '16px sans-serif'; g.fillText('© Esri · OpenStreetMap', W - 200, H - 8);
+  try { return cv.toDataURL('image/jpeg', 0.85); } catch (e) { return null; }
+}
+
+// Tarjetas para imprimir: 2 por hoja, con el mapa del territorio, número, colonia, tarjeta, QR,
+// casas de no predicar y notas.
 async function territoryCardsPDF(list) {
   const J = window.jspdf && window.jspdf.jsPDF;
   if (!J) return toast('No se pudo crear el PDF.');
   let qrcode;
-  try { qrcode = await loadQR(); } catch (e) { return toast('No se pudo crear el QR.'); }
+  try { await loadLeaflet(); qrcode = await loadQR(); } catch (e) { return toast('No se pudo crear el QR.'); }
+  toast(list.length > 1 ? `Preparando ${list.length} tarjetas con su mapa…` : 'Preparando la tarjeta…');
   const doc = new J({ unit: 'mm', format: state.settings.paper === 'a4' ? 'a4' : 'letter' });
   const W = doc.internal.pageSize.getWidth(), H = doc.internal.pageSize.getHeight(), M = 10;
-  const cw = (W - M * 3) / 2, ch = (H - M * 4) / 3;
-  list.forEach((t, i) => {
-    if (i && i % 6 === 0) doc.addPage();
-    const x = M + (i % 2) * (cw + M), y = M + (Math.floor(i / 2) % 3) * (ch + M);
+  const cw = W - M * 2, ch = (H - M * 3) / 2, qs = 38, mapW = cw - qs - 18, mapH = ch - 34;
+  for (let i = 0; i < list.length; i++) {
+    const t = list[i];
+    if (i && i % 2 === 0) doc.addPage();
+    const x = M, y = M + (i % 2) * (ch + M);
     doc.setDrawColor(150); doc.setLineWidth(0.3); doc.roundedRect(x, y, cw, ch, 3, 3);
-    doc.setFont('helvetica', 'bold'); doc.setFontSize(22); doc.setTextColor(0); doc.text(`Territorio ${t.numero}`, x + 6, y + 12);
-    doc.setFont('helvetica', 'normal'); doc.setFontSize(12);
-    if (t.nombre) doc.text(doc.splitTextToSize(t.nombre, cw - 52), x + 6, y + 20);
-    if (t.tarjeta) { doc.setFontSize(10); doc.setTextColor(90); doc.text(`Tarjeta ${t.tarjeta}`, x + 6, y + 27); }
-    if (t.notas) { doc.setFontSize(9); doc.setTextColor(90); doc.text(doc.splitTextToSize(t.notas, cw - 52).slice(0, 8), x + 6, y + 34); }
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(20); doc.setTextColor(0); doc.text(`Territorio ${t.numero}`, x + 6, y + 11);
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(12); doc.setTextColor(60);
+    doc.text([t.nombre, t.tarjeta ? `Tarjeta ${t.tarjeta}` : ''].filter(Boolean).join('   ·   '), x + 6, y + 18);
+    // Mapa
+    const img = await territoryMapImage(t, Math.round(mapW * 8), Math.round(mapH * 8));
+    if (img) doc.addImage(img, 'JPEG', x + 6, y + 23, mapW, mapH);
+    else { doc.setDrawColor(200); doc.rect(x + 6, y + 23, mapW, mapH); doc.setFontSize(9); doc.text('Mapa no disponible (sin internet)', x + 10, y + 30); }
+    doc.setDrawColor(120); doc.rect(x + 6, y + 23, mapW, mapH);
+    // QR y datos a la derecha
+    const qx = x + cw - qs - 6, qy = y + 23;
     const q = qrcode(0, 'M'); q.addData(shareUrl(t)); q.make();
-    const n = q.getModuleCount(), size = 40, cell = size / n, qx = x + cw - size - 5, qy = y + 6;
+    const n = q.getModuleCount(), cell = qs / n;
     doc.setFillColor(0);
     for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) if (q.isDark(r, c)) doc.rect(qx + c * cell, qy + r * cell, cell + 0.02, cell + 0.02, 'F');
-    doc.setFontSize(8); doc.setTextColor(90); doc.text('Escanea para ver la zona en el mapa', qx + size / 2, qy + size + 4, { align: 'center' });
-  });
+    doc.setFontSize(8); doc.setTextColor(90); doc.text(doc.splitTextToSize('Escanéalo para ver la zona en el celular', qs), qx + qs / 2, qy + qs + 4, { align: 'center' });
+    let ty = qy + qs + 13;
+    const no = housesOf(t).filter(h => h.k === 'no');
+    if (no.length) {
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(9); doc.setTextColor(180, 30, 30); doc.text('No predicar:', qx, ty); ty += 4;
+      doc.setFont('helvetica', 'normal'); doc.setTextColor(60);
+      for (const h of no.slice(0, 6)) { const lines = doc.splitTextToSize('• ' + (h.n || 'Casa marcada en el mapa'), qs + 4).slice(0, 2); doc.text(lines, qx, ty); ty += lines.length * 3.6; }
+    }
+    if (t.notas) { doc.setFontSize(9); doc.setTextColor(60); doc.text(doc.splitTextToSize(t.notas, cw - 12).slice(0, 2), x + 6, y + ch - 6); }
+  }
   savePDF(doc, list.length === 1 ? `Territorio ${list[0].numero}` : `Tarjetas de territorio`);
 }
 
@@ -2702,6 +2842,24 @@ function workStats(year) {
   return out;
 }
 
+// Pegar a las calles: rutas a pie del servidor gratuito de OpenStreetMap (FOSSGIS). Si falla o da
+// mucha vuelta, se usa la línea recta.
+const ROUTER = 'https://routing.openstreetmap.de/routed-foot';
+const rnd = ([lng, lat]) => [+lat.toFixed(6), +lng.toFixed(6)];
+async function snapPoint(p) {
+  const j = await (await fetch(`${ROUTER}/nearest/v1/driving/${p[1]},${p[0]}?number=1`)).json();
+  const w = j.waypoints && j.waypoints[0];
+  if (!w || w.distance > 60) return p; // lejos de cualquier calle: se queda donde se tocó
+  return rnd(w.location);
+}
+async function snapRoute(a, b) {
+  const j = await (await fetch(`${ROUTER}/route/v1/driving/${a[1]},${a[0]};${b[1]},${b[0]}?overview=full&geometries=geojson`)).json();
+  const r = j.routes && j.routes[0];
+  if (!r || !r.geometry.coordinates.length) throw new Error('sin ruta');
+  if (r.distance > 3 * L.latLng(a).distanceTo(b) + 40) throw new Error('da mucha vuelta');
+  return [a, ...r.geometry.coordinates.map(rnd)];
+}
+
 // Sección Territorios. Arriba del mapa, al elegir un territorio, salen los botones para trabajarlo:
 // trazar calle trabajada, marcar casa, hasta aquí y registrar salida. Cada uno se guarda al momento.
 // Modos del mapa (terr.mode.kind): 'zona' y 'calles' (forma del territorio), 'trabajada' (calles
@@ -2715,8 +2873,10 @@ function renderTerritories() {
   const actions = h('div'), modeBar = h('div'), panel = h('div'), list = h('div'), mine = h('div'), summary = h('div');
   const counts = h('div', { class: 'totals' });
   const tools = h('div', { class: 'row' });
-  const search = h('input', { type: 'search', value: terr.q, placeholder: '🔎 Buscar por número, colonia o tarjeta…', style: { flex: 1, minWidth: '200px' },
-    oninput: () => { terr.q = search.value; refresh(); focusMatches(); } });
+  const search = h('input', { type: 'search', value: terr.q, placeholder: '🔎 Territorio (número, colonia, tarjeta) o una dirección…', style: { flex: 1, minWidth: '200px' },
+    oninput: () => { terr.q = search.value; addrBox.replaceChildren(); refresh(); focusMatches(); },
+    onkeydown: e => { if (e.key === 'Enter' && !nube.territorios.some(matches)) findAddress(); } });
+  const addrBox = h('div');
   const matches = t => { const q = norm(terr.q); return !q || [t.numero, t.nombre, t.tarjeta].some(x => norm(x || '').includes(q)); };
   const current = () => nube.territorios.find(x => x.id === terr.selected) || null;
   const fresh = t => t && (nube.territorios.find(x => x.id === t.id) || t); // por si cambió mientras se marcaba
@@ -2769,6 +2929,27 @@ function renderTerritories() {
     refresh();
     actions.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   }
+  // Buscar una dirección (OpenStreetMap): primero cerca de lo que se ve en el mapa
+  async function findAddress() {
+    const q = squash(search.value);
+    if (!q || !terr.map) return toast('Escribe la dirección en el buscador.');
+    addrBox.replaceChildren(h('div', { class: 'small-text muted', style: { marginBottom: '8px' } }, 'Buscando la dirección…'));
+    try {
+      const b = terr.map.getBounds();
+      const list = await (await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=5&accept-language=es&q=${encodeURIComponent(q)}&viewbox=${b.getWest()},${b.getNorth()},${b.getEast()},${b.getSouth()}`)).json();
+      const go = x => {
+        addrBox.replaceChildren();
+        const p = [+x.lat, +x.lon];
+        terr.map.setView(p, 18);
+        if (terr.addr) terr.addr.remove();
+        terr.addr = pin(terr.L, p, '📍', x.display_name).addTo(terr.map).openTooltip();
+      };
+      addrBox.replaceChildren(h('div', { class: 'card', style: { padding: '6px 10px', marginBottom: '10px' } },
+        list.length ? list.map(x => h('div', { class: 'urow', style: { cursor: 'pointer' }, onclick: () => go(x) }, h('span', { class: 'small-text' }, '📍 ', x.display_name)))
+          : h('div', { class: 'small-text muted' }, 'No se encontró esa dirección. Prueba con la calle, el número y la colonia.'),
+        h('button', { class: 'btn small', style: { margin: '6px 0' }, onclick: () => addrBox.replaceChildren() }, 'Cerrar')));
+    } catch (e) { addrBox.replaceChildren(h('div', { class: 'small-text muted', style: { marginBottom: '8px' } }, 'No se pudo buscar. Revisa tu internet.')); }
+  }
   // Al buscar: si solo hay uno, se elige; si hay varios, el mapa los encuadra
   function focusMatches() {
     if (!terr.map || !terr.q.trim()) return;
@@ -2778,33 +2959,48 @@ function renderTerritories() {
   }
 
   // ----- modos del mapa -----
+  // En los de calles, cada línea guarda sus puntos (lines) y cuántos agregó cada toque (steps), para
+  // poder deshacer el último toque aunque la ruta pegada a la calle haya puesto muchos puntos.
   const MODES = {
     zona: { help: 'Toca las esquinas de la zona en orden.', ready: m => m.points.length >= 3 },
-    calles: { help: 'Toca el mapa siguiendo cada calle del territorio, punto por punto. Para otra calle, toca “＋ Otra calle”.', lines: true, ready: m => m.lines.some(l => l.length > 1) },
-    trabajada: { help: 'Toca el mapa siguiendo la calle que ya se predicó, punto por punto (de esquina a esquina). Para otra calle, toca “＋ Otra calle”.', lines: true, ready: m => m.lines.some(l => l.length > 1) },
+    calles: { help: 'Toca el inicio y luego el final de cada calle del territorio; la línea sigue la calle sola. Para otra calle, toca “＋ Otra calle”.', lines: true, ready: m => m.lines.some(l => l.length > 1) },
+    trabajada: { help: 'Toca donde empezaron y luego donde terminaron la calle; la línea sigue la calle sola. También puedes tocar punto por punto, o grabar el recorrido con el GPS mientras caminan.', lines: true, ready: m => m.lines.some(l => l.length > 1) },
     casa: { help: 'Toca en el mapa la casa que quieres marcar.' },
     avance: { help: 'Toca en el mapa el lugar exacto donde se quedaron.' },
   };
+  let snapOn = true;
+  try { snapOn = localStorage.getItem('terr-pegar') !== 'no'; } catch (e) {}
   function startMode(kind, t) {
     if (!terr.map) return toast('Espera a que cargue el mapa.');
-    terr.mode = { kind, t, points: [], lines: [[]] };
+    terr.mode = { kind, t, points: [], lines: [[]], steps: [[]], busy: false, gps: null };
     terr.map.getContainer().style.cursor = 'crosshair';
     redrawTmp(); refresh();
     modeBar.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
   function stopMode() {
+    stopGps();
     terr.mode = null;
     if (terr.tmp) terr.tmp.clearLayers();
     if (terr.map) terr.map.getContainer().style.cursor = '';
     refresh();
   }
-  function onTap(ll) {
+  const addPts = (m, pts) => { m.lines[m.lines.length - 1].push(...pts); m.steps[m.steps.length - 1].push(pts.length); };
+  async function onTap(ll) {
     const m = terr.mode;
-    if (!m) return;
+    if (!m || m.busy) return;
     const p = [+ll.lat.toFixed(6), +ll.lng.toFixed(6)];
     if (m.kind === 'zona') m.points.push(p);
-    else if (MODES[m.kind].lines) m.lines[m.lines.length - 1].push(p);
-    else {
+    else if (MODES[m.kind].lines) {
+      const line = m.lines[m.lines.length - 1];
+      if (snapOn) {
+        // Se pega a la calle: el primer toque a la calle más cercana; los demás siguen la ruta a pie
+        m.busy = true; barUpdate();
+        try { addPts(m, line.length ? (await snapRoute(line[line.length - 1], p)).slice(1) : [await snapPoint(p)]); }
+        catch (e) { addPts(m, [p]); }
+        m.busy = false;
+        if (terr.mode !== m) return;
+      } else addPts(m, [p]);
+    } else {
       const t = fresh(m.t); stopMode();
       if (m.kind === 'casa') {
         const no = h('input', { type: 'radio', name: 'casa', checked: true }), nota = h('input', { type: 'radio', name: 'casa' });
@@ -2818,22 +3014,63 @@ function renderTerritories() {
     redrawTmp(); barUpdate();
   }
   function undo() {
-    const m = terr.mode, last = m.lines[m.lines.length - 1];
+    const m = terr.mode;
     if (m.kind === 'zona') m.points.pop();
-    else if (last.length) last.pop();
-    else if (m.lines.length > 1) { m.lines.pop(); m.lines[m.lines.length - 1].pop(); }
+    else {
+      if (!m.steps[m.steps.length - 1].length && m.lines.length > 1) { m.lines.pop(); m.steps.pop(); }
+      const n = m.steps[m.steps.length - 1].pop() || 0;
+      m.lines[m.lines.length - 1].splice(-n || Infinity, n);
+    }
     redrawTmp(); barUpdate();
   }
+  function newLine() { const m = terr.mode; m.lines.push([]); m.steps.push([]); barUpdate(); }
+
+  // Grabar el recorrido con el GPS: cada vez que se avanzan unos metros se agrega un punto
+  async function startGps() {
+    const m = terr.mode;
+    if (!navigator.geolocation) return toast('Este equipo no puede dar su ubicación');
+    if (m.lines[m.lines.length - 1].length) newLine();
+    m.gps = { meters: 0, dot: null, lock: null };
+    try { m.gps.lock = await navigator.wakeLock.request('screen'); } catch (e) {} // que no se apague la pantalla
+    m.gps.watch = navigator.geolocation.watchPosition(pos => {
+      if (terr.mode !== m || !m.gps) return;
+      const p = [+pos.coords.latitude.toFixed(6), +pos.coords.longitude.toFixed(6)], line = m.lines[m.lines.length - 1];
+      if (m.gps.dot) m.gps.dot.remove();
+      m.gps.dot = terr.L.circleMarker(p, { radius: 8, color: '#fff', weight: 2, fillColor: '#1a73e8', fillOpacity: 1, interactive: false }).addTo(terr.map);
+      if (pos.coords.accuracy > 40) return; // señal muy imprecisa
+      const last = line[line.length - 1], d = last ? terr.map.distance(last, p) : Infinity;
+      if (last && d < 6) return;
+      if (last) m.gps.meters += d; else terr.map.setView(p, Math.max(terr.map.getZoom(), 17));
+      addPts(m, [p]); redrawTmp(); barUpdate();
+    }, () => { toast('No se pudo usar el GPS. Revisa que la app tenga permiso de ubicación.'); stopGps(); barUpdate(); },
+    { enableHighAccuracy: true, maximumAge: 2000, timeout: 30000 });
+    barUpdate();
+  }
+  function stopGps() {
+    const m = terr.mode;
+    if (!m || !m.gps) return;
+    navigator.geolocation.clearWatch(m.gps.watch);
+    if (m.gps.dot) m.gps.dot.remove();
+    if (m.gps.lock) m.gps.lock.release().catch(() => {});
+    m.gps = null;
+  }
+
   function redrawTmp() {
     const m = terr.mode, L = terr.L;
     terr.tmp.clearLayers();
     if (!m) return;
     const color = m.kind === 'trabajada' ? '#7b2cbf' : '#000';
     if (m.kind === 'zona' && m.points.length > 1) L.polygon(m.points, { color, dashArray: '6 4', weight: 2, fillOpacity: 0.15, interactive: false }).addTo(terr.tmp);
-    for (const line of m.kind === 'zona' ? [m.points] : m.lines) {
-      if (m.kind !== 'zona' && line.length > 1) L.polyline(line, { color, weight: 6, opacity: 0.9, dashArray: '10 6', interactive: false }).addTo(terr.tmp);
-      for (const pt of line) L.circleMarker(pt, { radius: 5, color, fillColor: '#fff', fillOpacity: 1, weight: 2, interactive: false }).addTo(terr.tmp);
-    }
+    if (m.kind === 'zona') m.points.forEach(pt => L.circleMarker(pt, { radius: 5, color, fillColor: '#fff', fillOpacity: 1, weight: 2, interactive: false }).addTo(terr.tmp));
+    else m.lines.forEach((line, i) => {
+      if (line.length > 1) L.polyline(line, { color, weight: 6, opacity: 0.9, dashArray: '10 6', interactive: false }).addTo(terr.tmp);
+      // Solo los puntos tocados (el inicio de cada paso), no todos los de la ruta
+      // (con el GPS son muchos: solo el inicio y el final)
+      const ends = [];
+      let k = 0;
+      for (const n of m.steps[i]) { k += n; ends.push(k - 1); }
+      for (const j of ends.length > 40 ? [0, ends[ends.length - 1]] : ends) if (line[j]) L.circleMarker(line[j], { radius: 5, color, fillColor: '#fff', fillOpacity: 1, weight: 2, interactive: false }).addTo(terr.tmp);
+    });
   }
   async function finishMode() {
     const m = terr.mode, t = fresh(m.t), lines = m.lines.filter(l => l.length > 1);
@@ -2850,12 +3087,19 @@ function renderTerritories() {
       trabajada: `Trazar calle trabajada · territorio ${m.t && m.t.numero}`, casa: `Marcar casa · territorio ${m.t && m.t.numero}`, avance: `Hasta aquí · territorio ${m.t && m.t.numero}` }[m.kind];
     const needsSave = m.kind === 'zona' || info.lines;
     modeBar.replaceChildren(h('div', { class: 'card mode-bar' },
-      h('strong', null, what), h('div', { class: 'small-text', style: { margin: '4px 0 8px' } }, info.help),
+      h('strong', null, what),
+      h('div', { class: 'small-text', style: { margin: '4px 0 8px' } }, m.gps ? `📍 Grabando con el GPS: caminen por la calle con la app abierta. Llevan ${Math.round(m.gps.meters)} m.` : m.busy ? 'Buscando la calle…' : info.help),
+      info.lines ? h('div', { class: 'row', style: { marginBottom: '8px' } },
+        h('label', { class: 'row small-text', style: { gap: '6px' } }, h('input', { type: 'checkbox', checked: snapOn, onchange: e => {
+          snapOn = e.target.checked; try { localStorage.setItem('terr-pegar', snapOn ? 'si' : 'no'); } catch (x) {}
+        } }), '🧲 Pegar a las calles'),
+        m.kind === 'trabajada' ? (m.gps ? h('button', { class: 'btn small primary', onclick: () => { stopGps(); barUpdate(); } }, '■ Detener GPS')
+          : h('button', { class: 'btn small', onclick: startGps }, '📍 Grabar con GPS')) : null) : null,
       h('div', { class: 'row' },
-        needsSave ? h('button', { class: 'btn small', onclick: undo }, '↶ Deshacer') : null,
-        info.lines ? h('button', { class: 'btn small', disabled: cur.length < 2, onclick: () => { m.lines.push([]); barUpdate(); } }, '＋ Otra calle') : null,
+        needsSave ? h('button', { class: 'btn small', disabled: m.busy || !!m.gps, onclick: undo }, '↶ Deshacer') : null,
+        info.lines ? h('button', { class: 'btn small', disabled: cur.length < 2 || !!m.gps, onclick: newLine }, '＋ Otra calle') : null,
         h('button', { class: 'btn small', onclick: stopMode }, 'Cancelar'),
-        needsSave ? h('button', { class: 'btn small primary', disabled: !info.ready(m), onclick: finishMode }, '✓ Guardar') : null)));
+        needsSave ? h('button', { class: 'btn small primary', disabled: m.busy || !info.ready(m), onclick: finishMode }, '✓ Guardar') : null)));
   }
 
   // Elegir cómo dibujar un territorio: zona (cuadro) o sus calles
@@ -2958,7 +3202,8 @@ function renderTerritories() {
           if (confirm(`¿Regresar el territorio ${t.numero} a disponible en esta vuelta? Sus registros no se borran.`)) updateTerritory(t, { veces: vueltaBase() }, 'Ahora está disponible');
         } }, 'Regresar a disponible') : null,
         h('button', { class: 'btn small', onclick: () => openQRDialog(t) }, '▦ QR'),
-        h('button', { class: 'btn small', onclick: () => territoryCardsPDF([t]) }, '🖨 Tarjeta'),
+        h('button', { class: 'btn small', onclick: () => territoryCardsPDF([t]) }, '🖨 Tarjeta con mapa'),
+        h('button', { class: 'btn small', onclick: () => terr.map && saveMapOffline(terr.L, terr.map, terrShape(terr.L, t, {}).getBounds()) }, '📴 Guardar mapa sin internet'),
         editor ? h('button', { class: 'btn small', onclick: () => openTerritoryDataDialog(t) }, 'Editar datos') : null,
         editor ? h('button', { class: 'btn small', onclick: () => askShape(t) }, 'Redibujar') : null,
         canWork(t) && (callesOf(t).length || av) ? h('button', { class: 'btn small', onclick: () => {
@@ -3003,7 +3248,8 @@ function renderTerritories() {
     mine,
     counts,
     summary,
-    h('div', { class: 'row', style: { marginBottom: '10px' } }, search),
+    h('div', { class: 'row', style: { marginBottom: '10px' } }, search, h('button', { class: 'btn small', onclick: findAddress }, '📍 Buscar dirección')),
+    addrBox,
     actions,
     modeBar,
     mapEl,
@@ -3015,7 +3261,7 @@ function renderTerritories() {
         h('button', { class: 'btn small', onclick: () => {
           const base = vueltaBase(), all = [...nube.territorios].sort(byNumero).filter(t => (terr.filter === 'todos' || estadoDe(t, base) === terr.filter) && matches(t));
           if (all.length) territoryCardsPDF(all); else toast('No hay territorios para imprimir');
-        } }, '🖨 Tarjetas con QR (PDF)'))),
+        } }, '🖨 Tarjetas con mapa (PDF)'))),
     list);
 }
 
