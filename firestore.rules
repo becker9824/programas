@@ -97,19 +97,62 @@ service cloud.firestore {
       }
       // Territorios: los ve cualquier miembro activo (el mapa no tiene datos personales);
       // los cambia quien tiene la función "Territorios". coords = JSON de [[lat, lng], …].
+      // El capitán al que se le asignó uno puede registrar en él (avance, calles, no predicar,
+      // completarlo); no puede cambiar sus datos ni pasárselo a otro.
+      function validTerritory(d) {
+        return d.keys().hasOnly(['numero', 'nombre', 'tarjeta', 'notas', 'coords', 'estado', 'asignadoA', 'capitan', 'desde', 'historial', 'veces', 'trabajadas', 'avance', 'noPredicar'])
+          && d.numero is string && d.numero.size() > 0 && d.numero.size() <= 20
+          && d.nombre is string && d.nombre.size() <= 100
+          && d.get('tarjeta', '') is string && d.get('tarjeta', '').size() <= 20
+          && d.notas is string && d.notas.size() <= 1000
+          && d.coords is string && d.coords.size() <= 30000
+          && d.estado in ['disponible', 'asignado', 'terminado']
+          && d.asignadoA is string && d.asignadoA.size() <= 100
+          && d.get('capitan', '') is string && d.get('capitan', '').size() <= 128
+          && (d.desde == null || (d.desde is string && d.desde.matches('[0-9]{4}-[0-9]{2}-[0-9]{2}')))
+          && d.historial is list && d.historial.size() <= 50
+          && d.get('veces', 0) is int && d.get('veces', 0) >= 0
+          && d.get('trabajadas', '') is string && d.get('trabajadas', '').size() <= 60000
+          && d.get('avance', '') is string && d.get('avance', '').size() <= 2000
+          && d.get('noPredicar', '') is string && d.get('noPredicar', '').size() <= 30000;
+      }
+      function myTerritory(c, t) { return can(c, 'capitan') && t.get('capitan', '') == me(); }
       match /territorios/{id} {
         allow read: if isActive(c);
         allow delete: if can(c, 'territorios');
-        allow create, update: if can(c, 'territorios')
-          && only(['numero', 'nombre', 'notas', 'coords', 'estado', 'asignadoA', 'desde', 'historial'])
-          && request.resource.data.numero is string && request.resource.data.numero.size() > 0 && request.resource.data.numero.size() <= 20
-          && request.resource.data.nombre is string && request.resource.data.nombre.size() <= 100
-          && request.resource.data.notas is string && request.resource.data.notas.size() <= 1000
-          && request.resource.data.coords is string && request.resource.data.coords.size() <= 30000
-          && request.resource.data.estado in ['disponible', 'asignado', 'terminado']
-          && request.resource.data.asignadoA is string && request.resource.data.asignadoA.size() <= 100
-          && (request.resource.data.desde == null || (request.resource.data.desde is string && request.resource.data.desde.matches('[0-9]{4}-[0-9]{2}-[0-9]{2}')))
-          && request.resource.data.historial is list && request.resource.data.historial.size() <= 50;
+        allow create: if can(c, 'territorios') && validTerritory(request.resource.data);
+        allow update: if validTerritory(request.resource.data)
+          && (can(c, 'territorios')
+            || (myTerritory(c, resource.data)
+              && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['estado', 'asignadoA', 'capitan', 'desde', 'historial', 'veces', 'trabajadas', 'avance', 'noPredicar'])
+              && request.resource.data.get('capitan', '') in ['', me()]
+              && (request.resource.data.get('capitan', '') == me() || request.resource.data.estado == 'disponible')));
+      }
+      // Salidas registradas en los territorios. Las ven y corrigen el siervo de territorios y los capitanes
+      // (solo agregan en los suyos).
+      match /trabajos/{id} {
+        function validWork(d) {
+          return d.keys().hasOnly(['territorio', 'numero', 'fecha', 'completo', 'calles', 'avance', 'notas', 'por', 'porNombre', 'capitan', 'creado'])
+            && d.territorio is string && d.numero is string && d.numero.size() <= 20
+            && d.fecha is string && d.fecha.matches('[0-9]{4}-[0-9]{2}-[0-9]{2}')
+            && d.completo is bool
+            && d.calles is string && d.calles.size() <= 30000
+            && d.avance is string && d.avance.size() <= 2000
+            && d.notas is string && d.notas.size() <= 1000
+            && d.porNombre is string && d.porNombre.size() <= 100
+            && d.capitan is string && d.capitan.size() <= 100;
+        }
+        allow read: if can(c, 'territorios') || can(c, 'capitan');
+        allow create: if validWork(request.resource.data) && request.resource.data.por == me()
+          && (can(c, 'territorios')
+            || myTerritory(c, get(/databases/$(db)/documents/congregaciones/$(c)/territorios/$(request.resource.data.territorio)).data));
+        allow update: if can(c, 'territorios') && validWork(request.resource.data) && request.resource.data.por == resource.data.por;
+        allow delete: if can(c, 'territorios');
+      }
+      // Lista de capitanes (nombre y cuenta) que publica el coordinador para poder asignarles territorios.
+      match /capitanes/{doc} {
+        allow read: if isActive(c);
+        allow write: if isAdmin(c);
       }
       // Anuncios: los leen todos los miembros activos; los publican los ancianos.
       match /anuncios/{id} {

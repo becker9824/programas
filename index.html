@@ -300,6 +300,8 @@
   /* Número de cada territorio sobre el mapa */
   .leaflet-tooltip.terr-label { background: rgba(255,255,255,.85); border: 0; box-shadow: none; color: #111; font-weight: 700; padding: 0 4px; }
   .leaflet-tooltip.terr-label::before { display: none; }
+  .leaflet-tooltip.terr-label.dim { opacity: .35; }
+  .terr-pin { background: none; border: 0; font-size: 22px; line-height: 26px; text-align: center; filter: drop-shadow(0 1px 1px rgba(0,0,0,.5)); }
   .leaflet-container { font: inherit; }
 </style>
 </head>
@@ -317,7 +319,7 @@
 
 <script>
 const KEY = 'programas-app-v2';
-const APP_VERSION = '1.16.0'; // igual que "version" en package.json (publicar.ps1 lo revisa)
+const APP_VERSION = '1.17.0'; // igual que "version" en package.json (publicar.ps1 lo revisa)
 // Con FIREBASE_CONFIG (firebase-config.js) los datos viven en la nube de la congregación;
 // sin él, la app funciona como antes, solo en esta PC. "?emu" usa el Firebase local de prueba.
 const EMU = /[?&]emu\b/.test(location.search);
@@ -1332,7 +1334,7 @@ function openProfileDialog(prof, opts = {}) {
 // Desde la 1.3 los datos van por partes (perfiles/, familias/, semanas/, config/ajustes) en vez de
 // un solo privado/estado (que tenía límite de 1 MB); privado/estado queda como copia de la 1.2.
 const nube = { user: null, cong: null, congData: null, me: null, acceso: '', listo: false, publico: null,
-  miembros: [], anuncios: [], contactos: new Map(), cuentas: [], cuentasIni: null, territorios: [], grupos: [], sent: {}, ultimoPub: '', registro: null, inicial: null, unsubMe: null, unsubDatos: [] };
+  miembros: [], anuncios: [], contactos: new Map(), cuentas: [], cuentasIni: null, territorios: [], grupos: [], capitanes: [], trabajos: [], sent: {}, ultimoPub: '', registro: null, inicial: null, unsubMe: null, unsubDatos: [] };
 // Funciones que el coordinador puede dar a cada cuenta (el coordinador tiene todas)
 const PERMS = [
   ['programa', 'Programa VyM', 'Semanas, hermanos, familias y ajustes de la reunión'],
@@ -1371,6 +1373,17 @@ function memberFunctions(m) {
   return h('div', { class: 'row', style: { gap: '14px', color: 'var(--text)', fontSize: '14px' } },
     h('label', { class: 'row', style: { gap: '6px' }, title: self && admins <= 1 ? 'La congregación necesita al menos un coordinador' : 'Puede todo' }, adminBox, h('strong', null, 'Coordinador')),
     boxes.map(b => b.el));
+}
+// capitanes/lista: cuentas con la función Capitán, para que el siervo de territorios (que no ve
+// las cuentas) pueda asignarles. La escribe el coordinador cuando cambian las cuentas.
+let captainsSent = '';
+function publishCaptains() {
+  const lista = nube.miembros.filter(m => m.estado === 'activo' && (m.permisos || []).includes('capitan'))
+    .map(m => ({ uid: m.id, nombre: (m.perfil && profById(m.perfil) || {}).name || m.nombre })).sort(byNombre);
+  const json = JSON.stringify(lista);
+  if (json === captainsSent) return;
+  captainsSent = json;
+  F.setDoc(congRef('capitanes', 'lista'), { lista }).catch(() => { captainsSent = ''; });
 }
 // Grupos de servicio del campo: grupos/{id} = { nombre, superintendente, auxiliar, miembros: [perfiles] }
 const byGrupo = (a, b) => (a.nombre || '').localeCompare(b.nombre || '', 'es', { numeric: true });
@@ -1494,7 +1507,7 @@ async function startCloud() {
   F.onAuthStateChanged(F.auth, async user => {
     stopListening(); if (nube.unsubMe) { nube.unsubMe(); nube.unsubMe = null; }
     Object.assign(nube, { user, cong: null, congData: null, me: null, acceso: '', listo: false, miembros: [], anuncios: [],
-      contactos: new Map(), cuentas: [], cuentasIni: null, territorios: [], grupos: [], publico: null, sent: {}, ultimoPub: '' });
+      contactos: new Map(), cuentas: [], cuentasIni: null, territorios: [], grupos: [], capitanes: [], trabajos: [], publico: null, sent: {}, ultimoPub: '' });
     if (!user) return renderAuth();
     screen(h('div', { class: 'card auth-card' }, h('p', { class: 'muted' }, 'Cargando tu cuenta…')));
     let joinErr = '';
@@ -1529,7 +1542,7 @@ function stopListening() { nube.unsubDatos.forEach(f => f()); nube.unsubDatos = 
 // Escucha lo que esta cuenta puede ver según sus funciones. Los cambios de otros llegan solos.
 function enterCongregation() {
   stopListening();
-  nube.listo = false; nube.sent = {}; nube.ultimoPub = ''; view = { name: 'inicio' };
+  nube.listo = false; nube.sent = {}; nube.ultimoPub = ''; captainsSent = ''; view = { name: 'inicio' };
   state = defaults();
   screen(h('div', { class: 'card auth-card' }, h('p', { class: 'muted' }, 'Cargando la congregación…')));
   const waiting = new Set();
@@ -1548,8 +1561,18 @@ function enterCongregation() {
   listen('cong', congRef(), s => { nube.congData = s.data() || {}; return true; });
   if (isAdmin()) listen('miembros', F.collection(F.db, 'congregaciones', nube.cong, 'miembros'), s => {
     nube.miembros = s.docs.map(d => ({ id: d.id, ...d.data() }));
+    publishCaptains();
     if (nube.listo && view.name !== 'people') buildNav();
     return view.name === 'people';
+  });
+  // Capitanes (cuentas con la función): el coordinador publica la lista para que el siervo de territorios asigne
+  if (can('territorios')) listen('capitanes', congRef('capitanes', 'lista'), s => { nube.capitanes = (s.exists() && s.data().lista) || []; return false; });
+  // Registros de lo trabajado en territorios (desde el año pasado)
+  if (can('territorios') || can('capitan')) listen('trabajos', F.query(F.collection(F.db, 'congregaciones', nube.cong, 'trabajos'),
+    F.where('fecha', '>=', `${new Date().getFullYear() - 1}-01-01`)), s => {
+    nube.trabajos = s.docs.map(d => ({ id: d.id, ...d.data() }));
+    if (view.name === 'territorios' && terr && terr.refresh) terr.refresh();
+    return false;
   });
   if (isElder()) listen('grupos', F.collection(F.db, 'congregaciones', nube.cong, 'grupos'), s => {
     nube.grupos = s.docs.map(d => ({ id: d.id, ...d.data() }));
@@ -2418,16 +2441,36 @@ function renderAccounts() {
 
 // ---------- territorios (todos ven el mapa; la función "Territorios" los cambia) ----------
 // Mapa con Leaflet y OpenStreetMap (vendor/leaflet). Cada territorio: territorios/{id} con
-// numero, nombre, notas, coords (JSON de [[lat, lng], …]), estado, asignadoA, desde
-// (fecha del estado actual) e historial [{ quien, desde, hasta }].
+// numero, nombre (la colonia), tarjeta (número de tarjeta), notas, coords (JSON de [[lat, lng], …]),
+// estado ('asignado' o 'disponible'), asignadoA, capitan (uid de la cuenta del capitán, o ''),
+// desde, historial [{ quien, desde, hasta, completo }], veces (cuántas veces se completó),
+// trabajadas (JSON de calles [[lat, lng], …] trabajadas en la asignación actual), avance (JSON
+// { p, n, f }: hasta dónde se llegó) y noPredicar (JSON [{ p, n }]: casas donde no se predica).
+// Vueltas: un territorio está "completado" si lleva más veces que el que menos lleva; cuando todos
+// llevan las mismas, todos vuelven solos a disponible (empieza otra vuelta).
+// Cada salida registrada va en trabajos/{id} (territorio, fecha, completo, calles, avance, notas, por).
 const WEB_URL = 'https://becker9824.github.io/programas/';
 const TERR = {
   disponible: { label: 'Disponible', color: '#1b9e4b' },
   asignado: { label: 'Asignado', color: '#e08a00' },
-  terminado: { label: 'Terminado', color: '#2f6fd6' },
+  terminado: { label: 'Completado', color: '#2f6fd6' },
 };
 const byNumero = (a, b) => (a.numero || '').localeCompare(b.numero || '', 'es', { numeric: true });
-let terr = null; // mapa abierto: { L, map, group, selected, draw, refresh }
+let terr = null; // mapa abierto: { L, map, group, marks, selected, draw, work, mark, refresh }
+const parseJ = (s, d) => { try { const v = JSON.parse(s || 'null'); return v == null ? d : v; } catch (e) { return d; } };
+const vecesDe = t => t.veces ?? (t.estado === 'terminado' ? 1 : 0); // los de antes de la 1.17 no tienen "veces"
+const vueltaBase = () => nube.territorios.length ? Math.min(...nube.territorios.map(vecesDe)) : 0;
+const estadoDe = (t, base = vueltaBase()) => t.estado === 'asignado' ? 'asignado' : vecesDe(t) > base ? 'terminado' : 'disponible';
+const callesOf = t => parseJ(t.trabajadas, []);
+const avanceOf = t => parseJ(t.avance, null);
+const noPredOf = t => parseJ(t.noPredicar, []);
+const isMyTerritory = t => !!(t.capitan && nube.user && t.capitan === nube.user.uid);
+const dayCount = n => `${n} día${n === 1 ? '' : 's'}`;
+const terrTitle = t => `Territorio ${t.numero}${t.nombre ? ' · ' + t.nombre : ''}`;
+// Lo que cuenta en la nube de un territorio, sin el id (para escribirlo completo)
+const terrData = t => ({ numero: t.numero, nombre: t.nombre || '', tarjeta: t.tarjeta || '', notas: t.notas || '', coords: t.coords || '[]',
+  estado: t.estado === 'asignado' ? 'asignado' : 'disponible', asignadoA: t.asignadoA || '', capitan: t.capitan || '', desde: t.desde || null,
+  historial: t.historial || [], veces: vecesDe(t), trabajadas: t.trabajadas || '', avance: t.avance || '', noPredicar: t.noPredicar || '' });
 
 function loadScript(src, css) {
   return (loadScript[src] = loadScript[src] || new Promise((res, rej) => {
@@ -2506,7 +2549,8 @@ async function territoryCardsPDF(list) {
     doc.setFont('helvetica', 'bold'); doc.setFontSize(22); doc.setTextColor(0); doc.text(`Territorio ${t.numero}`, x + 6, y + 12);
     doc.setFont('helvetica', 'normal'); doc.setFontSize(12);
     if (t.nombre) doc.text(doc.splitTextToSize(t.nombre, cw - 52), x + 6, y + 20);
-    if (t.notas) { doc.setFontSize(9); doc.setTextColor(90); doc.text(doc.splitTextToSize(t.notas, cw - 52).slice(0, 8), x + 6, y + 30); }
+    if (t.tarjeta) { doc.setFontSize(10); doc.setTextColor(90); doc.text(`Tarjeta ${t.tarjeta}`, x + 6, y + 27); }
+    if (t.notas) { doc.setFontSize(9); doc.setTextColor(90); doc.text(doc.splitTextToSize(t.notas, cw - 52).slice(0, 8), x + 6, y + 34); }
     const q = qrcode(0, 'M'); q.addData(shareUrl(t)); q.make();
     const n = q.getModuleCount(), size = 40, cell = size / n, qx = x + cw - size - 5, qy = y + 6;
     doc.setFillColor(0);
@@ -2517,14 +2561,18 @@ async function territoryCardsPDF(list) {
 }
 
 function openTerritoryDataDialog(t, coords) {
-  const num = h('input', { type: 'text', maxlength: 20, value: t ? t.numero : '', placeholder: 'Ej.: 12', style: { width: '120px' } });
+  const num = h('input', { type: 'text', maxlength: 20, value: t ? t.numero : '', placeholder: 'Ej.: 12', style: { width: '110px' } });
+  const card = h('input', { type: 'text', maxlength: 20, value: t ? t.tarjeta || '' : '', placeholder: 'Ej.: 12-A', style: { width: '110px' } });
   const name = h('input', { type: 'text', maxlength: 100, value: t ? t.nombre : '', placeholder: 'Ej.: Colonia Centro' });
   const notes = h('textarea', { rows: 3, maxlength: 1000, placeholder: 'Opcional: calles que abarca, indicaciones…' }, t ? t.notas : '');
   const err = h('div', { class: 'err' });
   const close = () => { dlg.close(); dlg.remove(); };
   const dlg = h('dialog', { class: 'dlg' },
     h('div', { class: 'dlg-body' }, h('h3', null, t ? `Territorio ${t.numero}` : 'Nuevo territorio'),
-      h('div', { class: 'row', style: { gap: '16px', alignItems: 'flex-end' } }, h('label', { class: 'field' }, 'Número', num), h('label', { class: 'field', style: { flex: 1 } }, 'Nombre', name)),
+      h('div', { class: 'row', style: { gap: '16px', alignItems: 'flex-end' } },
+        h('label', { class: 'field' }, 'Número de territorio', num),
+        h('label', { class: 'field' }, 'Número de tarjeta', card)),
+      h('label', { class: 'field' }, 'Colonia', name),
       h('label', { class: 'field' }, 'Notas', notes), err),
     h('div', { class: 'dlg-foot' },
       h('button', { class: 'btn', onclick: close }, 'Cancelar'),
@@ -2532,13 +2580,14 @@ function openTerritoryDataDialog(t, coords) {
         const numero = squash(num.value);
         if (!numero) return err.textContent = 'Escribe el número del territorio.';
         if (nube.territorios.some(x => x.numero === numero && (!t || x.id !== t.id))) return err.textContent = 'Ya hay un territorio con ese número.';
-        const data = { numero, nombre: squash(name.value), notas: notes.value.trim() };
+        const data = { numero, nombre: squash(name.value), tarjeta: squash(card.value), notas: notes.value.trim() };
         e.target.disabled = true;
         try {
           if (t) await F.updateDoc(congRef('territorios', t.id), coords ? { ...data, coords: JSON.stringify(coords) } : data);
           else {
+            // Entra a la vuelta actual como pendiente (con las mismas veces que el que menos lleva)
             const r = await F.addDoc(F.collection(F.db, 'congregaciones', nube.cong, 'territorios'),
-              { ...data, coords: JSON.stringify(coords), estado: 'disponible', asignadoA: '', desde: todayISO(), historial: [] });
+              terrData({ ...data, coords: JSON.stringify(coords), desde: todayISO(), veces: vueltaBase() }));
             if (terr) terr.selected = r.id;
           }
           toast('Territorio guardado'); close();
@@ -2547,48 +2596,116 @@ function openTerritoryDataDialog(t, coords) {
   document.body.append(dlg); dlg.showModal(); (t ? name : num).focus();
 }
 
+// Asignar a un capitán (de la lista que publica el coordinador) o a cualquier nombre o grupo
 function openAssignDialog(t) {
-  const who = h('input', { type: 'text', maxlength: 100, list: 'profiles-list', placeholder: 'Ej.: Grupo 3 o el nombre del capitán' });
+  const caps = [...nube.capitanes].sort(byNombre);
+  const capSel = h('select', { onchange: () => { who.style.display = capSel.value ? 'none' : ''; } },
+    caps.map(c => h('option', { value: c.uid }, c.nombre)), h('option', { value: '' }, 'Otro (escribir el nombre o el grupo)'));
+  const who = h('input', { type: 'text', maxlength: 100, list: 'profiles-list', placeholder: 'Ej.: Grupo 3 o el nombre del hermano' });
   const since = h('input', { type: 'date', value: todayISO() });
+  who.style.display = caps.length ? 'none' : '';
   const close = () => { dlg.close(); dlg.remove(); };
   const dlg = h('dialog', { class: 'dlg' },
-    h('div', { class: 'dlg-body' }, h('h3', null, `Asignar territorio ${t.numero}`),
-      h('label', { class: 'field' }, '¿A quién?', who), h('label', { class: 'field' }, 'Desde', since)),
+    h('div', { class: 'dlg-body' }, h('h3', null, `Asignar el territorio ${t.numero}`),
+      h('label', { class: 'field' }, '¿A quién?', capSel, who),
+      caps.length ? h('span', { class: 'small-text' }, 'El capitán lo verá en su app y podrá registrar lo que se trabaje.')
+        : h('span', { class: 'small-text' }, 'Todavía no hay capitanes. El coordinador los nombra en Hermanos (función “Capitán” en la cuenta).'),
+      h('label', { class: 'field' }, 'Desde', since)),
     h('div', { class: 'dlg-foot' },
       h('button', { class: 'btn', onclick: close }, 'Cancelar'),
       h('button', { class: 'btn primary', onclick: async () => {
-        if (!squash(who.value)) return who.focus();
-        await setTerritoryState(t, 'asignado', squash(who.value), since.value || todayISO()); close();
+        const cap = caps.find(c => c.uid === capSel.value);
+        const name = cap ? cap.nombre : squash(who.value);
+        if (!name) return who.focus();
+        await updateTerritory(t, { estado: 'asignado', asignadoA: name, capitan: cap ? cap.uid : '', desde: since.value || todayISO() }, `Territorio ${t.numero} asignado a ${name}`);
+        close();
       } }, 'Asignar')));
   refreshDatalist();
-  document.body.append(dlg); dlg.showModal(); who.focus();
+  document.body.append(dlg); dlg.showModal();
 }
 
-// Cambia el estado; al dejar de estar asignado, queda en el historial quién lo tuvo
-async function setTerritoryState(t, estado, asignadoA = '', desde = todayISO()) {
-  const historial = [...(t.historial || [])];
-  if (t.estado === 'asignado' && estado !== 'asignado') historial.push({ quien: t.asignadoA, desde: t.desde || '', hasta: desde });
-  try {
-    await F.updateDoc(congRef('territorios', t.id), { estado, asignadoA, desde, historial: historial.slice(-50) });
-    toast(`Territorio ${t.numero}: ${TERR[estado].label.toLowerCase()}`);
-  } catch (e) { toast(errMsg(e)); }
+async function updateTerritory(t, patch, msg) {
+  try { await F.updateDoc(congRef('territorios', t.id), patch); if (msg) toast(msg); return true; }
+  catch (e) { toast(errMsg(e)); return false; }
+}
+// Quitar la asignación sin completarlo: queda en el historial; se guarda hasta dónde se llegó
+function unassignTerritory(t) {
+  if (!confirm(`¿Quitarle el territorio ${t.numero} a ${t.asignadoA}? Se guarda lo trabajado y hasta dónde se llegó.`)) return;
+  const historial = [...(t.historial || []), { quien: t.asignadoA, desde: t.desde || '', hasta: todayISO(), completo: false }].slice(-50);
+  updateTerritory(t, { estado: 'disponible', asignadoA: '', capitan: '', desde: todayISO(), historial }, `Territorio ${t.numero}: ya no está asignado`);
+}
+
+// Registrar una salida: calles trabajadas, hasta dónde se llegó, nota y si se completó.
+// Al completarlo cuenta una vez más en la vuelta, se libera y se borran sus marcas de avance.
+function openWorkDialog(t, lines, flag) {
+  const fecha = h('input', { type: 'date', value: todayISO(), max: todayISO() });
+  const full = h('input', { type: 'radio', name: 'completo' }), part = h('input', { type: 'radio', name: 'completo' });
+  const notes = h('textarea', { rows: 3, maxlength: 1000, placeholder: 'Ej.: Se quedaron en la esquina de Hidalgo y Juárez; faltó la calle 5.' });
+  const err = h('div', { class: 'err' });
+  const close = () => { dlg.close(); dlg.remove(); };
+  const dlg = h('dialog', { class: 'dlg' },
+    h('div', { class: 'dlg-body' }, h('h3', null, `Registrar: ${terrTitle(t)}`),
+      h('p', { class: 'small-text muted', style: { margin: 0 } }, `${lines.length} calle${lines.length === 1 ? '' : 's'} marcada${lines.length === 1 ? '' : 's'}${flag ? ' · con punto de hasta dónde se llegó' : ''}.`),
+      h('label', { class: 'field' }, 'Fecha', fecha),
+      h('div', { class: 'field' }, h('span', null, '¿Se completó?'),
+        h('div', { class: 'radios' }, h('label', null, full, 'Sí, todo el territorio'), h('label', null, part, 'No, quedó una parte'))),
+      h('label', { class: 'field' }, 'Notas', notes), err),
+    h('div', { class: 'dlg-foot' },
+      h('button', { class: 'btn', onclick: close }, 'Cancelar'),
+      h('button', { class: 'btn primary', onclick: async e => {
+        if (!full.checked && !part.checked) return err.textContent = 'Elige si se completó o quedó una parte.';
+        const completo = full.checked, f = fecha.value || todayISO(), nota = notes.value.trim();
+        e.target.disabled = true;
+        try {
+          await F.addDoc(F.collection(F.db, 'congregaciones', nube.cong, 'trabajos'), {
+            territorio: t.id, numero: t.numero, fecha: f, completo, calles: JSON.stringify(lines),
+            avance: flag ? JSON.stringify({ p: flag, n: nota, f }) : '', notas: nota,
+            por: nube.user.uid, porNombre: (nube.me && nube.me.nombre) || '', capitan: t.asignadoA || '', creado: F.serverTimestamp() });
+          const patch = completo
+            ? { estado: 'disponible', asignadoA: '', capitan: '', desde: f, veces: Math.max(vecesDe(t), vueltaBase() + 1), trabajadas: '', avance: '',
+              historial: [...(t.historial || []), { quien: t.asignadoA || (nube.me && nube.me.nombre) || '', desde: t.desde || f, hasta: f, completo: true }].slice(-50) }
+            : { trabajadas: JSON.stringify([...callesOf(t), ...lines]), ...(flag || nota ? { avance: JSON.stringify({ p: flag || (avanceOf(t) || {}).p || null, n: nota, f }) } : {}) };
+          await F.updateDoc(congRef('territorios', t.id), patch);
+          toast(completo ? `Territorio ${t.numero} completado` : 'Registro guardado');
+          close();
+        } catch (ex) { err.textContent = errMsg(ex); e.target.disabled = false; }
+      } }, 'Guardar')));
+  document.body.append(dlg); dlg.showModal();
+}
+
+// Veces que se completó y salidas registradas de cada territorio en un año (de trabajos/)
+function workStats(year) {
+  const out = new Map();
+  for (const w of nube.trabajos) {
+    if (!w.fecha || !w.fecha.startsWith(String(year))) continue;
+    const s = out.get(w.territorio) || out.set(w.territorio, { completos: 0, salidas: 0, ultimo: '' }).get(w.territorio);
+    s.salidas++;
+    if (w.completo) { s.completos++; if (w.fecha > s.ultimo) s.ultimo = w.fecha; }
+  }
+  return out;
 }
 
 function renderTerritories() {
   const editor = can('territorios');
+  const canWork = t => editor || (can('capitan') && isMyTerritory(t));
   if (terr && terr.map) terr.map.remove();
-  terr = { selected: terr && terr.selected, filter: (terr && terr.filter) || 'todos' };
+  terr = { selected: terr && terr.selected, filter: (terr && terr.filter) || 'todos', q: (terr && terr.q) || '', year: (terr && terr.year) || new Date().getFullYear() };
   const mapEl = h('div', { style: { height: '58vh', minHeight: '320px', borderRadius: '12px', zIndex: 0 } });
   const drawBar = h('div');
   const panel = h('div');
   const list = h('div');
   const counts = h('div', { class: 'totals' });
+  const summary = h('div');
+  const mine = h('div');
   const tools = h('div', { class: 'row' });
+  const search = h('input', { type: 'search', value: terr.q, placeholder: 'Buscar por número, colonia o tarjeta…', style: { flex: 1, minWidth: '200px' },
+    oninput: () => { terr.q = search.value; refresh(); focusMatches(); } });
+  const matches = t => { const q = norm(terr.q); return !q || [t.numero, t.nombre, t.tarjeta].some(x => norm(x || '').includes(q)); };
 
   loadLeaflet().then(L => {
     const map = baseMap(L, mapEl);
-    Object.assign(terr, { L, map, group: L.featureGroup().addTo(map) });
-    map.on('click', e => { if (terr.draw) addPoint(e.latlng); });
+    Object.assign(terr, { L, map, group: L.featureGroup().addTo(map), marks: L.layerGroup().addTo(map), tmp: L.layerGroup().addTo(map) });
+    map.on('click', e => onTap(e.latlng));
     let saved = null;
     try { saved = JSON.parse(localStorage.getItem('terr-vista-' + nube.cong)); } catch (e) {}
     map.on('moveend', () => { try { localStorage.setItem('terr-vista-' + nube.cong, JSON.stringify([map.getCenter(), map.getZoom()])); } catch (e) {} });
@@ -2600,18 +2717,35 @@ function renderTerritories() {
     setTimeout(() => map.invalidateSize(), 50); // por si la página aún acomodaba su tamaño
   }).catch(() => { mapEl.textContent = 'No se pudo cargar el mapa. Revisa tu conexión a internet.'; });
 
+  // Un toque en el mapa: según lo que se esté haciendo (dibujar zona, registrar calles, marcar casa)
+  function onTap(ll) {
+    if (terr.draw) addPoint(ll);
+    else if (terr.work) workTap(ll);
+    else if (terr.mark) markTap(ll);
+  }
+  const pin = (L, ll, emoji, tip) => L.marker(ll, { icon: L.divIcon({ className: 'terr-pin', html: emoji, iconSize: [26, 26], iconAnchor: [13, 24] }) })
+    .bindTooltip(tip || '', { direction: 'top', offset: [0, -20] });
+
   function drawLayers() {
-    const L = terr.L;
-    terr.group.clearLayers();
+    const L = terr.L, base = vueltaBase(), searching = !!terr.q.trim();
+    terr.group.clearLayers(); terr.marks.clearLayers();
     for (const t of nube.territorios) {
       const c = coordsOf(t);
       if (c.length < 3) continue;
-      const sel = t.id === terr.selected, color = (TERR[t.estado] || TERR.disponible).color;
-      L.polygon(c, { color: sel ? '#000' : color, weight: sel ? 4 : 2, fillColor: color, fillOpacity: sel ? 0.5 : 0.35 })
-        .bindTooltip(String(t.numero), { permanent: true, direction: 'center', className: 'terr-label' })
-        .on('click', ev => { if (terr.draw) return addPoint(ev.latlng); select(t.id, false); })
+      const sel = t.id === terr.selected, hit = searching && matches(t), color = TERR[estadoDe(t, base)].color;
+      const dim = searching && !hit;
+      L.polygon(c, { color: sel || hit ? '#000' : color, weight: sel ? 4 : hit ? 3 : dim ? 1 : 2, fillColor: color, fillOpacity: sel ? 0.5 : dim ? 0.08 : hit ? 0.55 : 0.35, bubblingMouseEvents: false })
+        .bindTooltip(String(t.numero), { permanent: true, direction: 'center', className: 'terr-label' + (dim ? ' dim' : '') })
+        .on('click', ev => { if (terr.draw || terr.work || terr.mark) return onTap(ev.latlng); select(t.id, false); })
         .addTo(terr.group);
     }
+    // Del territorio elegido: calles trabajadas, hasta dónde se llegó y casas donde no se predica
+    const t = nube.territorios.find(x => x.id === terr.selected);
+    if (!t) return;
+    for (const line of callesOf(t)) if (line.length > 1) L.polyline(line, { color: '#7b2cbf', weight: 6, opacity: 0.8, interactive: false }).addTo(terr.marks);
+    const av = avanceOf(t);
+    if (av && av.p) pin(L, av.p, '🚩', `Se quedaron aquí${av.f ? ' (' + fmtShort(av.f) + ')' : ''}${av.n ? ': ' + av.n : ''}`).addTo(terr.marks);
+    for (const x of noPredOf(t)) pin(L, x.p, '⛔', `No predicar${x.n ? ': ' + x.n : ''}`).addTo(terr.marks);
   }
 
   function select(id, zoom = true) {
@@ -2621,96 +2755,221 @@ function renderTerritories() {
     refresh();
     if (window.innerWidth < 1000) panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   }
+  // Al buscar: si solo hay uno, se elige; si hay varios, el mapa los encuadra
+  function focusMatches() {
+    if (!terr.map || !terr.q.trim()) return;
+    const found = nube.territorios.filter(t => matches(t) && coordsOf(t).length >= 3);
+    if (found.length === 1) return select(found[0].id);
+    if (found.length) terr.map.fitBounds(terr.L.featureGroup(found.map(t => terr.L.polygon(coordsOf(t)))).getBounds(), { padding: [30, 30], maxZoom: 17 });
+  }
 
   // ----- dibujar una zona tocando sus esquinas -----
   function startDraw(t) {
     if (!terr.map) return;
+    stopModes();
     terr.draw = { t, points: [], shape: null, dots: [] };
     terr.map.getContainer().style.cursor = 'crosshair';
-    drawBarUpdate();
+    barUpdate();
   }
   function addPoint(ll) {
     const d = terr.draw;
     d.points.push([ll.lat, ll.lng]);
     d.dots.push(terr.L.circleMarker(ll, { radius: 5, color: '#000', fillColor: '#fff', fillOpacity: 1, weight: 2 }).addTo(terr.map));
-    redrawShape(); drawBarUpdate();
+    redrawShape(); barUpdate();
   }
   function redrawShape() {
     const d = terr.draw;
     if (d.shape) d.shape.remove();
     d.shape = d.points.length > 1 ? terr.L.polygon(d.points, { color: '#000', dashArray: '6 4', weight: 2, fillOpacity: 0.15 }).addTo(terr.map) : null;
   }
-  function endDraw() {
+  function stopModes() {
     const d = terr.draw;
-    if (!d) return;
-    if (d.shape) d.shape.remove();
-    d.dots.forEach(x => x.remove());
-    terr.draw = null;
-    terr.map.getContainer().style.cursor = '';
-    drawBarUpdate();
-  }
-  function drawBarUpdate() {
-    const d = terr.draw;
-    drawBar.replaceChildren(d ? h('div', { class: 'notice warn row spread', style: { margin: '0 0 8px' } },
-      h('span', null, d.t ? `Redibujando el territorio ${d.t.numero}: ` : '', `Toca las esquinas de la zona en orden (${d.points.length} puesta${d.points.length === 1 ? '' : 's'}).`),
-      h('span', { class: 'row' },
-        h('button', { class: 'btn small', disabled: !d.points.length, onclick: () => { d.points.pop(); d.dots.pop().remove(); redrawShape(); drawBarUpdate(); } }, '↶ Deshacer'),
-        h('button', { class: 'btn small', onclick: endDraw }, 'Cancelar'),
-        h('button', { class: 'btn small primary', disabled: d.points.length < 3, onclick: () => {
-          const pts = d.points.map(([a, b]) => [+a.toFixed(6), +b.toFixed(6)]), t = d.t;
-          endDraw();
-          if (t) F.updateDoc(congRef('territorios', t.id), { coords: JSON.stringify(pts) }).then(() => toast('Zona actualizada')).catch(e => toast(errMsg(e)));
-          else openTerritoryDataDialog(null, pts);
-        } }, 'Listo'))) : '');
+    if (d) { if (d.shape) d.shape.remove(); d.dots.forEach(x => x.remove()); }
+    terr.draw = null; terr.work = null; terr.mark = null;
+    if (terr.tmp) terr.tmp.clearLayers();
+    if (terr.map) terr.map.getContainer().style.cursor = '';
+    barUpdate();
   }
 
-  // ----- panel del territorio elegido y lista -----
+  // ----- registrar lo trabajado: calles punto por punto y hasta dónde se llegó -----
+  function startWork(t) {
+    if (!terr.map) return openWorkDialog(t, [], null);
+    stopModes(); select(t.id);
+    terr.work = { t, lines: [[]], flag: null, flagMode: false };
+    terr.map.getContainer().style.cursor = 'crosshair';
+    workRedraw(); barUpdate();
+  }
+  function workTap(ll) {
+    const w = terr.work, p = [+ll.lat.toFixed(6), +ll.lng.toFixed(6)];
+    if (w.flagMode) { w.flag = p; w.flagMode = false; }
+    else w.lines[w.lines.length - 1].push(p);
+    workRedraw(); barUpdate();
+  }
+  function workUndo() {
+    const w = terr.work, last = w.lines[w.lines.length - 1];
+    if (last.length) last.pop();
+    else if (w.lines.length > 1) { w.lines.pop(); w.lines[w.lines.length - 1].pop(); }
+    else if (w.flag) w.flag = null;
+    workRedraw(); barUpdate();
+  }
+  function workRedraw() {
+    const w = terr.work, L = terr.L;
+    terr.tmp.clearLayers();
+    for (const line of w.lines) {
+      if (line.length > 1) L.polyline(line, { color: '#7b2cbf', weight: 6, opacity: 0.9, dashArray: '10 6', interactive: false }).addTo(terr.tmp);
+      for (const p of line) L.circleMarker(p, { radius: 4, color: '#7b2cbf', fillColor: '#fff', fillOpacity: 1, weight: 2, interactive: false }).addTo(terr.tmp);
+    }
+    if (w.flag) pin(L, w.flag, '🚩', 'Hasta aquí').addTo(terr.tmp);
+  }
+
+  // ----- casas donde no se predica -----
+  function startMark(t) {
+    if (!terr.map) return;
+    stopModes(); select(t.id);
+    terr.mark = { t };
+    terr.map.getContainer().style.cursor = 'crosshair';
+    barUpdate();
+  }
+  async function markTap(ll) {
+    const t = terr.mark.t;
+    stopModes();
+    const nota = prompt('Nota para esta casa (opcional): por ejemplo “pidió que no lo visiten”.');
+    if (nota === null) return;
+    const list = [...noPredOf(t), { p: [+ll.lat.toFixed(6), +ll.lng.toFixed(6)], n: squash(nota).slice(0, 200) }];
+    updateTerritory(t, { noPredicar: JSON.stringify(list) }, 'Casa marcada: no predicar');
+  }
+
+  function barUpdate() {
+    const d = terr.draw, w = terr.work, m = terr.mark;
+    const bar = (text, ...btns) => h('div', { class: 'notice warn row spread', style: { margin: '0 0 8px' } }, h('span', null, text), h('span', { class: 'row' }, ...btns));
+    if (d) return drawBar.replaceChildren(bar(`${d.t ? `Redibujando el territorio ${d.t.numero}: ` : ''}Toca las esquinas de la zona en orden (${d.points.length} puesta${d.points.length === 1 ? '' : 's'}).`,
+      h('button', { class: 'btn small', disabled: !d.points.length, onclick: () => { d.points.pop(); d.dots.pop().remove(); redrawShape(); barUpdate(); } }, '↶ Deshacer'),
+      h('button', { class: 'btn small', onclick: stopModes }, 'Cancelar'),
+      h('button', { class: 'btn small primary', disabled: d.points.length < 3, onclick: () => {
+        const pts = d.points.map(([a, b]) => [+a.toFixed(6), +b.toFixed(6)]), t = d.t;
+        stopModes();
+        if (t) updateTerritory(t, { coords: JSON.stringify(pts) }, 'Zona actualizada');
+        else openTerritoryDataDialog(null, pts);
+      } }, 'Listo')));
+    if (w) {
+      const n = w.lines.filter(l => l.length > 1).length, cur = w.lines[w.lines.length - 1];
+      return drawBar.replaceChildren(bar(w.flagMode ? 'Toca el lugar donde se quedaron.'
+        : `Territorio ${w.t.numero}: toca el mapa siguiendo cada calle que se trabajó, punto por punto (${n} calle${n === 1 ? '' : 's'}). Si no hace falta marcar calles, toca “Siguiente”.`,
+        h('button', { class: 'btn small', onclick: workUndo }, '↶ Deshacer'),
+        h('button', { class: 'btn small', disabled: cur.length < 2, onclick: () => { w.lines.push([]); barUpdate(); } }, '＋ Otra calle'),
+        h('button', { class: 'btn small' + (w.flagMode ? ' primary' : ''), onclick: () => { w.flagMode = !w.flagMode; barUpdate(); } }, '🚩 Hasta aquí'),
+        h('button', { class: 'btn small', onclick: stopModes }, 'Cancelar'),
+        h('button', { class: 'btn small primary', onclick: () => {
+          const lines = w.lines.filter(l => l.length > 1), flag = w.flag, t = nube.territorios.find(x => x.id === w.t.id) || w.t;
+          stopModes(); openWorkDialog(t, lines, flag);
+        } }, 'Siguiente')));
+    }
+    if (m) return drawBar.replaceChildren(bar(`Territorio ${m.t.numero}: toca la casa donde no se predica.`, h('button', { class: 'btn small', onclick: stopModes }, 'Cancelar')));
+    drawBar.replaceChildren();
+  }
+
+  // ----- resumen, panel del territorio elegido y lista -----
   function refresh() {
     if (terr.map) drawLayers();
-    const all = [...nube.territorios].sort(byNumero), today = todayISO();
-    const n = k => all.filter(t => t.estado === k).length;
+    const all = [...nube.territorios].sort(byNumero), today = todayISO(), base = vueltaBase();
+    const stats = workStats(terr.year), thisYear = workStats(new Date().getFullYear());
+    const n = k => all.filter(t => estadoDe(t, base) === k).length;
     counts.replaceChildren(...Object.entries(TERR).map(([k, v]) => h('span', null,
       h('span', { style: { display: 'inline-block', width: '10px', height: '10px', borderRadius: '50%', background: v.color, marginRight: '5px' } }),
       h('strong', null, n(k)), ' ', v.label.toLowerCase() + (n(k) === 1 ? '' : 's'))));
+    const pending = all.filter(t => estadoDe(t, base) === 'disponible');
+    summary.replaceChildren(all.length ? h('div', { class: 'small-text', style: { margin: '-4px 0 10px' } },
+      h('strong', null, `Vuelta ${base + 1}: `), `${n('terminado')} de ${all.length} completados.`,
+      pending.length ? ` Siguientes en orden: ${pending.slice(0, 5).map(t => t.numero).join(', ')}.` : '',
+      ` En ${new Date().getFullYear()}: ${[...thisYear.values()].reduce((a, s) => a + s.completos, 0)} completados y ${[...thisYear.values()].reduce((a, s) => a + s.salidas, 0)} salidas registradas.`) : '');
+    // Capitán: sus territorios, para registrar rápido
+    const myOnes = all.filter(isMyTerritory);
+    mine.replaceChildren(myOnes.length ? h('div', { class: 'card', style: { padding: '12px 14px', marginBottom: '12px' } },
+      h('strong', null, 'Mis territorios'),
+      myOnes.map(t => h('div', { class: 'row spread', style: { marginTop: '8px' } },
+        h('span', null, h('strong', null, terrTitle(t)), h('span', { class: 'muted small-text' }, ` · desde el ${fmtShort(t.desde)} (${dayCount(daysBetween(t.desde, today))})`)),
+        h('span', { class: 'row' },
+          h('button', { class: 'btn small', onclick: () => select(t.id) }, 'Ver'),
+          h('button', { class: 'btn small primary', onclick: () => startWork(t) }, 'Registrar trabajo'))))) : '');
+
     const t = all.find(x => x.id === terr.selected);
-    const since = t && t.desde ? daysBetween(t.desde, today) : null;
+    const st = t ? estadoDe(t, base) : null, since = t && t.desde ? daysBetween(t.desde, today) : null;
+    const av = t && avanceOf(t), np = t ? noPredOf(t) : [], ys = t && thisYear.get(t.id);
+    const works = t ? nube.trabajos.filter(w => w.territorio === t.id).sort((a, b) => b.fecha.localeCompare(a.fecha)).slice(0, 15) : [];
     panel.replaceChildren(t ? h('div', { class: 'card', style: { padding: '14px', marginTop: '12px' } },
       h('div', { class: 'row spread', style: { alignItems: 'flex-start' } },
         h('div', null,
-          h('strong', { style: { fontSize: '18px' } }, `Territorio ${t.numero}`, t.nombre ? ` · ${t.nombre}` : ''),
+          h('strong', { style: { fontSize: '18px' } }, terrTitle(t)),
+          t.tarjeta ? h('span', { class: 'muted' }, ` · Tarjeta ${t.tarjeta}`) : null,
           h('div', { style: { marginTop: '4px' } },
-            h('span', { class: 'badge', style: { background: TERR[t.estado].color, color: '#fff' } }, TERR[t.estado].label),
-            ' ', t.estado === 'asignado' ? `a ${t.asignadoA}` : '',
-            since != null ? h('span', { class: 'muted small-text' }, ` · desde el ${fmtShort(t.desde)} (${since} días)`) : null),
+            h('span', { class: 'badge', style: { background: TERR[st].color, color: '#fff' } }, TERR[st].label),
+            ' ', st === 'asignado' ? `a ${t.asignadoA}` : '',
+            since != null ? h('span', { class: 'muted small-text' }, ` · desde el ${fmtShort(t.desde)} (${dayCount(since)})`) : null),
+          h('div', { class: 'small-text muted', style: { marginTop: '4px' } },
+            `En ${new Date().getFullYear()}: completado ${ys ? ys.completos : 0} ${ys && ys.completos === 1 ? 'vez' : 'veces'}, ${ys ? ys.salidas : 0} salida${ys && ys.salidas === 1 ? '' : 's'} registrada${ys && ys.salidas === 1 ? '' : 's'}.`),
+          av && (av.n || av.p) ? h('div', { class: 'small-text', style: { marginTop: '6px' } }, '🚩 ', h('strong', null, 'Se quedaron: '), av.n || 'marcado en el mapa', av.f ? h('span', { class: 'muted' }, ` (${fmtShort(av.f)})`) : null) : null,
           t.notas ? h('div', { class: 'small-text', style: { marginTop: '6px' } }, richText(t.notas)) : null),
         h('button', { class: 'btn small', onclick: () => { terr.selected = null; refresh(); } }, '✕')),
       h('div', { class: 'row', style: { marginTop: '10px' } },
-        editor && t.estado !== 'asignado' ? h('button', { class: 'btn small primary', onclick: () => openAssignDialog(t) }, 'Asignar') : null,
-        editor && t.estado === 'asignado' ? h('button', { class: 'btn small primary', onclick: () => setTerritoryState(t, 'terminado') }, '✓ Terminado') : null,
-        editor && t.estado !== 'disponible' ? h('button', { class: 'btn small', onclick: () => setTerritoryState(t, 'disponible') }, 'Dejar disponible') : null,
+        editor && st !== 'asignado' ? h('button', { class: 'btn small primary', onclick: () => openAssignDialog(t) }, 'Asignar') : null,
+        canWork(t) ? h('button', { class: 'btn small primary', onclick: () => startWork(t) }, '✎ Registrar trabajo') : null,
+        editor && st === 'asignado' ? h('button', { class: 'btn small', onclick: () => unassignTerritory(t) }, 'Quitar asignación') : null,
+        editor && st === 'terminado' ? h('button', { class: 'btn small', onclick: () => {
+          if (confirm(`¿Regresar el territorio ${t.numero} a disponible en esta vuelta? Sus registros no se borran.`)) updateTerritory(t, { veces: vueltaBase() }, 'Ahora está disponible');
+        } }, 'Regresar a disponible') : null,
+        canWork(t) ? h('button', { class: 'btn small', onclick: () => startMark(t) }, '⛔ No predicar') : null,
         h('button', { class: 'btn small', onclick: () => openQRDialog(t) }, '▦ QR'),
         h('button', { class: 'btn small', onclick: () => territoryCardsPDF([t]) }, '🖨 Tarjeta'),
         editor ? h('button', { class: 'btn small', onclick: () => openTerritoryDataDialog(t) }, 'Editar datos') : null,
         editor ? h('button', { class: 'btn small', onclick: () => startDraw(t) }, 'Redibujar zona') : null,
+        editor && (callesOf(t).length || av) ? h('button', { class: 'btn small', onclick: () => {
+          if (confirm('¿Borrar del mapa las calles marcadas y el punto de hasta dónde se llegó? Los registros no se borran.')) updateTerritory(t, { trabajadas: '', avance: '' }, 'Marcas borradas');
+        } }, 'Borrar marcas') : null,
         editor ? h('button', { class: 'btn small danger', onclick: async () => {
           if (!confirm(`¿Borrar el territorio ${t.numero}? Se pierde también su historial.`)) return;
           try { await F.deleteDoc(congRef('territorios', t.id)); terr.selected = null; toast('Territorio borrado'); } catch (e) { toast(errMsg(e)); }
         } }, 'Borrar') : null),
+      np.length ? h('div', { class: 'hist', style: { marginTop: '10px' } },
+        h('strong', null, `No predicar (${np.length})`),
+        np.map((x, i) => h('div', null, h('span', null, '⛔ ', x.n || 'Sin nota'),
+          canWork(t) ? h('button', { class: 'btn small', onclick: () => {
+            if (confirm('¿Quitar esta casa de “no predicar”?')) updateTerritory(t, { noPredicar: JSON.stringify(np.filter((_, j) => j !== i)) }, 'Marca quitada');
+          } }, 'Quitar') : null))) : null,
+      works.length ? h('div', { class: 'hist', style: { marginTop: '10px' } },
+        h('strong', null, 'Registros'),
+        works.map(w => h('div', null,
+          h('span', null, w.completo ? '✓ Completado' : '◐ Una parte', w.capitan || w.porNombre ? ` · ${w.capitan || w.porNombre}` : '', w.notas ? h('span', { class: 'muted' }, ` · ${w.notas}`) : null),
+          h('span', { class: 'row', style: { gap: '6px' } }, h('span', { class: 'muted' }, fmtShort(w.fecha)),
+            editor ? h('button', { class: 'btn small', title: 'Borrar este registro', onclick: async () => {
+              if (!confirm(`¿Borrar el registro del ${fmtShort(w.fecha)}?${w.completo ? ' El territorio sigue contando como completado; si no lo fue, usa “Regresar a disponible”.' : ''}`)) return;
+              try { await F.deleteDoc(congRef('trabajos', w.id)); toast('Registro borrado'); } catch (e) { toast(errMsg(e)); }
+            } }, '✕') : null)))) : null,
       (t.historial || []).length ? h('div', { class: 'hist', style: { marginTop: '10px' } },
-        h('strong', null, 'Historial'),
-        [...t.historial].reverse().map(x => h('div', null, h('span', null, x.quien || '—'), h('span', { class: 'muted' }, `${x.desde ? fmtShort(x.desde) : '?'} – ${x.hasta ? fmtShort(x.hasta) : '?'}`)))) : null) : '');
-    const shown = all.filter(t => terr.filter === 'todos' || t.estado === terr.filter);
+        h('strong', null, 'Asignaciones anteriores'),
+        [...t.historial].reverse().map(x => h('div', null, h('span', null, x.quien || '—', x.completo ? ' ✓' : x.completo === false ? ' (sin completar)' : ''),
+          h('span', { class: 'muted' }, `${x.desde ? fmtShort(x.desde) : '?'} – ${x.hasta ? fmtShort(x.hasta) : '?'}`)))) : null) : '');
+
+    const shown = all.filter(t => (terr.filter === 'todos' || estadoDe(t, base) === terr.filter) && matches(t));
+    const years = [...new Set([new Date().getFullYear(), ...nube.trabajos.map(w => +String(w.fecha).slice(0, 4)).filter(Boolean)])].sort((a, b) => b - a);
     list.replaceChildren(
-      h('div', { class: 'chips', style: { maxWidth: '520px' } }, [['todos', 'Todos'], ...Object.entries(TERR).map(([k, v]) => [k, v.label + 's'])].map(([k, label]) =>
-        h('button', { class: terr.filter === k ? 'on' : '', onclick: () => { terr.filter = k; refresh(); } }, label))),
+      h('div', { class: 'row spread', style: { alignItems: 'flex-end' } },
+        h('div', { class: 'chips', style: { maxWidth: '520px', flex: 1 } }, [['todos', 'Todos'], ...Object.entries(TERR).map(([k, v]) => [k, v.label + 's'])].map(([k, label]) =>
+          h('button', { class: terr.filter === k ? 'on' : '', onclick: () => { terr.filter = k; refresh(); } }, label))),
+        years.length > 1 ? h('label', { class: 'field' }, 'Año', h('select', { onchange: e => { terr.year = +e.target.value; refresh(); } },
+          years.map(y => h('option', { value: y, selected: y === terr.year ? true : null }, y)))) : null),
       h('div', { class: 'tablewrap' }, h('table', { class: 'stats' },
-        h('thead', null, h('tr', null, ['Nº', 'Nombre', 'Estado', 'Asignado a', 'Desde'].map(x => h('th', null, x)))),
-        h('tbody', null, shown.length ? shown.map(t => h('tr', { onclick: () => select(t.id), style: t.id === terr.selected ? { background: 'var(--surface-2)' } : null },
-          h('td', null, h('strong', null, t.numero)), h('td', null, t.nombre || '—'),
-          h('td', null, h('span', { class: 'badge', style: { background: TERR[t.estado].color, color: '#fff' } }, TERR[t.estado].label)),
-          h('td', null, t.estado === 'asignado' ? t.asignadoA : '—'),
-          h('td', { class: 'small-text' }, t.desde ? `${fmtShort(t.desde)} (${daysBetween(t.desde, today)} d)` : '—')))
-          : h('tr', null, h('td', { colspan: 5, class: 'empty' }, all.length ? 'Ninguno con este filtro.' : editor ? 'Todavía no hay territorios. Toca “+ Nuevo territorio” y dibuja su zona en el mapa.' : 'Todavía no hay territorios.'))))));
+        h('thead', null, h('tr', null, ['Nº', 'Colonia', 'Tarjeta', 'Estado', 'Asignado a', 'Desde', `Completado ${terr.year}`, `Salidas ${terr.year}`].map(x => h('th', null, x)))),
+        h('tbody', null, shown.length ? shown.map(t => {
+          const s = stats.get(t.id), e = estadoDe(t, base);
+          return h('tr', { onclick: () => select(t.id), style: t.id === terr.selected ? { background: 'var(--surface-2)' } : null },
+            h('td', null, h('strong', null, t.numero)), h('td', null, t.nombre || '—'), h('td', null, t.tarjeta || '—'),
+            h('td', null, h('span', { class: 'badge', style: { background: TERR[e].color, color: '#fff' } }, TERR[e].label)),
+            h('td', null, e === 'asignado' ? t.asignadoA : '—'),
+            h('td', { class: 'small-text' }, t.desde ? `${fmtShort(t.desde)} (${daysBetween(t.desde, today)} d)` : '—'),
+            h('td', null, s ? `${s.completos}${s.ultimo ? ' · ' + fmtShort(s.ultimo) : ''}` : 0),
+            h('td', null, s ? s.salidas : 0));
+        })
+          : h('tr', null, h('td', { colspan: 8, class: 'empty' }, all.length ? 'Ninguno con este filtro.' : editor ? 'Todavía no hay territorios. Toca “+ Nuevo territorio” y dibuja su zona en el mapa.' : 'Todavía no hay territorios.'))))));
   }
   terr.refresh = refresh;
   refresh();
@@ -2718,9 +2977,13 @@ function renderTerritories() {
   return h('div', null,
     h('div', { class: 'row spread', style: { marginBottom: '10px' } },
       h('div', null, h('h1', null, 'Territorios'),
-        h('p', { class: 'sub', style: { margin: 0 } }, editor ? 'Toca un territorio en el mapa o en la lista para asignarlo o terminarlo.' : 'Toca un territorio para ver sus datos y su QR.')),
+        h('p', { class: 'sub', style: { margin: 0 } }, editor ? 'Toca un territorio en el mapa o en la lista para asignarlo o registrar lo trabajado.'
+          : can('capitan') ? 'Tus territorios asignados salen arriba. Toca uno para ver sus marcas o registrar lo trabajado.' : 'Toca un territorio para ver sus datos y su QR.')),
       tools),
+    mine,
     counts,
+    summary,
+    h('div', { class: 'row', style: { marginBottom: '8px' } }, search),
     drawBar,
     mapEl,
     panel,
@@ -2729,7 +2992,7 @@ function renderTerritories() {
       h('div', { class: 'row' },
         editor ? h('button', { class: 'btn small primary', onclick: () => startDraw(null) }, '+ Nuevo territorio') : null,
         h('button', { class: 'btn small', onclick: () => {
-          const all = [...nube.territorios].sort(byNumero).filter(t => terr.filter === 'todos' || t.estado === terr.filter);
+          const base = vueltaBase(), all = [...nube.territorios].sort(byNumero).filter(t => (terr.filter === 'todos' || estadoDe(t, base) === terr.filter) && matches(t));
           if (all.length) territoryCardsPDF(all); else toast('No hay territorios para imprimir');
         } }, '🖨 Tarjetas con QR (PDF)'))),
     list);
@@ -3092,10 +3355,10 @@ function renderHome() {
     tiles.push(tile('cuentas', 'Cuentas', money(bal), 'Saldo total (efectivo y banco)', () => go({ name: 'cuentas' })));
   }
   if (nube.territorios.length) {
-    const n = k => nube.territorios.filter(x => x.estado === k).length;
+    const base = vueltaBase(), n = k => nube.territorios.filter(x => estadoDe(x, base) === k).length;
     const count = (k, word) => `${n(k)} ${word}${n(k) === 1 ? '' : 's'}`;
     tiles.push(tile('territorios', 'Territorios', count('disponible', 'disponible'),
-      `${count('asignado', 'asignado')} · ${count('terminado', 'terminado')}`, () => go({ name: 'territorios' })));
+      `${count('asignado', 'asignado')} · ${count('terminado', 'completado')}`, () => go({ name: 'territorios' })));
   }
 
   return h('div', null,

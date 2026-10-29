@@ -177,6 +177,36 @@ test('territorios: los ve cualquier miembro, los cambia la función "Territorios
   await assertFails(deleteDoc(cdoc(db('pub'), 'territorios', 't1')));
 });
 
+test('capitán: registra solo en el territorio que se le asignó; el siervo ve y corrige', async () => {
+  const a = db('admin');
+  await assertSucceeds(updateDoc(cdoc(a, 'miembros', 'pub'), { permisos: ['capitan'] }));
+  await assertSucceeds(setDoc(cdoc(a, 'capitanes', 'lista'), { lista: [{ uid: 'pub', nombre: 'Pub' }] }));
+  await assertFails(setDoc(cdoc(db('pub'), 'capitanes', 'lista'), { lista: [] }));
+  const terr = { numero: '20', nombre: 'Norte', tarjeta: '20-A', notas: '', coords: '[]', estado: 'asignado', asignadoA: 'Pub', capitan: 'pub', desde: '2026-10-01',
+    historial: [], veces: 0, trabajadas: '', avance: '', noPredicar: '' };
+  await assertSucceeds(setDoc(cdoc(a, 'territorios', 't20'), terr));
+  await assertSucceeds(setDoc(cdoc(a, 'territorios', 't21'), { ...terr, numero: '21', capitan: 'otro' }));
+  const p = db('pub');
+  const work = (t, extra = {}) => ({ territorio: t, numero: '20', fecha: '2026-10-20', completo: false, calles: '[]', avance: '', notas: 'Hasta la esquina', por: 'pub', porNombre: 'Pub', capitan: 'Pub', ...extra });
+  await assertSucceeds(setDoc(cdoc(p, 'trabajos', 'w1'), work('t20')));
+  await assertFails(setDoc(cdoc(p, 'trabajos', 'w2'), work('t21')));
+  await assertFails(setDoc(cdoc(p, 'trabajos', 'w3'), work('t20', { por: 'otro' })));
+  await assertSucceeds(updateDoc(cdoc(p, 'territorios', 't20'), { trabajadas: '[[[19.4,-99.1],[19.41,-99.1]]]', avance: '{"n":"esquina"}', noPredicar: '[{"p":[19.4,-99.1],"n":""}]' }));
+  await assertFails(updateDoc(cdoc(p, 'territorios', 't20'), { numero: '99' }));
+  await assertFails(updateDoc(cdoc(p, 'territorios', 't20'), { capitan: 'otro' }));
+  await assertFails(updateDoc(cdoc(p, 'territorios', 't21'), { avance: '{}' }));
+  await assertSucceeds(updateDoc(cdoc(p, 'territorios', 't20'), { estado: 'disponible', asignadoA: '', capitan: '', veces: 1, trabajadas: '', avance: '' }));
+  await assertFails(updateDoc(cdoc(p, 'territorios', 't20'), { trabajadas: '[]' })); // ya no es suyo
+  await assertSucceeds(getDocs(collection(p, 'congregaciones', C, 'trabajos')));
+  await assertFails(deleteDoc(cdoc(p, 'trabajos', 'w1')));
+  await assertFails(getDocs(collection(db('secre'), 'congregaciones', C, 'trabajos')));
+  await assertSucceeds(updateDoc(cdoc(a, 'miembros', 'secre'), { permisos: ['secretario', 'territorios'] }));
+  await assertSucceeds(updateDoc(cdoc(db('secre'), 'trabajos', 'w1'), { notas: 'Corregido' }));
+  await assertSucceeds(deleteDoc(cdoc(db('secre'), 'trabajos', 'w1')));
+  await assertSucceeds(updateDoc(cdoc(a, 'miembros', 'secre'), { permisos: ['secretario'] }));
+  await assertSucceeds(updateDoc(cdoc(a, 'miembros', 'pub'), { permisos: [] }));
+});
+
 test('grupos: los arma el secretario, los ven los ancianos; la función Capitán existe', async () => {
   const g = { nombre: 'Grupo 1', superintendente: 'p2', auxiliar: null, miembros: ['p1', 'p2'] };
   await assertSucceeds(setDoc(cdoc(db('secre'), 'grupos', 'g1'), g));

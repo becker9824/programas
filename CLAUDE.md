@@ -61,7 +61,10 @@ App para organizar las asignaciones de la reunión semanal Vida y Ministerio Cri
 
 ## Territorios (1.8.0)
 - Mapa con Leaflet 1.9.4 (`vendor/leaflet`, se carga al abrir la sección) y OpenStreetMap; capa Satélite de Esri. QR con `vendor/qrcode.js` (qrcode-generator).
-- `territorios/{id}`: numero, nombre, notas, coords (JSON de [[lat, lng]]), estado (disponible|asignado|terminado), asignadoA, desde, historial. Los ve cualquier miembro; los cambia la función `territorios`.
+- `territorios/{id}`: numero, nombre (colonia), tarjeta, notas, coords (JSON de [[lat, lng]]), estado (asignado|disponible; `terminado` solo en datos viejos), asignadoA, capitan (uid), desde, historial [{quien, desde, hasta, completo}], veces, trabajadas (JSON de calles), avance (JSON {p, n, f}), noPredicar (JSON [{p, n}]). Los ve cualquier miembro; los cambia la función `territorios`; el capitán asignado (`capitan == uid`) solo registra en el suyo (reglas `myTerritory`).
+- Vueltas (1.17.0): `estadoDe(t)`: asignado, o "completado" si `vecesDe(t)` es mayor que `vueltaBase()` (el mínimo de todos), o disponible. Al completarse todos, el mínimo sube y todos vuelven solos a disponible. Un territorio nuevo entra con `veces = vueltaBase()`.
+- Registros (1.17.0): `trabajos/{id}` (territorio, numero, fecha, completo, calles, avance, notas, por, porNombre, capitan). Los leen la función `territorios` y los capitanes; el siervo los corrige o borra. Estadísticas por año: `workStats(año)`. En el mapa, modos `terr.draw` (zona), `terr.work` (calles y 🚩 hasta aquí) y `terr.mark` (⛔ no predicar).
+- `capitanes/lista`: el coordinador publica las cuentas con la función `capitan` (`publishCaptains`) para que el siervo de territorios pueda asignarles sin ver las cuentas.
 - QR: `WEB_URL#ver&n=…&t=…&p=<polilínea codificada>`. `renderSharedTerritory()` lo muestra sin Firebase ni sesión. Si se redibuja la zona, hay que reimprimir el QR.
 
 ## Cuentas de la congregación (1.7.0)
@@ -97,6 +100,5 @@ App para organizar las asignaciones de la reunión semanal Vida y Ministerio Cri
 ## Pendiente / ideas
 - Pulir detalles mínimos del diseño que el usuario vaya encontrando.
 - Ajustar Cuentas si el usuario manda sus hojas S-26/S-30.
-- Fase 2 de territorios (pedida 2026-10-28): número de territorio, colonia, número de tarjeta y notas; buscador que marca en el mapa; rayitas en calles trabajadas; casas donde no se predica; punto hasta donde se llegó con nota; capitanes (función `capitan`) registran lo trabajado en los territorios que se les asignan, sin aprobación (el siervo ve y corrige); vueltas en orden que regresan solas a disponible al completarse todos; historial y veces trabajado al año.
 - Opción para elegir sala auxiliar en las hojas de asignación.
 - Borrar los datos de prueba de Firebase cuando el usuario lo pida.
