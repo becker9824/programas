@@ -304,6 +304,9 @@
   .terr-actions { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; margin-top: 10px; }
   .terr-actions .btn { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 12px 8px; font-size: 14px; line-height: 1.2; }
   .mode-bar { padding: 12px 14px; margin-bottom: 10px; border: 2px solid var(--accent); }
+  .mode-bar.trip { border-color: #d32f2f; }
+  .trip-start { display: flex; flex-direction: column; align-items: center; gap: 2px; width: 100%; margin-top: 10px; padding: 12px; font-size: 16px; }
+  .trip-start .small-text { font-weight: 400; opacity: .9; }
   .terr-pin { background: none; border: 0; font-size: 22px; line-height: 26px; text-align: center; filter: drop-shadow(0 1px 1px rgba(0,0,0,.5)); }
   .leaflet-container { font: inherit; }
 </style>
@@ -322,7 +325,7 @@
 
 <script>
 const KEY = 'programas-app-v2';
-const APP_VERSION = '1.19.0'; // igual que "version" en package.json (publicar.ps1 lo revisa)
+const APP_VERSION = '1.20.0'; // igual que "version" en package.json (publicar.ps1 lo revisa)
 // Con FIREBASE_CONFIG (firebase-config.js) los datos viven en la nube de la congregación;
 // sin él, la app funciona como antes, solo en esta PC. "?emu" usa el Firebase local de prueba.
 const EMU = /[?&]emu\b/.test(location.search);
@@ -2795,7 +2798,7 @@ function openNoteDialog(title, fields, onSave) {
 // Registrar una salida: fecha, si se completó o quedó una parte, y una nota. Guarda también las
 // calles trabajadas y hasta dónde se llegó (lo marcado en el mapa). Al completarlo, cuenta una vez
 // más en la vuelta, se libera y se borran sus marcas de avance (las casas marcadas se quedan).
-function openWorkDialog(t) {
+function openWorkDialog(t, resumen) {
   const fecha = h('input', { type: 'date', value: todayISO(), max: todayISO() });
   const full = h('input', { type: 'radio', name: 'completo' }), part = h('input', { type: 'radio', name: 'completo' });
   const notes = h('textarea', { rows: 3, maxlength: 1000, placeholder: 'Ej.: Faltó la calle 5; no había nadie en la manzana 3.' });
@@ -2804,6 +2807,7 @@ function openWorkDialog(t) {
   const close = () => { dlg.close(); dlg.remove(); };
   const dlg = h('dialog', { class: 'dlg' },
     h('div', { class: 'dlg-body' }, h('h3', null, `Registrar salida · ${terrTitle(t)}`),
+      resumen ? h('p', { class: 'small-text', style: { margin: 0 } }, '📍 ', resumen) : null,
       h('p', { class: 'small-text muted', style: { margin: 0 } },
         `En el mapa hay ${lines.length} calle${lines.length === 1 ? '' : 's'} trabajada${lines.length === 1 ? '' : 's'}${av ? ' y un punto de “hasta aquí”' : ''}. Si falta marcar algo, cancela y usa los botones de arriba del mapa.`),
       h('label', { class: 'field' }, 'Fecha', fecha),
@@ -2823,6 +2827,8 @@ function openWorkDialog(t) {
           if (completo) await F.updateDoc(congRef('territorios', t.id), {
             estado: 'disponible', asignadoA: '', capitan: '', desde: f, veces: Math.max(vecesDe(t), vueltaBase() + 1), trabajadas: '', avance: '',
             historial: [...(t.historial || []), { quien: t.asignadoA || (nube.me && nube.me.nombre) || '', desde: t.desde || f, hasta: f, completo: true }].slice(-50) });
+          // Quedó una parte: la nota también explica hasta dónde llegaron
+          else if (nota && avanceOf(t) && !avanceOf(t).n) await F.updateDoc(congRef('territorios', t.id), { avance: JSON.stringify({ ...avanceOf(t), n: nota.slice(0, 200) }) });
           toast(completo ? `Territorio ${t.numero} completado` : 'Salida registrada');
           close();
         } catch (ex) { err.textContent = errMsg(ex); e.target.disabled = false; }
@@ -2860,6 +2866,123 @@ async function snapRoute(a, b) {
   return [a, ...r.geometry.coordinates.map(rnd)];
 }
 
+// ---------- salida con GPS ----------
+// "Empezar salida": el GPS graba por dónde caminan, pero solo lo que queda dentro del territorio
+// (no el camino para llegar). Al terminar, lo recorrido se pega a las calles y queda como calles
+// trabajadas; el último punto queda como "hasta aquí" y se abre Registrar salida.
+// gpsTrip = { tid, numero, segs: [[[lat, lng], …]], meters, inicio, out } se guarda en el equipo
+// (localStorage) para poder continuar la salida si se cierra la app.
+let snapOn = true;
+try { snapOn = localStorage.getItem('terr-pegar') !== 'no'; } catch (e) {}
+let gpsTrip = null, gpsWatch = null, gpsLock = null, gpsPos = null;
+const TRIP_KEY = 'salida-gps';
+const tripSave = () => { try { gpsTrip ? localStorage.setItem(TRIP_KEY, JSON.stringify(gpsTrip)) : localStorage.removeItem(TRIP_KEY); } catch (e) {} };
+const tripStored = () => { try { return JSON.parse(localStorage.getItem(TRIP_KEY)); } catch (e) { return null; } };
+const tripMeters = t => t ? Math.round(t.meters) : 0;
+const fmtMeters = m => m >= 1000 ? `${(m / 1000).toFixed(1)} km` : `${m} m`;
+
+// Distancia en metros de un punto a un tramo (proyección de Mercator corregida por la latitud)
+function metersToSegment(p, a, b) {
+  const P = L.CRS.EPSG3857.project(L.latLng(p)), A = L.CRS.EPSG3857.project(L.latLng(a)), B = L.CRS.EPSG3857.project(L.latLng(b));
+  return Math.sqrt(L.LineUtil._sqClosestPointOnSegment(P, A, B, true)) * Math.cos(p[0] * Math.PI / 180);
+}
+// ¿El punto está dentro del territorio (o a unos metros de su orilla o de sus calles)?
+function insideTerritory(t, p) {
+  const c = coordsOf(t);
+  if (c.length >= 3) {
+    let inside = false;
+    for (let i = 0, j = c.length - 1; i < c.length; j = i++) {
+      const [yi, xi] = c[i], [yj, xj] = c[j];
+      if ((yi > p[0]) !== (yj > p[0]) && p[1] < (xj - xi) * (p[0] - yi) / (yj - yi) + xi) inside = !inside;
+    }
+    return inside || c.some((a, i) => metersToSegment(p, a, c[(i + 1) % c.length]) < 30);
+  }
+  const streets = streetsOf(t);
+  if (!streets.length) return true;
+  return streets.some(l => l.some((a, i) => i && metersToSegment(p, l[i - 1], a) < 35));
+}
+// Pegar un recorrido del GPS a las calles (servicio "match" de OpenStreetMap, de 80 en 80 puntos)
+async function matchTrack(seg) {
+  if (seg.length < 2) return seg;
+  const out = [];
+  for (let i = 0; i < seg.length - 1; i += 79) {
+    const part = seg.slice(i, i + 80);
+    try {
+      const j = await (await fetch(`${ROUTER}/match/v1/driving/${part.map(p => `${p[1]},${p[0]}`).join(';')}?overview=full&geometries=geojson&radiuses=${part.map(() => 30).join(';')}`)).json();
+      if (j.code !== 'Ok' || !j.matchings || !j.matchings.length) throw new Error('sin calle');
+      for (const m of j.matchings) out.push(...m.geometry.coordinates.map(rnd));
+    } catch (e) { out.push(...part); }
+  }
+  return out;
+}
+
+function tripStart(t, resume) {
+  if (!navigator.geolocation) return toast('Este equipo no puede dar su ubicación');
+  gpsTrip = resume || { tid: t.id, numero: t.numero, segs: [], meters: 0, inicio: Date.now(), out: true };
+  gpsTrip.out = true; // al continuar, empieza un tramo nuevo
+  tripSave();
+  if (navigator.wakeLock) navigator.wakeLock.request('screen').then(l => { gpsLock = l; }).catch(() => {}); // que no se apague la pantalla
+  gpsWatch = navigator.geolocation.watchPosition(onGps, () => {
+    toast('No se pudo usar el GPS. Revisa que la app tenga permiso de ubicación y que el GPS esté prendido.');
+  }, { enableHighAccuracy: true, maximumAge: 2000, timeout: 30000 });
+  tripUi();
+}
+function onGps(pos) {
+  if (!gpsTrip) return;
+  const p = [+pos.coords.latitude.toFixed(6), +pos.coords.longitude.toFixed(6)];
+  gpsPos = { p, acc: pos.coords.accuracy };
+  const t = nube.territorios.find(x => x.id === gpsTrip.tid);
+  if (pos.coords.accuracy > 40) return tripUi(); // señal muy imprecisa
+  if (t && hasShape(t) && !insideTerritory(t, p)) { gpsTrip.out = true; return tripUi(); }
+  let seg = gpsTrip.segs[gpsTrip.segs.length - 1];
+  if (!seg || gpsTrip.out) { seg = []; gpsTrip.segs.push(seg); gpsTrip.out = false; }
+  const last = seg[seg.length - 1], d = last ? L.latLng(last).distanceTo(p) : 0;
+  if (last && d < 6) return tripUi();
+  seg.push(p); gpsTrip.meters += d;
+  tripSave(); tripUi();
+}
+function tripStop() {
+  if (gpsWatch != null) navigator.geolocation.clearWatch(gpsWatch);
+  gpsWatch = null; gpsPos = null;
+  if (gpsLock) { gpsLock.release().catch(() => {}); gpsLock = null; }
+}
+const tripUi = () => { if (view.name === 'territorios' && terr && terr.refresh) terr.refresh(); };
+function tripDiscard() {
+  if (!confirm('¿Descartar esta salida? Lo grabado con el GPS se pierde.')) return;
+  tripStop(); gpsTrip = null; tripSave(); tripUi();
+}
+// Terminar: guarda lo recorrido como calles trabajadas y el último punto como "hasta aquí"
+async function tripFinish() {
+  const trip = gpsTrip || tripStored();
+  tripStop();
+  const t = trip && nube.territorios.find(x => x.id === trip.tid);
+  if (!t) { gpsTrip = null; tripSave(); tripUi(); return toast('Ese territorio ya no existe.'); }
+  toast('Guardando el recorrido…');
+  let segs = trip.segs.filter(s => s.length > 1);
+  if (snapOn) segs = await Promise.all(segs.map(matchTrack));
+  const lastSeg = trip.segs.filter(s => s.length).pop(), last = lastSeg && lastSeg[lastSeg.length - 1];
+  const patch = {};
+  if (segs.length) patch.trabajadas = JSON.stringify([...callesOf(t), ...segs]);
+  if (last) patch.avance = JSON.stringify({ p: last, n: '', f: todayISO() });
+  if (Object.keys(patch).length && !await updateTerritory(t, patch)) return tripStart(t, trip); // no se pudo guardar: sigue la salida
+  gpsTrip = null; tripSave(); tripUi();
+  openWorkDialog(nube.territorios.find(x => x.id === t.id) || t,
+    segs.length ? `Recorrido con GPS: ${fmtMeters(tripMeters(trip))} dentro del territorio, ya marcado en morado; el último punto quedó como “hasta aquí”.`
+      : 'El GPS no grabó recorrido dentro del territorio.');
+}
+// Marcar con la ubicación de este momento (durante la salida)
+function tripMarkHere(kind) {
+  if (!gpsPos) return toast('Esperando la señal del GPS…');
+  const t = nube.territorios.find(x => x.id === gpsTrip.tid), p = gpsPos.p;
+  if (kind === 'casa') {
+    const no = h('input', { type: 'radio', name: 'casa', checked: true }), nota = h('input', { type: 'radio', name: 'casa' });
+    return openNoteDialog('Marcar esta casa', { placeholder: 'Ej.: Pidió que no lo visiten',
+      extra: h('div', { class: 'radios' }, h('label', null, no, '⛔ No predicar aquí'), h('label', null, nota, '📌 Solo una nota')) },
+      n => { const cur = nube.territorios.find(x => x.id === t.id) || t;
+        return updateTerritory(cur, { noPredicar: JSON.stringify([...housesOf(cur), { p, n: squash(n).slice(0, 200), k: no.checked ? 'no' : 'nota' }]) }, 'Casa marcada donde estás'); });
+  }
+}
+
 // Sección Territorios. Arriba del mapa, al elegir un territorio, salen los botones para trabajarlo:
 // trazar calle trabajada, marcar casa, hasta aquí y registrar salida. Cada uno se guarda al momento.
 // Modos del mapa (terr.mode.kind): 'zona' y 'calles' (forma del territorio), 'trabajada' (calles
@@ -2869,6 +2992,7 @@ function renderTerritories() {
   const canWork = t => editor || (can('capitan') && isMyTerritory(t));
   if (terr && terr.map) terr.map.remove();
   terr = { selected: terr && terr.selected, filter: (terr && terr.filter) || 'todos', q: (terr && terr.q) || '', year: (terr && terr.year) || new Date().getFullYear(), mode: null };
+  if (gpsTrip) terr.selected = gpsTrip.tid; // salida con GPS en curso: su territorio
   const mapEl = h('div', { style: { height: '58vh', minHeight: '320px', borderRadius: '12px', zIndex: 0 } });
   const actions = h('div'), modeBar = h('div'), panel = h('div'), list = h('div'), mine = h('div'), summary = h('div');
   const counts = h('div', { class: 'totals' });
@@ -2919,6 +3043,10 @@ function renderTerritories() {
     const av = avanceOf(t);
     if (av && av.p) pin(L, av.p, '🚩', `Hasta aquí${av.f ? ' (' + fmtShort(av.f) + ')' : ''}${av.n ? ': ' + av.n : ''}`).addTo(terr.marks);
     for (const x of housesOf(t)) pin(L, x.p, HOUSE[x.k].icon, `${HOUSE[x.k].label}${x.n ? ': ' + x.n : ''}`).addTo(terr.marks);
+    if (gpsTrip && gpsTrip.tid === t.id) {
+      for (const seg of gpsTrip.segs) if (seg.length > 1) L.polyline(seg, { color: '#d32f2f', weight: 6, opacity: 0.85, dashArray: '8 6', interactive: false }).addTo(terr.marks);
+      if (gpsPos) L.circleMarker(gpsPos.p, { radius: 8, color: '#fff', weight: 2, fillColor: '#1a73e8', fillOpacity: 1, interactive: false }).addTo(terr.marks);
+    }
   }
 
   function select(id, zoom = true) {
@@ -2964,21 +3092,18 @@ function renderTerritories() {
   const MODES = {
     zona: { help: 'Toca las esquinas de la zona en orden.', ready: m => m.points.length >= 3 },
     calles: { help: 'Toca el inicio y luego el final de cada calle del territorio; la línea sigue la calle sola. Para otra calle, toca “＋ Otra calle”.', lines: true, ready: m => m.lines.some(l => l.length > 1) },
-    trabajada: { help: 'Toca donde empezaron y luego donde terminaron la calle; la línea sigue la calle sola. También puedes tocar punto por punto, o grabar el recorrido con el GPS mientras caminan.', lines: true, ready: m => m.lines.some(l => l.length > 1) },
+    trabajada: { help: 'Toca donde empezaron y luego donde terminaron la calle; la línea sigue la calle sola. Sin “Pegar a las calles”, tocas punto por punto.', lines: true, ready: m => m.lines.some(l => l.length > 1) },
     casa: { help: 'Toca en el mapa la casa que quieres marcar.' },
     avance: { help: 'Toca en el mapa el lugar exacto donde se quedaron.' },
   };
-  let snapOn = true;
-  try { snapOn = localStorage.getItem('terr-pegar') !== 'no'; } catch (e) {}
   function startMode(kind, t) {
     if (!terr.map) return toast('Espera a que cargue el mapa.');
-    terr.mode = { kind, t, points: [], lines: [[]], steps: [[]], busy: false, gps: null };
+    terr.mode = { kind, t, points: [], lines: [[]], steps: [[]], busy: false };
     terr.map.getContainer().style.cursor = 'crosshair';
     redrawTmp(); refresh();
     modeBar.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
   function stopMode() {
-    stopGps();
     terr.mode = null;
     if (terr.tmp) terr.tmp.clearLayers();
     if (terr.map) terr.map.getContainer().style.cursor = '';
@@ -3025,36 +3150,6 @@ function renderTerritories() {
   }
   function newLine() { const m = terr.mode; m.lines.push([]); m.steps.push([]); barUpdate(); }
 
-  // Grabar el recorrido con el GPS: cada vez que se avanzan unos metros se agrega un punto
-  async function startGps() {
-    const m = terr.mode;
-    if (!navigator.geolocation) return toast('Este equipo no puede dar su ubicación');
-    if (m.lines[m.lines.length - 1].length) newLine();
-    m.gps = { meters: 0, dot: null, lock: null };
-    try { m.gps.lock = await navigator.wakeLock.request('screen'); } catch (e) {} // que no se apague la pantalla
-    m.gps.watch = navigator.geolocation.watchPosition(pos => {
-      if (terr.mode !== m || !m.gps) return;
-      const p = [+pos.coords.latitude.toFixed(6), +pos.coords.longitude.toFixed(6)], line = m.lines[m.lines.length - 1];
-      if (m.gps.dot) m.gps.dot.remove();
-      m.gps.dot = terr.L.circleMarker(p, { radius: 8, color: '#fff', weight: 2, fillColor: '#1a73e8', fillOpacity: 1, interactive: false }).addTo(terr.map);
-      if (pos.coords.accuracy > 40) return; // señal muy imprecisa
-      const last = line[line.length - 1], d = last ? terr.map.distance(last, p) : Infinity;
-      if (last && d < 6) return;
-      if (last) m.gps.meters += d; else terr.map.setView(p, Math.max(terr.map.getZoom(), 17));
-      addPts(m, [p]); redrawTmp(); barUpdate();
-    }, () => { toast('No se pudo usar el GPS. Revisa que la app tenga permiso de ubicación.'); stopGps(); barUpdate(); },
-    { enableHighAccuracy: true, maximumAge: 2000, timeout: 30000 });
-    barUpdate();
-  }
-  function stopGps() {
-    const m = terr.mode;
-    if (!m || !m.gps) return;
-    navigator.geolocation.clearWatch(m.gps.watch);
-    if (m.gps.dot) m.gps.dot.remove();
-    if (m.gps.lock) m.gps.lock.release().catch(() => {});
-    m.gps = null;
-  }
-
   function redrawTmp() {
     const m = terr.mode, L = terr.L;
     terr.tmp.clearLayers();
@@ -3065,7 +3160,6 @@ function renderTerritories() {
     else m.lines.forEach((line, i) => {
       if (line.length > 1) L.polyline(line, { color, weight: 6, opacity: 0.9, dashArray: '10 6', interactive: false }).addTo(terr.tmp);
       // Solo los puntos tocados (el inicio de cada paso), no todos los de la ruta
-      // (con el GPS son muchos: solo el inicio y el final)
       const ends = [];
       let k = 0;
       for (const n of m.steps[i]) { k += n; ends.push(k - 1); }
@@ -3088,16 +3182,14 @@ function renderTerritories() {
     const needsSave = m.kind === 'zona' || info.lines;
     modeBar.replaceChildren(h('div', { class: 'card mode-bar' },
       h('strong', null, what),
-      h('div', { class: 'small-text', style: { margin: '4px 0 8px' } }, m.gps ? `📍 Grabando con el GPS: caminen por la calle con la app abierta. Llevan ${Math.round(m.gps.meters)} m.` : m.busy ? 'Buscando la calle…' : info.help),
+      h('div', { class: 'small-text', style: { margin: '4px 0 8px' } }, m.busy ? 'Buscando la calle…' : info.help),
       info.lines ? h('div', { class: 'row', style: { marginBottom: '8px' } },
         h('label', { class: 'row small-text', style: { gap: '6px' } }, h('input', { type: 'checkbox', checked: snapOn, onchange: e => {
           snapOn = e.target.checked; try { localStorage.setItem('terr-pegar', snapOn ? 'si' : 'no'); } catch (x) {}
-        } }), '🧲 Pegar a las calles'),
-        m.kind === 'trabajada' ? (m.gps ? h('button', { class: 'btn small primary', onclick: () => { stopGps(); barUpdate(); } }, '■ Detener GPS')
-          : h('button', { class: 'btn small', onclick: startGps }, '📍 Grabar con GPS')) : null) : null,
+        } }), '🧲 Pegar a las calles')) : null,
       h('div', { class: 'row' },
-        needsSave ? h('button', { class: 'btn small', disabled: m.busy || !!m.gps, onclick: undo }, '↶ Deshacer') : null,
-        info.lines ? h('button', { class: 'btn small', disabled: cur.length < 2 || !!m.gps, onclick: newLine }, '＋ Otra calle') : null,
+        needsSave ? h('button', { class: 'btn small', disabled: m.busy, onclick: undo }, '↶ Deshacer') : null,
+        info.lines ? h('button', { class: 'btn small', disabled: cur.length < 2, onclick: newLine }, '＋ Otra calle') : null,
         h('button', { class: 'btn small', onclick: stopMode }, 'Cancelar'),
         needsSave ? h('button', { class: 'btn small primary', disabled: m.busy || !info.ready(m), onclick: finishMode }, '✓ Guardar') : null)));
   }
@@ -3119,6 +3211,27 @@ function renderTerritories() {
   function actionsUpdate() {
     const t = current(), base = vueltaBase();
     if (terr.mode) return actions.replaceChildren();
+    // Salida con GPS en curso: lo único que se ve arriba es eso
+    if (gpsTrip) return actions.replaceChildren(h('div', { class: 'card mode-bar trip' },
+      h('div', { class: 'row spread' }, h('strong', null, `● Grabando salida · territorio ${gpsTrip.numero}`),
+        h('span', { class: 'small-text' }, `desde las ${new Date(gpsTrip.inicio).toLocaleTimeString('es', { hour: 'numeric', minute: '2-digit' })}`)),
+      h('div', { style: { fontSize: '26px', fontWeight: 700, margin: '6px 0' } }, fmtMeters(tripMeters(gpsTrip))),
+      h('div', { class: 'small-text', style: { marginBottom: '8px' } },
+        !gpsPos ? '📡 Esperando la señal del GPS…' : gpsPos.acc > 40 ? '📡 Señal del GPS imprecisa, espera un momento…'
+          : gpsTrip.out ? '📍 Estás fuera del territorio: no se graba. Al entrar, sigue grabando solo.' : '📍 Grabando por dónde caminan (en rojo). Dejen la app abierta.'),
+      h('div', { class: 'terr-actions' },
+        h('button', { class: 'btn', onclick: () => tripMarkHere('casa') }, h('span', { style: { fontSize: '20px' } }, '🏠'), 'Marcar casa aquí'),
+        h('button', { class: 'btn primary', onclick: tripFinish }, h('span', { style: { fontSize: '20px' } }, '■'), 'Terminar salida')),
+      h('button', { class: 'btn small', style: { marginTop: '8px' }, onclick: tripDiscard }, 'Descartar')));
+    // Una salida que quedó a medias (se cerró la app)
+    const stored = tripStored();
+    if (stored && !gpsTrip) return actions.replaceChildren(h('div', { class: 'card mode-bar' },
+      h('strong', null, `Hay una salida con GPS sin terminar · territorio ${stored.numero}`),
+      h('div', { class: 'small-text', style: { margin: '4px 0 8px' } }, `Llevaba ${fmtMeters(tripMeters(stored))} grabados.`),
+      h('div', { class: 'row' },
+        h('button', { class: 'btn small primary', onclick: () => { terr.selected = stored.tid; tripStart(null, stored); } }, '▶ Continuar'),
+        h('button', { class: 'btn small', onclick: () => { gpsTrip = stored; tripFinish(); } }, '■ Terminar y registrar'),
+        h('button', { class: 'btn small', onclick: () => { gpsTrip = stored; tripDiscard(); if (gpsTrip) gpsTrip = null; } }, 'Descartar'))));
     if (!t) return actions.replaceChildren(h('div', { class: 'card', style: { padding: '12px 14px', marginBottom: '10px' } },
       h('div', { class: 'small-text' }, '👆 Toca un territorio en el mapa o en la lista para ver sus datos',
         nube.territorios.some(canWork) ? ' y trabajar en él (marcar calles, casas y registrar salidas).' : '.'),
@@ -3131,11 +3244,13 @@ function renderTerritories() {
           ' ', h('span', { class: 'badge', style: { background: TERR[st].color, color: '#fff' } }, TERR[st].label),
           st === 'asignado' ? h('span', { class: 'small-text' }, ` a ${t.asignadoA}`) : null),
         h('button', { class: 'btn small', onclick: () => { terr.selected = null; refresh(); } }, '✕')),
+      canWork(t) ? h('button', { class: 'btn primary trip-start', onclick: () => tripStart(t) }, '▶ Empezar salida con GPS',
+        h('span', { class: 'small-text' }, 'Graba por dónde caminan dentro del territorio y al final lo registra')) : null,
       canWork(t) ? h('div', { class: 'terr-actions' },
         big('〰', 'Trazar calle trabajada', () => startMode('trabajada', t)),
         big('🏠', 'Marcar casa', () => startMode('casa', t)),
         big('🚩', 'Hasta aquí llegaron', () => startMode('avance', t)),
-        big('✅', 'Registrar salida', () => openWorkDialog(t), true))
+        big('✅', 'Registrar salida', () => openWorkDialog(t)))
         : h('div', { class: 'small-text muted', style: { marginTop: '6px' } }, 'Para registrar aquí, el siervo de territorios tiene que asignártelo.'),
       editor ? h('div', { class: 'row', style: { marginTop: '8px' } },
         st !== 'asignado' ? h('button', { class: 'btn small primary', onclick: () => openAssignDialog(t) }, 'Asignar') : h('button', { class: 'btn small', onclick: () => unassignTerritory(t) }, 'Quitar asignación'),
