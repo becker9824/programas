@@ -350,7 +350,7 @@
 
 <script>
 const KEY = 'programas-app-v2';
-const APP_VERSION = '1.22.0'; // igual que "version" en package.json (publicar.ps1 lo revisa)
+const APP_VERSION = '1.22.1'; // igual que "version" en package.json (publicar.ps1 lo revisa)
 // Con FIREBASE_CONFIG (firebase-config.js) los datos viven en la nube de la congregación;
 // sin él, la app funciona como antes, solo en esta PC. "?emu" usa el Firebase local de prueba.
 const EMU = /[?&]emu\b/.test(location.search);
@@ -1056,12 +1056,12 @@ function savePDF(doc, fname) {
 }
 // Diseños del programa (Ajustes → Programa y PDF). El de fábrica es el S-140.
 const PDF_DESIGNS = [
-  ['s140', 'S-140 (como el formulario)'],
-  ['clasico', 'Clásico (una semana por hoja)'],
+  ['s140', 'S-140'],
+  ['clasico', 'Clásico'],
   ['compacto', 'Compacto en blanco y negro'],
   ['elegante', 'Elegante'],
 ];
-const DATE_HEADERS = [['semana', 'La semana (26 de octubre a 1 de noviembre)'], ['reunion', 'El día de la reunión'], ['ambas', 'Las dos']];
+const DATE_HEADERS = [['semana', 'La semana'], ['reunion', 'El día de la reunión'], ['ambas', 'Las dos']];
 // Encabezado de cada semana según Ajustes
 function weekHeading(p, upper) {
   const s = state.settings, wk = upper ? (p.title || '').toUpperCase() : p.title || '';
@@ -4552,7 +4552,7 @@ function renderEditor(p) {
         p.aux = !auxOn(p);
         if (!p.aux) for (const r of p.rows) { delete r.xa; delete r.xb; }
         rebuild();
-      } }, auxOn(p) ? '🏫 Sala auxiliar: sí' : '🏫 Sala auxiliar: no'),
+      } }, auxOn(p) ? 'Sala auxiliar: sí' : 'Sala auxiliar: no'),
       h('button', { class: 'btn', onclick: () => { editing = !editing; build(); } }, editing ? '✓ Listo' : '✎ Editar programa'),
       h('button', { class: 'btn', onclick: () => openSlipsDialog(p) }, '📄 Hojas de asignación'),
       h('button', { class: 'btn primary', onclick: () => downloadPDF([p]) }, '⬇ Programa PDF')].filter(Boolean));
