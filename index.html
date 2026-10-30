@@ -112,7 +112,29 @@
   .pslots { display: grid; gap: 6px; }
   .slot { display: grid; grid-template-columns: 82px minmax(0, 1fr); gap: 8px; align-items: start; }
   .slabel { text-align: right; font-weight: 600; font-size: 13px; padding-top: 8px; }
+  /* Diseños del programa en pantalla (Ajustes → Diseño del programa) */
+  .theme-s140 .ph1 { align-items: baseline; border-bottom: 4px solid #7a7a7a; padding-bottom: 6px; }
+  .theme-s140 .ph1 span:last-child { order: -1; }
+  .theme-s140 .ph1 span:first-child { font-family: Georgia, 'Times New Roman', serif; font-size: 22px; }
+  .theme-s140 .ph1 span:last-child { font-size: 13px; text-transform: uppercase; }
+  .theme-s140 .ph2, .theme-compacto .ph2 { color: var(--text); text-transform: uppercase; font-size: 15px; }
+  .theme-s140 .psec { background: var(--sec); color: #fff; width: min(100%, 360px); padding: 3px 8px; font-size: 12.5px; border: 0; margin-top: 12px; }
+  .theme-s140 .psec.sec-tesoros { background: #575a5d; }
+  .theme-s140 .psec i { display: none; }
+  .theme-compacto .psec { color: var(--text); border-bottom: 1.5px solid var(--text); font-size: 13px; }
+  .theme-compacto .psec i { display: none; }
+  .theme-compacto .pdot { background: var(--muted) !important; }
+  .theme-compacto .prow, .theme-compacto .vrow { padding-top: 4px; padding-bottom: 4px; }
+  .theme-elegante, .theme-elegante input, .theme-elegante button { font-family: Georgia, 'Times New Roman', serif; }
+  .theme-elegante .ph1 { justify-content: center; flex-direction: column; align-items: center; text-align: center; border-bottom: 3px double var(--muted); padding-bottom: 8px; }
+  .theme-elegante .ph1 span:last-child { font-weight: 400; font-size: 14px; text-transform: uppercase; color: var(--muted); }
+  .theme-elegante .ph2 { color: var(--text); }
+  .theme-elegante .psec { font-variant: small-caps; letter-spacing: .06em; border-bottom: 1px solid var(--sec); }
+  .theme-elegante .psec i { display: none; }
   .room { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin-top: 2px; }
+  .dlg-sec { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--accent); border-top: 1px solid var(--border); padding-top: 12px; margin-top: 4px; }
+  .priv-group { display: grid; gap: 4px; margin-top: 4px; }
+  .priv-title { font-size: 13px; font-weight: 600; color: var(--text); }
   .slabel.soft { font-weight: 400; color: var(--muted); }
   .slot input { width: 100%; }
   .edit-in { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
@@ -328,7 +350,7 @@
 
 <script>
 const KEY = 'programas-app-v2';
-const APP_VERSION = '1.21.0'; // igual que "version" en package.json (publicar.ps1 lo revisa)
+const APP_VERSION = '1.22.0'; // igual que "version" en package.json (publicar.ps1 lo revisa)
 // Con FIREBASE_CONFIG (firebase-config.js) los datos viven en la nube de la congregación;
 // sin él, la app funciona como antes, solo en esta PC. "?emu" usa el Firebase local de prueba.
 const EMU = /[?&]emu\b/.test(location.search);
@@ -499,6 +521,9 @@ function toast(msg) {
 
 // ---------- intervenciones ----------
 const sectionOf = name => SECTIONS.find(s => s.name === name);
+const secClass = name => 'sec-' + ((sectionOf(name) || { key: 'otra' }).key.replace(/\s+/g, '-'));
+// Clase del diseño elegido en Ajustes: el programa en pantalla se ve como el PDF
+const themeClass = () => 'theme-' + (state.settings.pdfDesign || 's140');
 const isAssignable = r => r.kind === 'prayer' || r.kind === 'part' || (r.kind === 'chair' && r.intro);
 const hasCounsel = r => r.kind === 'part' && (r.section === SECTIONS[1].name || /lectura de la biblia/i.test(r.title));
 const songText = r => r.song ? `Canción ${r.song}${state.songs[r.song] ? ' - ' + state.songs[r.song] : ''}` : 'Canción';
@@ -516,7 +541,8 @@ function slotLabels(r) {
 }
 // Sala auxiliar (Ajustes): las partes de estudiantes llevan también 'xa' y 'xb' (estudiante y ayudante
 // en la sala auxiliar) y las palabras de introducción, 'xa' = consejero de la sala auxiliar.
-const auxOn = () => !!state.settings.auxRoom;
+// Se activa en cada semana (p.aux); las semanas de antes siguen lo que decía Ajustes
+const auxOn = p => !!(p && (p.aux ?? state.settings.auxRoom));
 const hasAux = r => r.kind === 'chair' ? !!r.intro : hasCounsel(r);
 const isAux = slot => slot === 'xa' || slot === 'xb';
 const baseSlot = slot => slot === 'xa' ? 'a' : slot === 'xb' ? 'b' : slot;
@@ -723,7 +749,7 @@ function slotsOf(p) {
     if (!isAssignable(row)) continue;
     out.push({ row, slot: 'a', pid: row.a });
     if (row.helper) out.push({ row, slot: 'b', pid: row.b });
-    if (auxOn() && hasAux(row)) {
+    if (auxOn(p) && hasAux(row)) {
       out.push({ row, slot: 'xa', pid: row.xa });
       if (row.helper && row.kind !== 'chair') out.push({ row, slot: 'xb', pid: row.xb });
     }
@@ -1030,12 +1056,12 @@ function savePDF(doc, fname) {
 }
 // Diseños del programa (Ajustes → Programa y PDF). El de fábrica es el S-140.
 const PDF_DESIGNS = [
-  ['s140', 'S-140 (como el formulario oficial, 2 semanas por hoja)'],
+  ['s140', 'S-140 (como el formulario)'],
   ['clasico', 'Clásico (una semana por hoja)'],
-  ['compacto', 'Compacto en blanco y negro (ahorra tinta)'],
-  ['elegante', 'Elegante (letra con serifa)'],
+  ['compacto', 'Compacto en blanco y negro'],
+  ['elegante', 'Elegante'],
 ];
-const DATE_HEADERS = [['semana', '26 DE OCTUBRE A 1 DE NOVIEMBRE (la semana)'], ['reunion', 'Martes, 28 de octubre de 2026 (el día de la reunión)'], ['ambas', 'Las dos']];
+const DATE_HEADERS = [['semana', 'La semana (26 de octubre a 1 de noviembre)'], ['reunion', 'El día de la reunión'], ['ambas', 'Las dos']];
 // Encabezado de cada semana según Ajustes
 function weekHeading(p, upper) {
   const s = state.settings, wk = upper ? (p.title || '').toUpperCase() : p.title || '';
@@ -1067,10 +1093,9 @@ function pdfFlow(doc, programs, design) {
     elegante: { font: 'times', head: 'times', size: 10.5, lh: 1.22, color: true, bar: 'line', gapWeek: 22, songName: true },
   }[design];
   const M = 40, L = ST.size * ST.lh, name = id => (profById(id) || {}).name || '';
-  const aux = auxOn();
+  let aux = false, xAux = 0; // cambian en cada semana (sala auxiliar sí o no)
   const xTime = M, xDot = M + 38, xTitle = M + 46;
-  const xMain = W - M - 140, xAux = aux ? xMain - 132 : xMain, colW = W - M - xMain;
-  const xLab = xAux - 6;
+  const xMain = W - M - 140, colW = W - M - xMain;
   const gray = ST.color ? [90, 90, 90] : [70, 70, 70];
   // En el S-140 la barra de Tesoros va en gris, como en el formulario
   const secRgb = sec => !ST.color ? [40, 40, 40] : design === 's140' && sec === SECTIONS[0].name ? [87, 90, 93] : (sectionOf(sec) || { rgb: [87, 90, 93] }).rgb;
@@ -1110,6 +1135,7 @@ function pdfFlow(doc, programs, design) {
   }
   // Dibuja (o solo mide, si dry) una semana desde y; devuelve la altura
   function week(p, y0, dry) {
+    aux = auxOn(p); xAux = aux ? xMain - 132 : xMain;
     let yy = y0;
     const intro = p.rows.find(r => r.kind === 'chair' && r.intro);
     const head = weekHeading(p, design !== 'elegante');
@@ -1227,7 +1253,7 @@ function pdfClassic(doc, programs) {
           slots.push({ label: labels.a, lines: doc.splitTextToSize(name(r.a), W - M - xNames) });
           if (r.helper) slots.push({ label: labels.b, lines: doc.splitTextToSize(name(r.b), W - M - xNames) });
         }
-        if (auxOn() && hasAux(r)) slots.push({ label: r.kind === 'chair' ? 'Consejero aux.' : 'Sala aux.', lines: doc.splitTextToSize([name(r.xa), r.kind !== 'chair' && r.helper ? name(r.xb) : ''].filter(Boolean).join(' / '), W - M - xNames) });
+        if (auxOn(p) && hasAux(r)) slots.push({ label: r.kind === 'chair' ? 'Consejero aux.' : 'Sala aux.', lines: doc.splitTextToSize([name(r.xa), r.kind !== 'chair' && r.helper ? name(r.xb) : ''].filter(Boolean).join(' / '), W - M - xNames) });
       }
       const nameLines = slots.reduce((t, x) => t + Math.max(1, x.lines.length), 0);
       const lines = Math.max(titleLines.length, nameLines, 1);
@@ -1364,7 +1390,7 @@ function downloadSlips(items) {
 // Elegir qué hojas de asignación descargar
 function openSlipsDialog(p) {
   // Una hoja por asignación; con sala auxiliar, también las de esa sala
-  const items = p.rows.filter(r => r.kind === 'part').flatMap(row => [{ p, row, aux: false }, ...(auxOn() && hasAux(row) ? [{ p, row, aux: true }] : [])]);
+  const items = p.rows.filter(r => r.kind === 'part').flatMap(row => [{ p, row, aux: false }, ...(auxOn(p) && hasAux(row) ? [{ p, row, aux: true }] : [])]);
   const rows = items.map(x => x.row);
   const who = x => x.row[x.aux ? 'xa' : 'a'], mate = x => x.row[x.aux ? 'xb' : 'b'];
   const checks = items.map(x => h('input', { type: 'checkbox', checked: isStudentPart(x.row) && !!who(x) }));
@@ -1412,7 +1438,9 @@ function openProfileDialog(prof, opts = {}) {
   const nomSel = h('select', null, NOMBRAMIENTOS.map(([v, t]) => h('option', { value: v, selected: (prof && prof.nombramiento || '') === v ? true : null }, t)));
   const sitSel = h('select', null, SITUACIONES.map(([v, t]) => h('option', { value: v, selected: (prof && prof.situacion || '') === v ? true : null }, t)));
   const bautI = h('input', { type: 'checkbox', checked: !!(prof && prof.bautizado) });
-  const capI = h('input', { type: 'checkbox', checked: !!(prof && prof.capitan) });
+  // Capitán de territorios: una sola cosa con la función Capitán de su cuenta (si tiene)
+  const acct0 = FB_CONFIG && isAdmin() && prof ? memberOfProfile(prof.id) : null;
+  const capI = h('input', { type: 'checkbox', checked: !!(prof && (prof.capitan || (acct0 && (acct0.permisos || []).includes('capitan')))) });
   // Solo los varones pueden tener nombramiento
   const syncNom = () => { const f = sexF.checked; nomSel.disabled = f; if (f) nomSel.value = ''; };
   sexM.addEventListener('change', syncNom); sexF.addEventListener('change', syncNom); syncNom();
@@ -1425,7 +1453,7 @@ function openProfileDialog(prof, opts = {}) {
   const freeAccounts = FB_CONFIG && isAdmin() ? nube.miembros.filter(m => m.estado === 'activo' && (!m.perfil || !profById(m.perfil))).sort(byNombre) : [];
   const accountSel = h('select', null, h('option', { value: '' }, '— Sin cuenta —'), freeAccounts.map(m => h('option', { value: m.id }, `${m.nombre} (${m.email})`)));
   const accountField = !FB_CONFIG || !isAdmin() ? null : account
-    ? h('div', { class: 'field' }, h('span', null, 'Cuenta y funciones en la app'),
+    ? h('div', { class: 'field' },
       h('div', { class: 'small-text', style: { color: 'var(--text)' } }, account.email),
       memberFunctions(account),
       h('div', { class: 'row', style: { gap: '6px', marginTop: '4px' } },
@@ -1438,7 +1466,7 @@ function openProfileDialog(prof, opts = {}) {
           e.target.disabled = true;
           try { await F.deleteDoc(congRef('miembros', account.id)); toast('Se quitó la cuenta'); dlg.close(); } catch (ex) { toast(errMsg(ex)); }
         } }, 'Quitar la cuenta')))
-    : h('div', { class: 'field' }, h('span', null, 'Cuenta'),
+    : h('div', { class: 'field' },
       freeAccounts.length ? h('label', { class: 'field' }, 'Unir con una cuenta que ya está en la congregación', accountSel) : null,
       h('span', { class: 'small-text' }, `Sin cuenta también sale en el programa y las asignaciones. Si tiene correo, que cree su cuenta con el código ${(nube.congData && nube.congData.codigo) || ''}; luego apruébala arriba en Hermanos.`));
   // Privilegios: casillas, con botones para marcar varios a la vez
@@ -1448,15 +1476,17 @@ function openProfileDialog(prof, opts = {}) {
     return { k, box, el: h('label', { class: 'row', style: { gap: '6px', color: 'var(--text)', fontSize: '14px' } }, box, label) };
   });
   const privField = h('div', { class: 'field' },
-    h('span', null, 'Puede recibir'),
-    h('div', { class: 'row', style: { gap: '6px', margin: '2px 0 4px' } },
+    h('div', { class: 'row', style: { gap: '6px', margin: '2px 0 4px' } }, h('span', { class: 'small-text' }, 'Marcar como:'),
       PRIV_PRESETS.map(([name, keys, nom, baut]) => h('button', { class: 'btn small', type: 'button', onclick: () => {
         privBoxes.forEach(p => { p.box.checked = keys.includes(p.k); });
         if (!sexF.checked) nomSel.value = nom;
         if (baut != null) bautI.checked = baut;
       } }, name)),
       h('button', { class: 'btn small', type: 'button', onclick: () => privBoxes.forEach(p => { p.box.checked = false; }) }, 'Ninguno')),
-    h('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(210px, 1fr))', gap: '4px 12px' } }, privBoxes.map(p => p.el)),
+    // En dos grupos: la reunión de entre semana y las asignaciones mecánicas
+    [['Vida y Ministerio', privBoxes.filter(p => !MEC_PRIVS.includes(p.k))], ['Mecánicas y fin de semana', privBoxes.filter(p => MEC_PRIVS.includes(p.k))]].map(([t, list]) =>
+      h('div', { class: 'priv-group' }, h('span', { class: 'priv-title' }, t),
+        h('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '4px 12px' } }, list.map(p => p.el)))),
     prof && !Array.isArray(prof.puede) ? h('span', { class: 'small-text' }, 'Todavía no se marcan: mientras tanto sale en las sugerencias para todo.') : null);
   const err = h('div', { class: 'err' });
   // Directorio (solo los ancianos): contactos/{perfil}, aparte para que los demás no lo vean
@@ -1467,7 +1497,7 @@ function openProfileDialog(prof, opts = {}) {
   const emI = h('input', { type: 'text', value: c0.emergencia || '', placeholder: 'Nombre y parentesco' });
   const emTelI = h('input', { type: 'tel', value: c0.emergenciaTel || '', placeholder: '+52 …' });
   const quick = (href, text) => h('a', { href, target: href.startsWith('http') ? '_blank' : null, rel: 'noopener', class: 'btn small', style: { textDecoration: 'none' } }, text);
-  const contactField = showContact ? h('div', { class: 'field' }, h('span', null, 'Directorio · solo lo ven los ancianos'),
+  const contactField = showContact ? h('div', { class: 'field' }, h('span', { class: 'small-text' }, 'Solo lo ven los ancianos.'),
     h('div', { class: 'row', style: { gap: '12px', alignItems: 'flex-start' } },
       h('label', { class: 'field', style: { flex: 1, minWidth: '180px' } }, 'Teléfono', telI),
       h('label', { class: 'field', style: { flex: 2, minWidth: '220px' } }, 'Dirección', dirI)),
@@ -1490,7 +1520,7 @@ function openProfileDialog(prof, opts = {}) {
   }
   // Sin Programa VyM (secretario, función Anciano): solo ve los datos y cambia el directorio
   if (ro) {
-    [nameI, ageI, sexM, sexF, notesI, tipoSel, famSel, nomSel, sitSel, bautI, ...privBoxes.map(p => p.box)].forEach(el => { el.disabled = true; });
+    [nameI, ageI, sexM, sexF, notesI, tipoSel, famSel, nomSel, sitSel, bautI, capI, ...privBoxes.map(p => p.box)].forEach(el => { el.disabled = true; });
     privField.querySelectorAll('button').forEach(b => b.remove());
   }
 
@@ -1500,6 +1530,7 @@ function openProfileDialog(prof, opts = {}) {
   const dlg = h('dialog', { class: 'dlg' },
     h('div', { class: 'dlg-body' },
       h('h3', null, ro ? prof.name : prof ? 'Editar hermano' : 'Nuevo hermano'),
+      h('div', { class: 'dlg-sec' }, 'Datos'),
       h('label', { class: 'field' }, 'Nombre', nameI),
       h('div', { class: 'row', style: { gap: '24px', alignItems: 'flex-start' } },
         h('label', { class: 'field' }, 'Edad', ageI),
@@ -1507,16 +1538,22 @@ function openProfileDialog(prof, opts = {}) {
           h('div', { class: 'radios' }, h('label', null, sexM, 'Masculino'), h('label', null, sexF, 'Femenino')))),
       h('div', { class: 'row', style: { gap: '20px', alignItems: 'flex-end' } },
         h('label', { class: 'field' }, 'Informe mensual', tipoSel),
-        h('label', { class: 'field' }, 'Nombramiento', nomSel),
         h('label', { class: 'field' }, 'Situación', sitSel),
-        h('label', { class: 'row', style: { gap: '6px', color: 'var(--text)', fontSize: '14px', paddingBottom: '8px' } }, bautI, 'Bautizado'),
-        h('label', { class: 'row', style: { gap: '6px', color: 'var(--text)', fontSize: '14px', paddingBottom: '8px' }, title: 'Sale en la lista al asignar tarjetas de territorio' }, capI, 'Capitán de territorios')),
-      h('div', { class: 'row', style: { gap: '20px', alignItems: 'flex-end' } },
+        h('label', { class: 'row', style: { gap: '6px', color: 'var(--text)', fontSize: '14px', paddingBottom: '8px' } }, bautI, 'Bautizado')),
+      state.families.length || nube.grupos.length ? h('div', { class: 'row', style: { gap: '20px', alignItems: 'flex-end' } },
         state.families.length ? h('label', { class: 'field' }, 'Familia', famSel) : null,
-        nube.grupos.length ? h('label', { class: 'field' }, 'Grupo', groupSel) : null),
-      privField,
+        nube.grupos.length ? h('label', { class: 'field' }, 'Grupo', groupSel) : null) : null,
       h('label', { class: 'field' }, 'Notas', notesI),
+      h('div', { class: 'dlg-sec' }, 'Nombramiento y responsabilidades'),
+      h('div', { class: 'row', style: { gap: '20px', alignItems: 'flex-end' } },
+        h('label', { class: 'field' }, 'Nombramiento', nomSel),
+        h('label', { class: 'row', style: { gap: '6px', color: 'var(--text)', fontSize: '14px', paddingBottom: '8px' } }, capI, 'Capitán de territorios')),
+      h('span', { class: 'small-text' }, 'El capitán sale en la lista al asignar tarjetas de territorio; si tiene cuenta, también registra lo trabajado en la app.'),
+      h('div', { class: 'dlg-sec' }, 'Asignaciones que puede recibir'),
+      privField,
+      contactField ? h('div', { class: 'dlg-sec' }, 'Directorio') : null,
       contactField,
+      accountField ? h('div', { class: 'dlg-sec' }, 'Cuenta en la app') : null,
       accountField,
       err,
       prof ? h('div', { class: 'hist' },
@@ -1599,7 +1636,7 @@ async function memberUpdate(m, data, msg) {
 function memberFunctions(m) {
   const self = m.id === nube.user.uid, perms = m.permisos || [];
   const admins = nube.miembros.filter(x => x.estado === 'activo' && x.admin).length;
-  const boxes = PERMS.map(([key, label, desc]) => {
+  const boxes = PERMS.filter(([key]) => key !== 'capitan').map(([key, label, desc]) => {
     const box = h('input', { type: 'checkbox', checked: m.admin || perms.includes(key), disabled: m.admin ? true : null, onchange: e => {
       const on = e.target.checked;
       memberUpdate(m, { permisos: on ? F.arrayUnion(key) : F.arrayRemove(key) }, on ? `${m.nombre}: ahora tiene “${label}”` : `${m.nombre}: ya no tiene “${label}”`);
@@ -1948,7 +1985,7 @@ function publicWeeks() {
       rows: p.rows.map(r => ({ kind: r.kind, section: r.section || '', t: displayTitle(r), min: r.kind === 'part' ? +r.min || null : null,
         time: fmtTime(t[r.id]), detail: r.kind === 'part' ? r.detail || '' : '', labels: slotLabels(r),
         a: isAssignable(r) ? person(r.a) : null, b: isAssignable(r) && r.helper ? person(r.b) : null,
-        ...(auxOn() && isAssignable(r) && hasAux(r) ? { xa: person(r.xa), xb: r.helper && r.kind !== 'chair' ? person(r.xb) : null,
+        ...(auxOn(p) && isAssignable(r) && hasAux(r) ? { xa: person(r.xa), xb: r.helper && r.kind !== 'chair' ? person(r.xb) : null,
           labels: { ...slotLabels(r), xa: auxLabel(r, 'xa') + (r.kind === 'chair' ? '' : ' (sala aux.)'), xb: (slotLabels(r).b || '') + ' (sala aux.)' } } : {}) })),
       // Asignaciones mecánicas (sin repetir presidente y lector de entre semana, que ya están arriba)
       mec: MEETINGS.map(([mtg, label]) => ({ label, day: mecDate(p, mtg),
@@ -2108,7 +2145,7 @@ function publicWeekCard(w, open) {
   for (const r of w.rows) {
     if (r.section && r.section !== sec) {
       sec = r.section; const s = sectionOf(sec);
-      body.push(h('div', { class: 'psec', style: { '--sec': s ? s.css : 'var(--sec-none)' } }, h('i'), sec));
+      body.push(h('div', { class: 'psec ' + secClass(sec), style: { '--sec': s ? s.css : 'var(--sec-none)' } }, h('i'), sec));
     }
     const names = ['a', 'b', 'xa', 'xb'].filter(k => r[k]).map(k =>
       h('span', { class: r[k].id === pid ? 'yo' : null }, (r.labels[k] ? r.labels[k] + ': ' : '') + r[k].n));
@@ -2122,7 +2159,7 @@ function publicWeekCard(w, open) {
       h('span', { class: 'ptime small-text' }, m.label.split(' ')[0]),
       h('div', { class: 'vnames', style: { marginTop: 0 } }, m.items.map(it => h('span', { class: it.id === pid ? 'yo' : null }, `${it.l}: ${it.n}`)))));
   }
-  return h('details', { class: 'card vweek', open: open || null },
+  return h('details', { class: 'card vweek ' + themeClass(), open: open || null },
     h('summary', null, h('strong', null, w.title), h('span', { class: 'muted small-text' }, ' · ' + w.meeting)),
     h('div', { class: 'vbody' }, body));
 }
@@ -4469,7 +4506,7 @@ function renderEditor(p) {
       if (row.section && row.section !== sec) {
         sec = row.section;
         const so = sectionOf(sec);
-        nodes.push(h('div', { class: 'psec', style: { '--sec': so ? so.css : 'var(--sec-none)' } }, h('i'), sec));
+        nodes.push(h('div', { class: 'psec ' + secClass(sec), style: { '--sec': so ? so.css : 'var(--sec-none)' } }, h('i'), sec));
       }
       const so = sectionOf(row.section);
       const lb = slotLabels(row);
@@ -4478,7 +4515,7 @@ function renderEditor(p) {
         h('div', { class: 'pdot', style: { background: so ? so.css : 'var(--sec-none)' } }),
         h('div', { class: 'ptitle' }, editing ? titleEditor(row) : titleNode(row)),
         h('div', { class: 'pslots' },
-          isAssignable(row) ? (auxOn() && hasAux(row)
+          isAssignable(row) ? (auxOn(p) && hasAux(row)
             // Con sala auxiliar: principal y auxiliar, cada una con su etiqueta
             ? row.kind === 'chair' ? [slotNode(row, 'a', lb.a, lb.soft), slotNode(row, 'xa', 'Consejero sala aux.', false)]
               : [h('div', { class: 'room' }, 'Auditorio principal'), slotNode(row, 'a', lb.a, lb.soft), row.helper ? slotNode(row, 'b', lb.b, lb.soft) : null,
@@ -4494,10 +4531,10 @@ function renderEditor(p) {
           } }, '×')) : h('div')));
     });
     body.replaceChildren(...nodes);
-    heading.textContent = fmtMeeting(p) + (p.reading ? '  |  ' + p.reading.toUpperCase() : '');
+    heading.textContent = weekHeading(p, !['elegante', 'clasico'].includes(s.pdfDesign));
     metaBox.replaceChildren(editing ? h('div', { class: 'meta' },
       h('label', { class: 'field' }, 'Semana', h('input', { type: 'text', value: p.title, oninput: e => { p.title = e.target.value; save(); } })),
-      h('label', { class: 'field' }, 'Lectura de la Biblia', h('input', { type: 'text', value: p.reading || '', oninput: e => { p.reading = e.target.value; save(); heading.textContent = fmtMeeting(p) + (p.reading ? '  |  ' + p.reading.toUpperCase() : ''); } })),
+      h('label', { class: 'field' }, 'Lectura de la Biblia', h('input', { type: 'text', value: p.reading || '', oninput: e => { p.reading = e.target.value; save(); heading.textContent = weekHeading(p, !['elegante', 'clasico'].includes(s.pdfDesign)); } })),
       h('label', { class: 'field' }, 'Fecha de la reunión', h('input', { type: 'date', value: meetingDate(p), onchange: e => {
         if (!e.target.value) return;
         p.date = mondayOf(e.target.value); p.week = weekKey(p.date); rebuild();
@@ -4510,6 +4547,12 @@ function renderEditor(p) {
         suggesting = !suggesting; skips.clear(); build();
         if (suggesting) suggestBar.scrollIntoView({ behavior: 'smooth', block: 'center' });
       } }, '✨ Sugerencias'),
+      editing ? null : h('button', { class: 'btn' + (auxOn(p) ? ' primary' : ''), title: 'Activa o quita la sala auxiliar en esta semana', onclick: () => {
+        if (auxOn(p) && slotsOf(p).some(x => isAux(x.slot) && x.pid) && !confirm('¿Quitar la sala auxiliar de esta semana? También se quitan los hermanos asignados en ella.')) return;
+        p.aux = !auxOn(p);
+        if (!p.aux) for (const r of p.rows) { delete r.xa; delete r.xb; }
+        rebuild();
+      } }, auxOn(p) ? '🏫 Sala auxiliar: sí' : '🏫 Sala auxiliar: no'),
       h('button', { class: 'btn', onclick: () => { editing = !editing; build(); } }, editing ? '✓ Listo' : '✎ Editar programa'),
       h('button', { class: 'btn', onclick: () => openSlipsDialog(p) }, '📄 Hojas de asignación'),
       h('button', { class: 'btn primary', onclick: () => downloadPDF([p]) }, '⬇ Programa PDF')].filter(Boolean));
@@ -4557,7 +4600,7 @@ function renderEditor(p) {
     chips, nomBox, privToggle, suggFilter, suggList,
     h('button', { class: 'btn small', style: { marginTop: '10px', width: '100%' }, onclick: () => openProfileDialog(null, { onSave: () => updateSide() }) }, '+ Nuevo hermano'));
   const grid = h('div', { class: 'editor' },
-      h('div', { class: 'card sheet' },
+      h('div', { class: 'card sheet ' + themeClass() },
         h('div', { class: 'ph1' }, h('span', null, s.pdfTitle || 'Programa'), s.congregation ? h('span', null, s.congregation) : null),
         heading,
         metaBox,
@@ -4731,10 +4774,12 @@ function renderSettings() {
     h('input', { type: 'number', min, max, value: s[key], style: { width: '120px' }, onchange: e => { s[key] = Math.min(max, Math.max(min, Math.round(+e.target.value) || min)); e.target.value = s[key]; save(); } }));
   const text = (label, key, ph) => h('label', { class: 'field' }, label,
     h('input', { type: 'text', value: s[key], placeholder: ph, oninput: e => { s[key] = e.target.value; save(); } }));
-  const pick = (label, key, opts) => h('label', { class: 'field' }, label,
-    h('select', { onchange: e => { s[key] = e.target.value; save(); } }, opts.map(([v, t]) => h('option', { value: v, selected: (s[key] || opts[0][0]) === v ? true : null }, t))));
-  const check = (label, key) => h('label', { class: 'row', style: { gap: '8px', color: 'var(--text)', fontSize: '14px', alignItems: 'flex-start' } },
-    h('input', { type: 'checkbox', checked: s[key] !== false, onchange: e => { s[key] = e.target.checked; save(); } }), label);
+  const pick = (label, key, opts, after) => h('label', { class: 'field' }, label,
+    h('select', { onchange: e => { s[key] = e.target.value; save(); if (after) after(); } }, opts.map(([v, t]) => h('option', { value: v, selected: (s[key] || opts[0][0]) === v ? true : null }, t))));
+  // Botones que se prenden y apagan (lo prendido se pone)
+  const toggles = (label, items) => h('div', { class: 'field' }, label,
+    h('div', { class: 'chips nom-chips' }, items.map(([t, key]) => h('button', { type: 'button', class: s[key] !== false ? 'on' : '',
+      onclick: e => { s[key] = s[key] === false; e.target.classList.toggle('on', s[key] !== false); save(); } }, t))));
   const fileIn = h('input', { type: 'file', accept: '.json,application/json', style: { display: 'none' }, onchange: e => {
     const f = e.target.files[0]; if (!f) return;
     f.text().then(txt => {
@@ -4761,10 +4806,10 @@ function renderSettings() {
     meetingTimesCard(),
     h('h2', { class: 'group' }, 'Programa y PDF'),
     h('div', { class: 'card settings' },
-      pick('Diseño del programa', 'pdfDesign', PDF_DESIGNS),
-      pick('Fecha de cada semana en el programa', 'pdfDate', DATE_HEADERS),
-      check('Poner los minutos de cada parte en el programa, por ejemplo “(4 mins.)”', 'pdfShowMin'),
-      check('Usamos sala auxiliar: las partes de estudiantes llevan también quién la presenta en la sala auxiliar, y la semana su consejero', 'auxRoom'),
+      h('div', { class: 'row', style: { gap: '16px', alignItems: 'flex-end' } },
+        pick('Diseño del programa', 'pdfDesign', PDF_DESIGNS, () => render()),
+        pick('Fecha de cada semana', 'pdfDate', DATE_HEADERS)),
+      toggles('El programa lleva', [['Minutos de cada parte', 'pdfShowMin']]),
       text('Título del programa', 'pdfTitle', 'Programa para la reunión de entre semana'),
       FB_CONFIG ? null : text('Nombre de la congregación', 'congregation', 'Opcional'),
       h('div', { class: 'row', style: { gap: '20px', alignItems: 'flex-end' } },
@@ -4775,11 +4820,8 @@ function renderSettings() {
       h('label', { class: 'field' }, 'Nota al estudiante (en las hojas de asignación)',
         h('textarea', { rows: 3, oninput: e => { s.slipNote = e.target.value; save(); } }, s.slipNote)),
       text('Texto al pie de las hojas de asignación', 'slipFooter', 'Opcional (por ejemplo, el código del formulario)'),
-      h('strong', { class: 'small-text' }, 'En las hojas de asignación'),
-      pick('Fecha', 'slipDate', DATE_FORMATS),
-      check('Poner los minutos, por ejemplo “(4 mins.)”', 'slipShowMin'),
-      check('Poner el texto de la parte, por ejemplo “Jer 50:24-10”', 'slipShowText'),
-      check('Poner la lección, por ejemplo “(th lección 11)”', 'slipShowLesson'),
+      toggles('Las hojas de asignación llevan', [['Minutos', 'slipShowMin'], ['Texto de la parte', 'slipShowText'], ['Lección', 'slipShowLesson']]),
+      pick('Fecha en las hojas de asignación', 'slipDate', DATE_FORMATS),
       num('No repetir a nadie en … días (antes o después de su asignación)', 'restDays', 7, 120),
       num('Asignaciones mecánicas: no repetir a nadie en … días', 'mecRestDays', 0, 120),
       num('Marcar como “hace mucho” después de … días', 'staleDays', 1, 3650),
