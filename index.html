@@ -1896,7 +1896,8 @@ function enterCongregation() {
   screen(h('div', { class: 'card auth-card' }, h('p', { class: 'muted' }, 'Cargando la congregación…')));
   const waiting = new Set();
   // fn devuelve true si cambió algo que hay que volver a dibujar
-  const listen = (name, r, fn) => {
+  // soft: si esa parte falla (por ejemplo, sin permiso), la app sigue sin ella en vez de mostrar el error
+  const listen = (name, r, fn, soft) => {
     waiting.add(name);
     nube.unsubDatos.push(F.onSnapshot(r, s => {
       const changed = fn(s);
@@ -1905,7 +1906,10 @@ function enterCongregation() {
         if (!busy()) render();
         else { nube.redraw = true; if (!['cong', 'anuncios', 'contactos'].includes(name)) toast('Otro hermano hizo cambios; se verán al terminar de editar.'); }
       }
-    }, e => screenMessage(errMsg(e))));
+    }, e => {
+      if (!soft) return screenMessage(errMsg(e));
+      if (waiting.delete(name) && !waiting.size) firstLoad();
+    }));
   };
   listen('cong', congRef(), s => { nube.congData = s.data() || {}; return true; });
   if (isAdmin()) listen('miembros', F.collection(F.db, 'congregaciones', nube.cong, 'miembros'), s => {
@@ -1927,9 +1931,9 @@ function enterCongregation() {
     return false;
   });
   // Calendario y arreglos: los ven todos
-  listen('eventos', F.collection(F.db, 'congregaciones', nube.cong, 'eventos'), s => { nube.eventos = s.docs.map(d => ({ id: d.id, ...d.data() })); return ['calendario', 'list', 'inicio', 'edit'].includes(view.name); });
-  listen('salidas', F.collection(F.db, 'congregaciones', nube.cong, 'salidas'), s => { nube.salidas = s.docs.map(d => ({ id: d.id, ...d.data() })); return view.name === 'arreglos'; });
-  listen('limpieza', congRef('arreglos', 'limpieza'), s => { nube.limpieza = s.exists() ? s.data() : null; return ['arreglos', 'inicio'].includes(view.name); });
+  listen('eventos', F.collection(F.db, 'congregaciones', nube.cong, 'eventos'), s => { nube.eventos = s.docs.map(d => ({ id: d.id, ...d.data() })); return ['calendario', 'list', 'inicio', 'edit'].includes(view.name); }, true);
+  listen('salidas', F.collection(F.db, 'congregaciones', nube.cong, 'salidas'), s => { nube.salidas = s.docs.map(d => ({ id: d.id, ...d.data() })); return view.name === 'arreglos'; }, true);
+  listen('limpieza', congRef('arreglos', 'limpieza'), s => { nube.limpieza = s.exists() ? s.data() : null; return ['arreglos', 'inicio'].includes(view.name); }, true);
   if (isElder()) listen('asistencia', F.collection(F.db, 'congregaciones', nube.cong, 'asistencia'), s => {
     nube.asistencia = new Map(s.docs.map(d => [d.id, d.data()]));
     return view.name === 'asistencia';
