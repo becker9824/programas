@@ -234,8 +234,15 @@
   .tag-fam { font-size: 11px; padding: 1px 6px; border-radius: 999px; background: var(--surface-2); color: var(--accent); margin-left: 4px; }
 
   /* ---- Congregación: acceso, publicadores, usuarios e informes ---- */
-  nav { overflow-x: auto; max-width: 100%; scrollbar-width: none; }
-  nav::-webkit-scrollbar { display: none; }
+  header nav { flex: 1 1 0; min-width: 0; overflow: hidden; justify-content: flex-end; }
+  .brand { flex: none; max-width: 45%; }
+  .nav-menu { position: fixed; z-index: 30; background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+    box-shadow: 0 10px 30px rgba(0,0,0,.18); padding: 6px; display: grid; min-width: 210px; }
+  .nav-menu button { display: flex; align-items: center; gap: 10px; background: none; border: 0; color: var(--text); padding: 9px 12px;
+    border-radius: 8px; font: inherit; font-size: 14px; cursor: pointer; text-align: left; }
+  .nav-menu button:hover { background: var(--surface-2); }
+  .nav-menu button.active { background: var(--accent-2); color: var(--accent); font-weight: 600; }
+  .nav-menu .nbadge { margin-left: auto; }
   /* En el celular el menú va abajo, con íconos, como en las apps */
   .tabbar { display: none; }
   @media (max-width: 760px) {
@@ -363,7 +370,7 @@
 
 <script>
 const KEY = 'programas-app-v2';
-const APP_VERSION = '1.23.0'; // igual que "version" en package.json (publicar.ps1 lo revisa)
+const APP_VERSION = '1.23.1'; // igual que "version" en package.json (publicar.ps1 lo revisa)
 // Con FIREBASE_CONFIG (firebase-config.js) los datos viven en la nube de la congregación;
 // sin él, la app funciona como antes, solo en esta PC. "?emu" usa el Firebase local de prueba.
 const EMU = /[?&]emu\b/.test(location.search);
@@ -4620,8 +4627,7 @@ const isActiveView = v => view.name === v || (view.name === 'edit' && v === 'lis
 const badge = n => n ? h('span', { class: 'nbadge' }, n) : null;
 // Arriba en la PC; en el celular, barra de abajo con las principales y "Más" para el resto
 function buildNav(items = navItems()) {
-  document.querySelector('header nav').replaceChildren(...items.map(([v, t, n]) =>
-    h('button', { class: isActiveView(v) ? 'active' : null, onclick: () => go({ name: v }) }, icon(v, 18), t, badge(n))));
+  fitTopNav(items);
   const order = ['inicio', 'list', 'report', 'anuncios', 'territorios'];
   const main = items.length <= 5 ? items : order.map(v => items.find(i => i[0] === v)).filter(Boolean).slice(0, 4);
   const rest = items.filter(i => !main.includes(i));
@@ -4633,6 +4639,43 @@ function buildNav(items = navItems()) {
   const name = FB_CONFIG && nube.listo ? congName() : '';
   setBrand(name || 'Programas');
 }
+// Arriba (PC y tableta) van las secciones que caben; las demás, en "Más ▾". Se vuelve a acomodar
+// al cambiar el tamaño de la ventana.
+function fitTopNav(items) {
+  const nav = document.querySelector('header nav');
+  const btn = ([v, t, n]) => h('button', { class: isActiveView(v) ? 'active' : null, onclick: () => go({ name: v }) }, icon(v, 18), t, badge(n));
+  const shown = items.map(i => ({ i, el: btn(i) }));
+  nav.replaceChildren(...shown.map(x => x.el));
+  // Lo que miden los botones juntos (con la barra a la derecha, lo que no cabe se sale por la izquierda)
+  const tooWide = () => [...nav.children].reduce((a, c) => a + c.offsetWidth + 2, 0) > nav.clientWidth;
+  if (!nav.offsetParent || !tooWide()) return; // cabe todo (o es el celular)
+  const hidden = [];
+  const more = h('button', { class: 'nav-more' });
+  nav.append(more);
+  const paint = () => more.replaceChildren(...[icon('mas', 18), 'Más', badge(hidden.reduce((a, x) => a + (x.i[2] || 0), 0)), ' ▾'].filter(Boolean));
+  paint();
+  // Se quitan desde el final, pero la sección abierta se queda a la vista
+  while (tooWide() && shown.length > 1) {
+    let k = shown.length - 1;
+    if (isActiveView(shown[k].i[0]) && k > 0) k--;
+    const [x] = shown.splice(k, 1);
+    x.el.remove(); hidden.unshift(x); paint();
+  }
+  more.classList.toggle('active', hidden.some(x => isActiveView(x.i[0])));
+  more.onclick = e => { e.stopPropagation(); openNavMenu(more, hidden.map(x => x.i)); };
+}
+function openNavMenu(anchor, items) {
+  const old = document.querySelector('.nav-menu');
+  if (old) return old.remove();
+  const box = anchor.getBoundingClientRect();
+  const menu = h('div', { class: 'nav-menu', style: { top: (box.bottom + 6) + 'px', right: Math.max(8, innerWidth - box.right) + 'px' } },
+    items.map(([v, t, n]) => h('button', { class: isActiveView(v) ? 'active' : null, onclick: () => { menu.remove(); go({ name: v }); } }, icon(v, 18), t, badge(n))));
+  document.body.append(menu);
+  setTimeout(() => document.addEventListener('click', function off(e) { if (!menu.contains(e.target)) { menu.remove(); document.removeEventListener('click', off); } }));
+}
+let navResize = null;
+addEventListener('resize', () => { clearTimeout(navResize); navResize = setTimeout(() => { if (document.querySelector('header nav').childElementCount) buildNav(); }, 150); });
+
 function openMoreSheet(items) {
   const close = () => { dlg.close(); dlg.remove(); };
   const dlg = h('dialog', { class: 'sheet', onclick: e => { if (e.target === dlg) close(); } },
