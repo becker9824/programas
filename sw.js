@@ -1,6 +1,6 @@
 // Guarda la app en el celular para que abra rápido y funcione sin internet.
 // Sube el número de versión cada vez que cambies index.html.
-const CACHE = 'programas-v32';
+const CACHE = 'programas-v33';
 const FILES = [
   './',
   './index.html',
@@ -12,6 +12,9 @@ const FILES = [
   './vendor/leaflet/leaflet.js',
   './vendor/leaflet/leaflet.css',
   './vendor/qrcode.js',
+  './vendor/firebase/firebase-app.js',
+  './vendor/firebase/firebase-auth.js',
+  './vendor/firebase/firebase-firestore.js',
 ];
 
 self.addEventListener('install', e => {
@@ -20,7 +23,8 @@ self.addEventListener('install', e => {
 
 self.addEventListener('activate', e => {
   e.waitUntil(caches.keys()
-    .then(keys => Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k))))
+    // Los mapas guardados para usar sin internet (mapas-…) se quedan
+    .then(keys => Promise.all(keys.filter(k => k !== CACHE && !k.startsWith('mapas-')).map(k => caches.delete(k))))
     .then(() => self.clients.claim()));
 });
 

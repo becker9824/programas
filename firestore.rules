@@ -188,6 +188,35 @@ service cloud.firestore {
         allow create, update: if isElder(c) && mes.matches('[0-9]{4}-[0-9]{2}')
           && only(['entre', 'fin']) && request.resource.data.entre is map && request.resource.data.fin is map;
       }
+      // Calendario, salidas de predicación y limpieza: los ven todos; los cambian los ancianos.
+      match /eventos/{id} {
+        allow read: if isActive(c);
+        allow delete: if isElder(c);
+        allow create, update: if isElder(c) && only(['tipo', 'titulo', 'desde', 'hasta', 'notas'])
+          && request.resource.data.tipo in ['visita', 'asamblea', 'conmemoracion', 'campana', 'otro']
+          && request.resource.data.desde is string && request.resource.data.desde.matches('[0-9]{4}-[0-9]{2}-[0-9]{2}')
+          && request.resource.data.hasta is string && request.resource.data.hasta.matches('[0-9]{4}-[0-9]{2}-[0-9]{2}')
+          && request.resource.data.titulo is string && request.resource.data.titulo.size() <= 120
+          && request.resource.data.notas is string && request.resource.data.notas.size() <= 1000;
+      }
+      match /salidas/{id} {
+        allow read: if isActive(c);
+        allow delete: if isElder(c);
+        allow create, update: if isElder(c) && only(['dia', 'hora', 'lugar', 'dirige', 'grupo', 'notas'])
+          && request.resource.data.dia is int && request.resource.data.dia >= 0 && request.resource.data.dia <= 6
+          && request.resource.data.lugar is string && request.resource.data.lugar.size() > 0 && request.resource.data.lugar.size() <= 120;
+      }
+      match /arreglos/{doc} {
+        allow read: if isActive(c);
+        allow write: if isElder(c) && doc == 'limpieza' && only(['semanas']) && request.resource.data.semanas is map;
+      }
+      // Historial de cambios: cada quien agrega lo suyo; lo leen los ancianos; nadie lo cambia.
+      match /historial/{id} {
+        allow read: if isElder(c);
+        allow create: if isActive(c) && only(['fecha', 'por', 'porNombre', 'cambios'])
+          && request.resource.data.por == me() && request.resource.data.cambios is list && request.resource.data.cambios.size() <= 30;
+        allow delete: if isAdmin(c);
+      }
       match /familias/{id} {
         allow read, write: if can(c, 'programa');
       }

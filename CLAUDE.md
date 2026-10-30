@@ -113,6 +113,13 @@ App para organizar las asignaciones de la reunión semanal Vida y Ministerio Cri
 - S-21: en Informes (secretario) "Tarjetas del publicador" (`publisherCardsPDF`, 2 por hoja) con los informes del año. Ficha del hermano: `nacimiento` (calcula la edad), `bautismoFecha`, `esperanza` ('' otras ovejas | 'ungido').
 - Si el programa instalado está abierto, `npx electron . --prueba` se cierra sin decir nada (una sola copia): usar `--user-data-dir="$TEMP/programas-prueba"`.
 
+## Calendario, arreglos, guía, historial y sin internet (1.24.0)
+- Calendario (vista `calendario`, todos la ven; ancianos editan): `eventos/{id}` = { tipo (`EVENT_TYPES`: visita, asamblea, conmemoracion, campana, otro), titulo, desde, hasta, notas }. Salen como etiquetas en Semanas, en el editor (con "Ajustar el programa para la visita" → `adjustForVisit` cambia el estudio bíblico por el discurso del superintendente) y en el programa publicado.
+- Arreglos (vista `arreglos`): `salidas/{id}` = { dia 0–6 (lunes…domingo), hora, lugar, dirige, grupo, notas }; `arreglos/limpieza` = { semanas: { lunes: 'Grupo 2' } } (nombre del grupo, porque los publicadores no leen `grupos`); "Repartir entre los grupos" rota. PDF `arrangementsPDF`.
+- Guía (`openGuide`, pasos según funciones en `guideSteps`): sale sola la primera vez (localStorage `guia-{uid}`); botón en Ajustes → cuenta.
+- Historial (vista `historial`, ancianos): `historial/{id}` = { fecha, por, porNombre, cambios[] }; `logChange(texto)` junta 1.5 s; `uploadState` describe los cambios de semanas/hermanos/familias/ajustes (`describeChanges`: quién quedó y quién estaba); también territorios, cuentas, grupos, asistencia, eventos, salidas y limpieza.
+- Sin internet: Firebase va en `vendor/firebase` (copiado de node_modules/firebase con la importación cambiada a `./firebase-app.js`; al subir de versión de firebase, volver a copiarlo así) y Firestore usa `persistentLocalCache`. Barra `.offline-bar`. El service worker ya no borra la caché `mapas-…`.
+
 ## Pendiente / ideas
 - Pulir detalles mínimos del diseño que el usuario vaya encontrando.
 - Ajustar Cuentas si el usuario manda sus hojas S-26/S-30.

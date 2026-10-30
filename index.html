@@ -144,6 +144,33 @@
   .stats.att td:first-child { text-align: left; }
   .stats.att tr.muted td { color: var(--muted); }
   .att-total td { border-top: 2px solid var(--border); }
+  .ev-chip { display: inline-block; font-size: 11.5px; font-weight: 600; padding: 2px 8px; border-radius: 999px; color: var(--ev); background: color-mix(in srgb, var(--ev) 14%, transparent); }
+  .ev-dot { width: 10px; height: 10px; border-radius: 50%; flex: none; margin-top: 6px; }
+  .ev-banner { display: grid; gap: 6px; padding: 10px 12px; border-radius: 10px; background: var(--surface-2); margin: 8px 0; }
+  .cal-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; }
+  .cal-head { font-size: 12px; font-weight: 700; color: var(--muted); text-align: center; padding: 4px 0; }
+  .cal-day { min-height: 78px; border: 1px solid var(--border); border-radius: 8px; padding: 4px; display: flex; flex-direction: column; gap: 3px; cursor: pointer; min-width: 0; }
+  .cal-day.out { opacity: .4; }
+  .cal-day.today { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+  .cal-num { font-size: 12px; font-weight: 600; color: var(--muted); }
+  .cal-ev { font-size: 11px; padding: 1px 5px; border-radius: 5px; color: #fff; background: var(--ev); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  @media (max-width: 600px) { .cal-day { min-height: 54px; } .cal-ev { font-size: 0; height: 6px; padding: 0; } }
+  .out-day { padding: 6px 0; border-bottom: 1px solid var(--border); }
+  .out-day:last-child { border-bottom: 0; }
+  .out-dayname { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--accent); padding-top: 6px; }
+  .out-time { min-width: 76px; font-variant-numeric: tabular-nums; }
+  .hist-day { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--accent); padding: 14px 0 4px; }
+  .hist-item { display: grid; grid-template-columns: 70px minmax(0, 1fr); gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 14px; }
+  .hist-item ul { margin: 4px 0 0; padding-left: 18px; color: var(--muted); }
+  .hist-time { color: var(--muted); font-variant-numeric: tabular-nums; }
+  dialog.dlg.guide { width: min(440px, calc(100vw - 32px)); }
+  .guide-body { text-align: center; display: grid; gap: 8px; justify-items: center; padding: 8px 4px 0; }
+  .guide-body p { margin: 0; color: var(--muted); line-height: 1.5; }
+  .guide-icon { width: 64px; height: 64px; border-radius: 18px; display: grid; place-items: center; background: var(--accent-2); color: var(--accent); }
+  .guide-dots { display: flex; gap: 6px; justify-content: center; padding-top: 6px; }
+  .guide-dots span { width: 7px; height: 7px; border-radius: 50%; background: var(--border); }
+  .guide-dots span.on { background: var(--accent); width: 18px; border-radius: 4px; }
+  .offline-bar { background: #b45309; color: #fff; text-align: center; font-size: 13px; padding: 6px 12px; position: sticky; top: 0; z-index: 4; }
   .room { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin-top: 2px; }
   .dlg-sec { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--accent); border-top: 1px solid var(--border); padding-top: 12px; margin-top: 4px; }
   .priv-group { display: grid; gap: 4px; margin-top: 4px; }
@@ -370,7 +397,7 @@
 
 <script>
 const KEY = 'programas-app-v2';
-const APP_VERSION = '1.23.1'; // igual que "version" en package.json (publicar.ps1 lo revisa)
+const APP_VERSION = '1.24.0'; // igual que "version" en package.json (publicar.ps1 lo revisa)
 // Con FIREBASE_CONFIG (firebase-config.js) los datos viven en la nube de la congregación;
 // sin él, la app funciona como antes, solo en esta PC. "?emu" usa el Firebase local de prueba.
 const EMU = /[?&]emu\b/.test(location.search);
@@ -475,6 +502,9 @@ const ICONS = {
   people: '<circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/>',
   families: '<circle cx="9" cy="8" r="3.5"/><circle cx="17" cy="9" r="2.5"/><path d="M2 20c0-3.5 3-5.5 7-5.5s7 2 7 5.5"/><path d="M16 14.5c3 0 6 1.5 6 4.5"/>',
   users: '<path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/><path d="M9 12l2 2 4-4"/>',
+  calendario: '<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/><path d="M8 14h2M14 14h2M8 17h2"/>',
+  arreglos: '<path d="M9 4h6a1 1 0 011 1v2H8V5a1 1 0 011-1z"/><rect x="5" y="6" width="14" height="15" rx="2"/><path d="M9 12l2 2 4-4"/>',
+  historial: '<path d="M3 12a9 9 0 103-6.7"/><path d="M3 4v4h4"/><path d="M12 8v4l3 2"/>',
   finsemana: '<rect x="4" y="9" width="16" height="11" rx="1"/><path d="M2 10l10-6 10 6"/><path d="M10 20v-5h4v5"/>',
   asistencia: '<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>',
   grupos: '<circle cx="12" cy="7" r="3"/><circle cx="5" cy="10" r="2.2"/><circle cx="19" cy="10" r="2.2"/><path d="M7 20c0-3 2.2-5 5-5s5 2 5 5"/><path d="M1.5 19c0-2.4 1.5-4 3.5-4M22.5 19c0-2.4-1.5-4-3.5-4"/>',
@@ -1650,7 +1680,7 @@ function openProfileDialog(prof, opts = {}) {
 // Desde la 1.3 los datos van por partes (perfiles/, familias/, semanas/, config/ajustes) en vez de
 // un solo privado/estado (que tenía límite de 1 MB); privado/estado queda como copia de la 1.2.
 const nube = { user: null, cong: null, congData: null, me: null, acceso: '', listo: false, publico: null,
-  miembros: [], anuncios: [], contactos: new Map(), cuentas: [], cuentasIni: null, territorios: [], grupos: [], capitanes: [], capitanesHermanos: [], trabajos: [], asistencia: new Map(), sent: {}, ultimoPub: '', registro: null, inicial: null, unsubMe: null, unsubDatos: [] };
+  miembros: [], anuncios: [], contactos: new Map(), cuentas: [], cuentasIni: null, territorios: [], grupos: [], capitanes: [], capitanesHermanos: [], trabajos: [], asistencia: new Map(), eventos: [], salidas: [], limpieza: null, sent: {}, ultimoPub: '', registro: null, inicial: null, unsubMe: null, unsubDatos: [] };
 // Funciones que el coordinador puede dar a cada cuenta (el coordinador tiene todas)
 const PERMS = [
   ['programa', 'Programa VyM', 'Semanas, hermanos, familias y ajustes de la reunión'],
@@ -1663,7 +1693,7 @@ const PERMS = [
 // Cuentas de la congregación (solo el coordinador las ve: nube.miembros)
 const memberOfProfile = pid => nube.miembros.find(m => m.estado === 'activo' && m.perfil === pid);
 async function memberUpdate(m, data, msg) {
-  try { await F.updateDoc(congRef('miembros', m.id), data); if (msg) toast(msg); }
+  try { await F.updateDoc(congRef('miembros', m.id), data); if (msg) { toast(msg); logChange(msg); } }
   catch (e) { toast(errMsg(e)); render(); }
 }
 // Casillas de Coordinador y de cada función; cada cambio se guarda al momento y solo toca esa función
@@ -1715,10 +1745,13 @@ const COLLS = [['perfiles', 'profiles', ['programa', 'secretario', 'ancianos']],
 let F = null; // funciones de Firebase, cargadas al abrir
 
 async function loadFirebase() {
-  const base = 'https://www.gstatic.com/firebasejs/13.1.0/firebase-';
+  // Firebase va dentro de la app (vendor/firebase, copiado de node_modules/firebase): abre aunque no haya internet
+  const base = new URL('vendor/firebase/firebase-', location.href).href;
   const [app, auth, fs] = await Promise.all(['app', 'auth', 'firestore'].map(m => import(base + m + '.js')));
   const a = app.initializeApp(FB_CONFIG);
-  F = { ...auth, ...fs, auth: auth.getAuth(a), db: fs.initializeFirestore(a, { ignoreUndefinedProperties: true }) };
+  // Los datos se guardan también en el equipo: sin internet se ven y los cambios se suben al volver la conexión
+  F = { ...auth, ...fs, auth: auth.getAuth(a), db: fs.initializeFirestore(a, { ignoreUndefinedProperties: true,
+    localCache: fs.persistentLocalCache({ tabManager: fs.persistentMultipleTabManager() }) }) };
   if (EMU) {
     auth.connectAuthEmulator(F.auth, 'http://127.0.0.1:9099', { disableWarnings: true });
     fs.connectFirestoreEmulator(F.db, '127.0.0.1', 8080);
@@ -1823,7 +1856,7 @@ async function startCloud() {
   F.onAuthStateChanged(F.auth, async user => {
     stopListening(); if (nube.unsubMe) { nube.unsubMe(); nube.unsubMe = null; }
     Object.assign(nube, { user, cong: null, congData: null, me: null, acceso: '', listo: false, miembros: [], anuncios: [],
-      contactos: new Map(), cuentas: [], cuentasIni: null, territorios: [], grupos: [], capitanes: [], capitanesHermanos: [], trabajos: [], asistencia: new Map(), publico: null, sent: {}, ultimoPub: '' });
+      contactos: new Map(), cuentas: [], cuentasIni: null, territorios: [], grupos: [], capitanes: [], capitanesHermanos: [], trabajos: [], asistencia: new Map(), eventos: [], salidas: [], limpieza: null, publico: null, sent: {}, ultimoPub: '' });
     if (!user) return renderAuth();
     screen(h('div', { class: 'card auth-card' }, h('p', { class: 'muted' }, 'Cargando tu cuenta…')));
     let joinErr = '';
@@ -1893,6 +1926,10 @@ function enterCongregation() {
     if (view.name === 'territorios' && terr && terr.refresh) terr.refresh();
     return false;
   });
+  // Calendario y arreglos: los ven todos
+  listen('eventos', F.collection(F.db, 'congregaciones', nube.cong, 'eventos'), s => { nube.eventos = s.docs.map(d => ({ id: d.id, ...d.data() })); return ['calendario', 'list', 'inicio', 'edit'].includes(view.name); });
+  listen('salidas', F.collection(F.db, 'congregaciones', nube.cong, 'salidas'), s => { nube.salidas = s.docs.map(d => ({ id: d.id, ...d.data() })); return view.name === 'arreglos'; });
+  listen('limpieza', congRef('arreglos', 'limpieza'), s => { nube.limpieza = s.exists() ? s.data() : null; return ['arreglos', 'inicio'].includes(view.name); });
   if (isElder()) listen('asistencia', F.collection(F.db, 'congregaciones', nube.cong, 'asistencia'), s => {
     nube.asistencia = new Map(s.docs.map(d => [d.id, d.data()]));
     return view.name === 'asistencia';
@@ -1984,6 +2021,7 @@ async function firstLoad() {
   nube.listo = true;
   render();
   if (can('programa')) startJw();
+  setTimeout(maybeShowGuide, 700);
 }
 
 function saveCloud() {
@@ -1999,15 +2037,24 @@ async function uploadState() {
   for (const [col, key] of COLLS) {
     const sent = nube.sent[col] || (nube.sent[col] = new Map()), now = new Map(state[key].map(o => [o.id, o]));
     for (const [id, o] of now) {
-      const json = stable(o);
-      if (sent.get(id) !== json) { sent.set(id, json); writes.push(F.setDoc(congRef(col, id), clean(o))); }
+      const json = stable(o), prev = sent.get(id);
+      if (prev !== json) {
+        if (nube.listo) describeChanges(col, prev ? JSON.parse(prev) : null, o).forEach(logChange);
+        sent.set(id, json); writes.push(F.setDoc(congRef(col, id), clean(o)));
+      }
     }
-    for (const id of [...sent.keys()]) if (!now.has(id)) { sent.delete(id); writes.push(F.deleteDoc(congRef(col, id))); }
+    for (const id of [...sent.keys()]) if (!now.has(id)) {
+      if (nube.listo) describeChanges(col, JSON.parse(sent.get(id)), null).forEach(logChange);
+      sent.delete(id); writes.push(F.deleteDoc(congRef(col, id)));
+    }
   }
   const caps = state.profiles.filter(p => p.capitan).map(p => ({ perfil: p.id, nombre: p.name })).sort(byNombre), capsJson = JSON.stringify(caps);
   if (nube.sent.capitanes !== capsJson) { nube.sent.capitanes = capsJson; writes.push(F.setDoc(congRef('capitanes', 'hermanos'), { lista: caps })); }
   const config = clean(configOf(state)), json = stable(config);
-  if (nube.sent.config !== json) { nube.sent.config = json; writes.push(F.setDoc(congRef('config', 'ajustes'), config)); }
+  if (nube.sent.config !== json) {
+    if (nube.listo && nube.sent.config && stable(JSON.parse(nube.sent.config).settings) !== stable(config.settings)) logChange('Cambió los ajustes del programa');
+    nube.sent.config = json; writes.push(F.setDoc(congRef('config', 'ajustes'), config));
+  }
   try { await Promise.all(writes); await publishProgram(); }
   catch (e) { toast('No se pudo guardar en la nube: ' + errMsg(e)); }
 }
@@ -2207,7 +2254,8 @@ function publicWeekCard(w, open) {
       h('div', { class: 'vnames', style: { marginTop: 0 } }, m.items.map(it => h('span', { class: it.id === pid ? 'yo' : null }, `${it.l}: ${it.n}`)))));
   }
   return h('details', { class: 'card vweek ' + themeClass(), open: open || null },
-    h('summary', null, h('strong', null, w.title), h('span', { class: 'muted small-text' }, ' · ' + w.meeting)),
+    h('summary', null, h('strong', null, w.title), h('span', { class: 'muted small-text' }, ' · ' + w.meeting),
+      FB_CONFIG ? eventsBetween(w.date, addDays(w.date, 6)).map(e => [' ', eventChip(e)]) : null),
     h('div', { class: 'vbody' }, body));
 }
 
@@ -2231,7 +2279,7 @@ function accountCard() {
   return h('div', { class: 'card settings', style: { marginBottom: '14px' } },
     h('div', null, h('strong', null, nube.me.nombre),
       h('div', { class: 'muted small-text' }, nube.user.email + (roles.length ? ' · ' + roles.join(', ') : ''))),
-    h('div', { class: 'row' }, signOutBtn()));
+    h('div', { class: 'row' }, h('button', { class: 'btn', onclick: openGuide }, 'Ver la guía de la app'), signOutBtn()));
 }
 
 // Solo el coordinador: nombre de la congregación y quién usa la app
@@ -3076,7 +3124,7 @@ function openAssignDialog(t) {
 }
 
 async function updateTerritory(t, patch, msg) {
-  try { await F.updateDoc(congRef('territorios', t.id), patch); if (msg) toast(msg); return true; }
+  try { await F.updateDoc(congRef('territorios', t.id), patch); if (msg) { toast(msg); logChange(msg); } return true; }
   catch (e) { toast(errMsg(e)); return false; }
 }
 // Quitar la asignación sin completarlo: queda en el historial; se guarda hasta dónde se llegó
@@ -3137,6 +3185,7 @@ function openWorkDialog(t, resumen) {
           // Quedó una parte: la nota también explica hasta dónde llegaron
           else if (nota && avanceOf(t) && !avanceOf(t).n) await F.updateDoc(congRef('territorios', t.id), { avance: JSON.stringify({ ...avanceOf(t), n: nota.slice(0, 200) }) });
           toast(completo ? `Tarjeta ${t.numero} completada` : 'Salida registrada');
+          logChange(`Registró una salida en la tarjeta ${t.numero}: ${completo ? 'completada' : 'quedó una parte'}${nota ? ' (' + nota + ')' : ''}`);
           close();
         } catch (ex) { err.textContent = errMsg(ex); e.target.disabled = false; }
       } }, 'Guardar')));
@@ -3789,7 +3838,7 @@ function openGroupDialog(g) {
             return Object.keys(patch).length ? F.updateDoc(congRef('grupos', x.id), patch) : null;
           }));
           await F.setDoc(congRef('grupos', id), data);
-          toast('Grupo guardado'); close();
+          toast('Grupo guardado'); logChange(`Guardó el grupo ${nombre}`); close();
         } catch (ex) { err.textContent = errMsg(ex); e.target.disabled = false; }
       } }, 'Guardar')));
   document.body.append(dlg); dlg.showModal(); if (!g) nameI.focus();
@@ -4118,7 +4167,7 @@ function openAttendanceDialog(m) {
           out[kind][di.value] = Math.max(0, Math.round(+ni.value));
         }
         e.target.disabled = true;
-        try { await F.setDoc(congRef('asistencia', m), out); toast('Asistencia guardada'); close(); }
+        try { await F.setDoc(congRef('asistencia', m), out); toast('Asistencia guardada'); logChange(`Anotó la asistencia de ${fmtMonth(m).toLowerCase()}`); close(); }
         catch (ex) { err.textContent = errMsg(ex); e.target.disabled = false; }
       } }, 'Guardar')));
   document.body.append(dlg); dlg.showModal();
@@ -4289,6 +4338,336 @@ function openPublisherCardsDialog() {
       h('button', { class: 'btn', onclick: close }, 'Cancelar'),
       h('button', { class: 'btn primary', onclick: () => { publisherCardsPDF(+yearSel.value, who.value ? people.filter(p => p.id === who.value) : people); close(); } }, '⬇ Crear PDF')));
   document.body.append(dlg); dlg.showModal();
+}
+
+// ---------- calendario de la congregación ----------
+// eventos/{id} = { tipo, titulo, desde, hasta, notas }. Lo ven todos; lo cambian los ancianos.
+// Las semanas con un evento lo muestran en Semanas y en el programa; la visita del superintendente
+// de circuito ofrece ajustar el programa (su discurso en lugar del estudio bíblico).
+const EVENT_TYPES = {
+  visita: { label: 'Visita del superintendente de circuito', color: '#2f6fd6' },
+  asamblea: { label: 'Asamblea', color: '#7b2cbf' },
+  conmemoracion: { label: 'Conmemoración', color: '#b7791f' },
+  campana: { label: 'Campaña de predicación', color: '#1b9e4b' },
+  otro: { label: 'Otro', color: '#6b7280' },
+};
+const evTitle = e => e.titulo || (EVENT_TYPES[e.tipo] || EVENT_TYPES.otro).label;
+const evColor = e => (EVENT_TYPES[e.tipo] || EVENT_TYPES.otro).color;
+const eventsBetween = (from, to) => nube.eventos.filter(e => e.desde <= to && (e.hasta || e.desde) >= from).sort((a, b) => a.desde.localeCompare(b.desde));
+const weekEvents = p => FB_CONFIG ? eventsBetween(p.date, addDays(p.date, 6)) : [];
+const fmtRange = e => !e.hasta || e.hasta === e.desde ? fmtShort(e.desde) : `${fmtShort(e.desde)} – ${fmtShort(e.hasta)}`;
+const eventChip = e => h('span', { class: 'ev-chip', style: { '--ev': evColor(e) } }, evTitle(e));
+
+function openEventDialog(ev, day) {
+  const tipo = h('select', null, Object.entries(EVENT_TYPES).map(([k, v]) => h('option', { value: k, selected: (ev ? ev.tipo : 'visita') === k ? true : null }, v.label)));
+  const titulo = h('input', { type: 'text', maxlength: 120, value: ev ? ev.titulo || '' : '', placeholder: 'Opcional: por ejemplo “Asamblea regional”' });
+  const desde = h('input', { type: 'date', value: ev ? ev.desde : day || todayISO() }), hasta = h('input', { type: 'date', value: ev ? ev.hasta || ev.desde : day || todayISO() });
+  const notas = h('textarea', { rows: 3, maxlength: 1000, placeholder: 'Opcional: lugar, horario, indicaciones…' }, ev ? ev.notas || '' : '');
+  const err = h('div', { class: 'err' });
+  const close = () => { dlg.close(); dlg.remove(); };
+  const dlg = h('dialog', { class: 'dlg' },
+    h('div', { class: 'dlg-body' }, h('h3', null, ev ? 'Editar evento' : 'Nuevo evento'),
+      h('label', { class: 'field' }, 'Tipo', tipo), h('label', { class: 'field' }, 'Título', titulo),
+      h('div', { class: 'row', style: { gap: '16px' } }, h('label', { class: 'field' }, 'Desde', desde), h('label', { class: 'field' }, 'Hasta', hasta)),
+      h('label', { class: 'field' }, 'Notas', notas), err),
+    h('div', { class: 'dlg-foot' },
+      ev ? h('button', { class: 'btn danger', style: { marginRight: 'auto' }, onclick: async () => {
+        if (!confirm(`¿Borrar “${evTitle(ev)}”?`)) return;
+        try { await F.deleteDoc(congRef('eventos', ev.id)); logChange(`Borró el evento “${evTitle(ev)}” (${fmtRange(ev)})`); close(); } catch (e) { err.textContent = errMsg(e); }
+      } }, 'Borrar') : null,
+      h('button', { class: 'btn', onclick: close }, 'Cancelar'),
+      h('button', { class: 'btn primary', onclick: async e => {
+        if (!desde.value) return err.textContent = 'Elige la fecha.';
+        const data = { tipo: tipo.value, titulo: squash(titulo.value), desde: desde.value, hasta: hasta.value && hasta.value >= desde.value ? hasta.value : desde.value, notas: notas.value.trim() };
+        e.target.disabled = true;
+        try {
+          if (ev) await F.setDoc(congRef('eventos', ev.id), data); else await F.addDoc(F.collection(F.db, 'congregaciones', nube.cong, 'eventos'), data);
+          logChange(`${ev ? 'Cambió' : 'Agregó'} el evento “${evTitle(data)}” (${fmtRange(data)})`);
+          toast('Evento guardado'); close();
+        } catch (ex) { err.textContent = errMsg(ex); e.target.disabled = false; }
+      } }, 'Guardar')));
+  document.body.append(dlg); dlg.showModal();
+}
+
+let calMonth = null;
+function renderCalendar() {
+  const editor = isElder(), today = todayISO();
+  const month = calMonth || today.slice(0, 7);
+  const first = toDate(month + '-01'), start = addDays(month + '-01', -((first.getDay() + 6) % 7));
+  const days = Array.from({ length: 42 }, (_, i) => addDays(start, i));
+  const shift = n => { const d = toDate(month + '-01'); d.setMonth(d.getMonth() + n); calMonth = isoOf(d).slice(0, 7); render(); };
+  const grid = h('div', { class: 'cal-grid' },
+    ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'].map(d => h('div', { class: 'cal-head' }, d)),
+    days.map(d => {
+      const evs = eventsBetween(d, d);
+      return h('div', { class: 'cal-day' + (d.slice(0, 7) !== month ? ' out' : '') + (d === today ? ' today' : ''),
+        onclick: editor ? () => openEventDialog(null, d) : null },
+        h('span', { class: 'cal-num' }, String(+d.slice(8))),
+        evs.map(e => h('span', { class: 'cal-ev', style: { '--ev': evColor(e) }, title: evTitle(e),
+          onclick: x => { x.stopPropagation(); if (editor) openEventDialog(e); } }, evTitle(e))));
+    }));
+  const upcoming = nube.eventos.filter(e => (e.hasta || e.desde) >= today).sort((a, b) => a.desde.localeCompare(b.desde)).slice(0, 12);
+  return h('div', null,
+    h('div', { class: 'row spread', style: { alignItems: 'flex-start' } },
+      h('div', null, h('h1', null, 'Calendario'),
+        h('p', { class: 'sub', style: { margin: 0 } }, 'Visitas del superintendente de circuito, asambleas, la Conmemoración y campañas.' + (editor ? ' Toca un día para agregar un evento.' : ''))),
+      editor ? h('button', { class: 'btn primary', onclick: () => openEventDialog(null) }, '+ Nuevo evento') : null),
+    h('div', { class: 'card', style: { padding: '14px', marginTop: '12px' } },
+      h('div', { class: 'row spread', style: { marginBottom: '10px' } },
+        h('button', { class: 'btn small', onclick: () => shift(-1) }, '‹ Anterior'),
+        h('strong', { style: { fontSize: '17px' } }, fmtMonth(month)),
+        h('button', { class: 'btn small', onclick: () => shift(1) }, 'Siguiente ›')),
+      grid),
+    h('h2', { class: 'group' }, 'Próximos'),
+    h('div', { class: 'card', style: { padding: '4px 14px' } },
+      upcoming.length ? upcoming.map(e => h('div', { class: 'urow', style: { cursor: editor ? 'pointer' : null }, onclick: editor ? () => openEventDialog(e) : null },
+        h('span', { class: 'ev-dot', style: { background: evColor(e) } }),
+        h('div', { class: 'info' }, h('strong', null, evTitle(e)), h('div', { class: 'small-text muted' }, fmtRange(e) + (e.notas ? ' · ' + e.notas : '')))))
+        : h('div', { class: 'empty' }, 'No hay eventos próximos.')));
+}
+
+// Visita del superintendente: su discurso de 30 minutos en lugar del estudio bíblico de la congregación
+function adjustForVisit(p) {
+  const r = p.rows.find(x => x.helper === 'Lector' || /estudio b[ií]blico de la congregaci/i.test(x.title || ''));
+  if (!r) return toast('No encontré el estudio bíblico de esta semana.');
+  if (!confirm('Se cambia el estudio bíblico de la congregación por el discurso de servicio del superintendente de circuito (30 min). ¿Continuar?')) return false;
+  Object.assign(r, { title: 'Discurso de servicio del superintendente de circuito', min: 30, helper: null, a: null, b: null, detail: '', men: true });
+  save(); logChange(`Ajustó la semana ${p.title} para la visita del superintendente de circuito`);
+  return true;
+}
+
+// ---------- arreglos: salidas de predicación y limpieza del Salón ----------
+// salidas/{id} = { dia (0 lunes … 6 domingo), hora 'HH:MM', lugar, dirige, grupo, notas }: cada semana igual.
+// arreglos/limpieza = { semanas: { lunes 'AAAA-MM-DD': 'Grupo 2' } }. Los ven todos; los cambian los ancianos.
+const fmtHora = hhmm => hhmm ? fmtClock(hhmm) : '';
+function openOutingDialog(o) {
+  const dia = h('select', null, WEEKDAYS.map((d, i) => h('option', { value: i, selected: (o ? o.dia : 5) === i ? true : null }, d)));
+  const hora = h('input', { type: 'time', value: o ? o.hora : '09:30' });
+  const lugar = h('input', { type: 'text', maxlength: 120, value: o ? o.lugar : '', placeholder: 'Ej.: Salón del Reino, casa de la familia Pérez' });
+  const dirige = h('input', { type: 'text', maxlength: 100, list: 'profiles-list', value: o ? o.dirige : '', placeholder: 'Quién la dirige' });
+  const grupo = h('input', { type: 'text', maxlength: 60, value: o ? o.grupo || '' : '', placeholder: 'Opcional: Grupo 1, todos…', list: 'grupos-list' });
+  const notas = h('input', { type: 'text', maxlength: 300, value: o ? o.notas || '' : '', placeholder: 'Opcional: territorio, tipo de predicación…' });
+  const err = h('div', { class: 'err' });
+  const close = () => { dlg.close(); dlg.remove(); };
+  const dlg = h('dialog', { class: 'dlg' },
+    h('div', { class: 'dlg-body' }, h('h3', null, o ? 'Editar salida' : 'Nueva salida de predicación'),
+      h('datalist', { id: 'grupos-list' }, nube.grupos.map(g => h('option', { value: g.nombre }))),
+      h('div', { class: 'row', style: { gap: '16px' } }, h('label', { class: 'field' }, 'Día', dia), h('label', { class: 'field' }, 'Hora', hora)),
+      h('label', { class: 'field' }, 'Lugar', lugar), h('label', { class: 'field' }, 'Dirige', dirige),
+      h('label', { class: 'field' }, 'Grupo', grupo), h('label', { class: 'field' }, 'Notas', notas), err),
+    h('div', { class: 'dlg-foot' },
+      o ? h('button', { class: 'btn danger', style: { marginRight: 'auto' }, onclick: async () => {
+        if (!confirm('¿Borrar esta salida?')) return;
+        try { await F.deleteDoc(congRef('salidas', o.id)); logChange(`Borró la salida del ${WEEKDAYS[o.dia].toLowerCase()} en ${o.lugar}`); close(); } catch (e) { err.textContent = errMsg(e); }
+      } }, 'Borrar') : null,
+      h('button', { class: 'btn', onclick: close }, 'Cancelar'),
+      h('button', { class: 'btn primary', onclick: async e => {
+        const data = { dia: +dia.value, hora: hora.value || '', lugar: squash(lugar.value), dirige: squash(dirige.value), grupo: squash(grupo.value), notas: squash(notas.value) };
+        if (!data.lugar) return err.textContent = 'Escribe el lugar.';
+        e.target.disabled = true;
+        try {
+          if (o) await F.setDoc(congRef('salidas', o.id), data); else await F.addDoc(F.collection(F.db, 'congregaciones', nube.cong, 'salidas'), data);
+          logChange(`${o ? 'Cambió' : 'Agregó'} la salida del ${WEEKDAYS[data.dia].toLowerCase()} ${fmtHora(data.hora)} en ${data.lugar}`);
+          toast('Salida guardada'); close();
+        } catch (ex) { err.textContent = errMsg(ex); e.target.disabled = false; }
+      } }, 'Guardar')));
+  refreshDatalist();
+  document.body.append(dlg); dlg.showModal();
+}
+
+// Limpieza: las próximas semanas y qué grupo limpia cada una
+const cleaningOf = monday => ((nube.limpieza && nube.limpieza.semanas) || {})[monday] || '';
+async function setCleaning(changes, msg) {
+  try { await F.setDoc(congRef('arreglos', 'limpieza'), { semanas: { ...((nube.limpieza && nube.limpieza.semanas) || {}), ...changes } }); if (msg) { logChange(msg); toast(msg); } }
+  catch (e) { toast(errMsg(e)); }
+}
+
+function renderArrangements() {
+  const editor = isElder(), thisMonday = mondayOf(todayISO());
+  const outings = [...nube.salidas].sort((a, b) => a.dia - b.dia || (a.hora || '').localeCompare(b.hora || ''));
+  const weeks = Array.from({ length: 12 }, (_, i) => addDays(thisMonday, i * 7));
+  const groups = [...nube.grupos].sort(byGrupo).map(g => g.nombre);
+  const weekLabelOf = m => `${fmtShort(m)} – ${fmtShort(addDays(m, 6))}`;
+  // Llena las semanas vacías siguiendo el orden de los grupos, después del último que limpió
+  const rotate = () => {
+    if (!groups.length) return toast('Primero arma los grupos en la sección Grupos.');
+    const changes = {};
+    let last = groups.indexOf([...weeks].reverse().map(cleaningOf).find(Boolean) || '');
+    for (const m of weeks) if (!cleaningOf(m)) { last = (last + 1) % groups.length; changes[m] = groups[last]; }
+    if (!Object.keys(changes).length) return toast('Todas las semanas ya tienen grupo.');
+    setCleaning(changes, `Repartió la limpieza de ${Object.keys(changes).length} semanas entre los grupos`);
+  };
+  const byDay = WEEKDAYS.map((d, i) => [d, outings.filter(o => o.dia === i)]).filter(([, l]) => l.length);
+  return h('div', null,
+    h('div', { class: 'row spread', style: { alignItems: 'flex-start' } },
+      h('div', null, h('h1', null, 'Arreglos'),
+        h('p', { class: 'sub', style: { margin: 0 } }, 'Las salidas de predicación de cada semana y el grupo que limpia el Salón del Reino.')),
+      h('button', { class: 'btn', onclick: () => arrangementsPDF(outings, weeks) }, '⬇ PDF')),
+    h('div', { class: 'row spread', style: { margin: '18px 0 8px' } },
+      h('h2', { class: 'group', style: { margin: 0 } }, 'Salidas de predicación'),
+      editor ? h('button', { class: 'btn small primary', onclick: () => openOutingDialog(null) }, '+ Nueva salida') : null),
+    h('div', { class: 'card', style: { padding: '4px 14px' } },
+      byDay.length ? byDay.map(([d, list]) => h('div', { class: 'out-day' },
+        h('div', { class: 'out-dayname' }, d),
+        list.map(o => h('div', { class: 'urow', style: { cursor: editor ? 'pointer' : null }, onclick: editor ? () => openOutingDialog(o) : null },
+          h('strong', { class: 'out-time' }, fmtHora(o.hora)),
+          h('div', { class: 'info' }, h('strong', null, o.lugar), h('div', { class: 'small-text muted' },
+            [o.dirige ? 'Dirige: ' + o.dirige : '', o.grupo, o.notas].filter(Boolean).join(' · ')))))))
+        : h('div', { class: 'empty' }, editor ? 'Todavía no hay salidas. Toca “+ Nueva salida”.' : 'Todavía no hay salidas.')),
+    h('div', { class: 'row spread', style: { margin: '18px 0 8px' } },
+      h('h2', { class: 'group', style: { margin: 0 } }, 'Limpieza del Salón del Reino'),
+      editor ? h('button', { class: 'btn small', onclick: rotate }, 'Repartir entre los grupos') : null),
+    h('div', { class: 'card', style: { padding: '4px 14px' } },
+      weeks.map(m => h('div', { class: 'urow' },
+        h('div', { class: 'info' }, h('strong', null, weekLabelOf(m)), m === thisMonday ? h('span', { class: 'progress', style: { marginLeft: '8px' } }, 'Esta semana') : null),
+        editor ? h('input', { type: 'text', list: 'grupos-list2', value: cleaningOf(m), placeholder: 'Grupo…', style: { width: '180px' },
+          onchange: e => setCleaning({ [m]: squash(e.target.value) }, `Limpieza de la semana del ${fmtShort(m)}: ${squash(e.target.value) || 'sin grupo'}`) })
+          : h('span', null, cleaningOf(m) || '—'))),
+      h('datalist', { id: 'grupos-list2' }, groups.map(g => h('option', { value: g })))));
+}
+
+function arrangementsPDF(outings, weeks) {
+  const J = window.jspdf && window.jspdf.jsPDF;
+  if (!J) return toast('Se necesita internet para crear el PDF.');
+  const s = state.settings, doc = new J({ unit: 'pt', format: s.paper === 'a4' ? 'a4' : 'letter' });
+  const W = doc.internal.pageSize.getWidth(), M = 40;
+  let y = 46;
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(16); doc.setTextColor(0); doc.text('Arreglos para la predicación y la limpieza', M, y);
+  doc.setFontSize(10); doc.setTextColor(90); doc.text((congName() || s.congregation || '').toUpperCase(), W - M, y, { align: 'right' });
+  doc.setDrawColor(110); doc.setLineWidth(2); doc.line(M, y + 8, W - M, y + 8);
+  y += 34;
+  const head = (t, cols) => {
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(12); doc.setTextColor(0); doc.text(t, M, y); y += 10;
+    doc.setFillColor(238); doc.rect(M, y, W - 2 * M, 18, 'F'); doc.setFontSize(9); doc.setTextColor(40);
+    cols.forEach(([c, x]) => doc.text(c, M + x, y + 12)); y += 30;
+  };
+  head('Salidas de predicación', [['Día', 4], ['Hora', 90], ['Lugar', 150], ['Dirige', 330], ['Grupo / notas', 440]]);
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(10); doc.setTextColor(20);
+  for (const o of outings) {
+    const lugar = doc.splitTextToSize(o.lugar, 170), extra = doc.splitTextToSize([o.grupo, o.notas].filter(Boolean).join(' · '), W - 2 * M - 444);
+    doc.text(WEEKDAYS[o.dia], M + 4, y); doc.text(fmtHora(o.hora), M + 90, y); doc.text(lugar, M + 150, y); doc.text(o.dirige || '', M + 330, y); doc.text(extra, M + 440, y);
+    y += Math.max(lugar.length, extra.length, 1) * 13 + 6;
+    doc.setDrawColor(220); doc.setLineWidth(0.5); doc.line(M, y - 12, W - M, y - 12);
+  }
+  if (!outings.length) { doc.setTextColor(120); doc.text('Sin salidas registradas.', M + 4, y); y += 18; }
+  y += 18;
+  head('Limpieza del Salón del Reino', [['Semana', 4], ['Grupo', 220]]);
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(10); doc.setTextColor(20);
+  for (const m of weeks) {
+    doc.text(`${fmtShort(m)} – ${fmtShort(addDays(m, 6))}`, M + 4, y); doc.text(cleaningOf(m) || '—', M + 220, y);
+    y += 19; doc.setDrawColor(220); doc.line(M, y - 13, W - M, y - 13);
+  }
+  savePDF(doc, 'Arreglos de predicación y limpieza');
+}
+
+// ---------- guía de primeros pasos ----------
+// Sale sola la primera vez que alguien entra (por cuenta y equipo) y se puede ver de nuevo en Ajustes.
+// Los pasos dependen de las funciones de cada quien.
+function guideSteps() {
+  const steps = [{ icon: 'inicio', title: `Bienvenido${nube.me && nube.me.nombre ? ', ' + nube.me.nombre.split(' ')[0] : ''}`,
+    text: 'Aquí está todo lo de la congregación: el programa de las reuniones, tus asignaciones, anuncios y más. Esta guía te muestra lo principal en un minuto.' }];
+  if (isAdmin()) steps.push({ icon: 'people', title: 'Coordinador: invita a los hermanos',
+    text: 'En Hermanos está el código de la congregación: compártelo para que cada quien cree su cuenta. Tú las apruebas, las unes con su nombre y eliges qué funciones tiene cada uno.' });
+  if (can('programa')) steps.push(
+    { icon: 'list', title: 'Programa de Vida y Ministerio', text: 'En Semanas, las guías de jw.org se bajan solas. Toca un espacio y elige de la lista de recomendados, o usa “Sugerencias” para llenar toda la semana. Si hay sala auxiliar, actívala en la semana.' },
+    { icon: 'mecanicas', title: 'Mecánicas y fin de semana', text: 'En Mecánicas van micrófonos, acomodadores y audio; en Fin de semana, el discurso público, el orador y el lector de La Atalaya. “Avisar por WhatsApp” manda a cada quien su asignación.' });
+  if (can('secretario')) steps.push({ icon: 'report', title: 'Informes y registros', text: 'En Informes ves quién falta, capturas informes y sacas las tarjetas S-21. En Asistencia anotas cuántos asistieron a cada reunión (S-88).' });
+  if (can('territorios')) steps.push({ icon: 'territorios', title: 'Territorios', text: 'Dibuja cada tarjeta en el mapa, asígnala a un capitán y revisa lo que se trabajó. Cuando se completan todas, empieza otra vuelta sola.' });
+  else if (can('capitan')) steps.push({ icon: 'territorios', title: 'Capitán de territorios', text: 'En Territorios salen “Mis tarjetas”. Al llegar, toca “Empezar salida con GPS”: graba lo que recorren y al terminar lo registra. También puedes marcar casas y hasta dónde llegaron.' });
+  if (isElder()) steps.push({ icon: 'calendario', title: 'Calendario y arreglos', text: 'En Calendario van la visita del superintendente de circuito, asambleas y la Conmemoración. En Arreglos, las salidas de predicación y la limpieza del Salón. En Historial ves quién cambió qué.' });
+  steps.push({ icon: 'report', title: 'Tu parte', text: 'En Inicio ves tu próxima asignación. ' + (reportsByMembers() ? 'Cada mes mandas tu informe desde Informe. ' : '') + 'Si se va el internet, la app sigue funcionando y guarda los cambios para subirlos después.' });
+  return steps;
+}
+function openGuide() {
+  const steps = guideSteps();
+  let i = 0;
+  const body = h('div', { class: 'guide-body' }), dots = h('div', { class: 'guide-dots' }), foot = h('div', { class: 'dlg-foot' });
+  const close = () => { try { localStorage.setItem('guia-' + (nube.user ? nube.user.uid : 'local'), '1'); } catch (e) {} dlg.close(); dlg.remove(); };
+  const paint = () => {
+    const st = steps[i];
+    body.replaceChildren(h('div', { class: 'guide-icon' }, icon(st.icon, 34)), h('h3', null, st.title), h('p', null, st.text));
+    dots.replaceChildren(...steps.map((_, k) => h('span', { class: k === i ? 'on' : '' })));
+    foot.replaceChildren(...[
+      h('button', { class: 'btn', style: { marginRight: 'auto' }, onclick: close }, 'Saltar'),
+      i ? h('button', { class: 'btn', onclick: () => { i--; paint(); } }, 'Anterior') : null,
+      i < steps.length - 1 ? h('button', { class: 'btn primary', onclick: () => { i++; paint(); } }, 'Siguiente') : h('button', { class: 'btn primary', onclick: close }, 'Empezar')].filter(Boolean));
+  };
+  const dlg = h('dialog', { class: 'dlg guide' }, h('div', { class: 'dlg-body' }, body, dots), foot);
+  dlg.addEventListener('cancel', close);
+  paint();
+  document.body.append(dlg); dlg.showModal();
+}
+function maybeShowGuide() {
+  let seen = true;
+  try { seen = !!localStorage.getItem('guia-' + (nube.user ? nube.user.uid : 'local')); } catch (e) {}
+  if (!seen && !document.querySelector('dialog[open]')) openGuide();
+}
+
+// ---------- historial de cambios ----------
+// historial/{id} = { fecha, por, porNombre, cambios: [texto] }. Lo escribe cada quien al guardar; lo ven los ancianos.
+let pendingLog = [], logTimer = null;
+function logChange(text) {
+  if (!FB_CONFIG || !nube.cong || !nube.listo || !text) return;
+  pendingLog.push(String(text).slice(0, 300));
+  clearTimeout(logTimer);
+  logTimer = setTimeout(flushLog, 1500); // junta los cambios que se hacen seguidos
+}
+function flushLog() {
+  if (!pendingLog.length || !nube.cong) return;
+  const cambios = pendingLog.splice(0, 30);
+  F.addDoc(F.collection(F.db, 'congregaciones', nube.cong, 'historial'),
+    { fecha: F.serverTimestamp(), por: nube.user.uid, porNombre: (nube.me && nube.me.nombre) || '', cambios }).catch(() => {});
+  if (pendingLog.length) flushLog();
+}
+// Qué cambió en los datos del programa entre lo que había y lo que se sube (para el historial)
+function describeChanges(col, before, after) {
+  const nm = id => (profById(id) || {}).name || (id ? '(hermano borrado)' : '');
+  if (col === 'perfiles') return !before ? [`Agregó al hermano ${after.name}`] : !after ? [`Quitó al hermano ${before.name}`] : [`Cambió los datos de ${after.name}`];
+  if (col === 'familias') return !before ? [`Agregó la familia ${after.name}`] : !after ? [`Quitó la familia ${before.name}`] : [`Cambió la familia ${after.name}`];
+  if (col !== 'semanas') return [];
+  if (!before) return [`Agregó la semana ${after.title}`];
+  if (!after) return [`Quitó la semana ${before.title}`];
+  const out = [], rowsB = new Map(before.rows.map(r => [r.id, r]));
+  for (const r of after.rows) {
+    const b = rowsB.get(r.id) || {};
+    for (const k of ['a', 'b', 'xa', 'xb']) if ((b[k] || null) !== (r[k] || null))
+      out.push(`${after.title} · ${roleLabel(r, k)}: ${r[k] ? nm(r[k]) : 'sin asignar'}${b[k] ? ` (antes ${nm(b[k])})` : ''}`);
+  }
+  for (const [mtg, label] of MEETINGS) for (const m of MEC) {
+    const x = ((before.mec || {})[mtg] || {})[m.key] || null, y = ((after.mec || {})[mtg] || {})[m.key] || null;
+    if (x !== y && !mecLinked(after, mtg, m.key)) out.push(`${after.title} · ${m.label} (${label.toLowerCase()}): ${y ? nm(y) : 'sin asignar'}${x ? ` (antes ${nm(x)})` : ''}`);
+  }
+  const fb = before.fin || {}, fa = after.fin || {};
+  if ((fb.tema || '') !== (fa.tema || '') || (fb.orador || '') !== (fa.orador || '')) out.push(`${after.title} · Discurso público: ${fa.tema || '—'}, orador ${fa.orador || '—'}`);
+  return out.length ? out.slice(0, 12) : [`Editó la semana ${after.title}`];
+}
+
+let histFilter = '';
+function renderHistory() {
+  const box = h('div', { class: 'card', style: { padding: '4px 14px' } }, h('div', { class: 'empty' }, 'Cargando…'));
+  const search = h('input', { type: 'search', placeholder: 'Buscar: un nombre, una semana…', value: histFilter, style: { width: '100%', maxWidth: '380px' },
+    oninput: () => { histFilter = search.value; fill(); } });
+  let items = [];
+  function fill() {
+    const f = norm(histFilter);
+    const list = items.filter(x => !f || norm([x.porNombre, ...(x.cambios || [])].join(' ')).includes(f));
+    let day = '';
+    box.replaceChildren(...(list.length ? list.flatMap(x => {
+      const d = x.fecha && x.fecha.toDate ? x.fecha.toDate() : new Date();
+      const dk = isoOf(d), head = dk !== day ? (day = dk, h('div', { class: 'hist-day' }, capFirst(d.toLocaleDateString('es', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })))) : null;
+      return [head, h('div', { class: 'hist-item' },
+        h('span', { class: 'hist-time' }, d.toLocaleTimeString('es', { hour: 'numeric', minute: '2-digit' })),
+        h('div', null, h('strong', null, x.porNombre || 'Alguien'), h('ul', null, (x.cambios || []).map(c => h('li', null, c)))))];
+    }).filter(Boolean) : [h('div', { class: 'empty' }, items.length ? 'Nada coincide con la búsqueda.' : 'Todavía no hay cambios registrados.')]));
+  }
+  F.getDocs(F.query(F.collection(F.db, 'congregaciones', nube.cong, 'historial'), F.orderBy('fecha', 'desc'), F.limit(300)))
+    .then(s => { items = s.docs.map(d => d.data()); fill(); })
+    .catch(e => box.replaceChildren(h('div', { class: 'empty' }, errMsg(e))));
+  return h('div', null,
+    h('h1', null, 'Historial de cambios'),
+    h('p', { class: 'sub' }, 'Quién cambió qué y cuándo: asignaciones, hermanos, territorios, cuentas, calendario y más. Se ven los últimos 300 movimientos.'),
+    h('div', { style: { marginBottom: '12px' } }, search),
+    box);
 }
 
 // ---------- sección Mecánicas (función Programa VyM) ----------
@@ -4531,6 +4910,10 @@ function renderHome() {
     const bal = nube.cuentas.filter(m => m.fecha >= ini.fecha).reduce((a, m) => { const d = effect(m); return a + d.caja + d.banco; }, ini.caja + ini.banco);
     tiles.push(tile('cuentas', 'Cuentas', money(bal), 'Saldo total (efectivo y banco)', () => go({ name: 'cuentas' })));
   }
+  const nextEv = nube.eventos.filter(e => (e.hasta || e.desde) >= today).sort((a, b) => a.desde.localeCompare(b.desde))[0];
+  if (nextEv) tiles.push(tile('calendario', 'Próximo evento', evTitle(nextEv), fmtRange(nextEv), () => go({ name: 'calendario' })));
+  const cleaningGroup = cleaningOf(mondayOf(today));
+  if (cleaningGroup) tiles.push(tile('arreglos', 'Limpieza del Salón', cleaningGroup, 'Esta semana', () => go({ name: 'arreglos' })));
   if (nube.territorios.length) {
     const base = vueltaBase(), n = k => nube.territorios.filter(x => estadoDe(x, base) === k).length;
     const count = (k, word) => `${n(k)} ${word}${n(k) === 1 ? '' : 's'}`;
@@ -4614,10 +4997,10 @@ function navItems() {
   // Hermanos incluye el directorio: lo ven todos los ancianos (cualquier función)
   if (isElder()) items.push(['people', 'Hermanos', isAdmin() ? nube.miembros.filter(m => m.estado !== 'activo').length : 0]);
   if (can('programa')) items.push(['families', 'Familias']);
-  if (isElder()) items.push(['grupos', 'Grupos'], ['asistencia', 'Asistencia']);
+  if (isElder()) items.push(['grupos', 'Grupos'], ['asistencia', 'Asistencia'], ['historial', 'Historial']);
   if (can('secretario')) items.push(['report', 'Informes']);
   else if (reportsByMembers()) items.push(['report', 'Informe']);
-  items.push(['anuncios', 'Anuncios', unreadAnnouncements()]);
+  items.push(['anuncios', 'Anuncios', unreadAnnouncements()], ['calendario', 'Calendario'], ['arreglos', 'Arreglos']);
   if (can('cuentas')) items.push(['cuentas', 'Cuentas']);
   items.push(['territorios', 'Territorios']);
   items.push(['settings', 'Ajustes']);
@@ -4696,6 +5079,9 @@ function render() {
   if (view.name === 'report') return app.replaceChildren(renderReport());
   if (view.name === 'grupos') return app.replaceChildren(renderGroups());
   if (view.name === 'asistencia') return app.replaceChildren(renderAttendance());
+  if (view.name === 'calendario') return app.replaceChildren(renderCalendar());
+  if (view.name === 'arreglos') return app.replaceChildren(renderArrangements());
+  if (view.name === 'historial') return app.replaceChildren(renderHistory());
   if (view.name === 'finsemana') return app.replaceChildren(renderWeekend());
   if (view.name === 'anuncios') { app.replaceChildren(renderAnnouncements()); return buildNav(); }
   if (view.name === 'cuentas') return app.replaceChildren(renderAccounts());
@@ -4729,7 +5115,8 @@ function renderList() {
       } }),
       h('div', { class: 'info', onclick: () => go({ name: 'edit', id: p.id }) },
         h('div', { class: 't' }, p.title, p.date === thisMonday ? h('span', { class: 'progress', style: { marginLeft: '8px' } }, 'Esta semana') : null),
-        h('div', { class: 'd' }, [fmtMeeting(p), p.reading].filter(Boolean).join(' · '))),
+        h('div', { class: 'd' }, [fmtMeeting(p), p.reading].filter(Boolean).join(' · ')),
+        weekEvents(p).length ? h('div', { class: 'row', style: { gap: '4px', marginTop: '4px' } }, weekEvents(p).map(eventChip)) : null),
       h('span', { class: 'progress' + (filled === slots.length && slots.length ? ' done' : '') }, `${filled}/${slots.length} asignaciones`),
       h('div', { class: 'row' },
         h('button', { class: 'btn small', onclick: () => go({ name: 'edit', id: p.id }) }, 'Abrir'),
@@ -5157,6 +5544,9 @@ function renderEditor(p) {
       h('div', { class: 'card sheet ' + themeClass() },
         h('div', { class: 'ph1' }, h('span', null, s.pdfTitle || 'Programa'), s.congregation ? h('span', null, s.congregation) : null),
         heading,
+        weekEvents(p).length ? h('div', { class: 'ev-banner' }, weekEvents(p).map(e => h('div', { class: 'row spread' },
+          h('span', null, eventChip(e), ' ', h('span', { class: 'small-text muted' }, fmtRange(e) + (e.notas ? ' · ' + e.notas : ''))),
+          e.tipo === 'visita' ? h('button', { class: 'btn small', onclick: () => { if (adjustForVisit(p)) build(); } }, 'Ajustar el programa para la visita') : null))) : null,
         metaBox,
         suggestBar,
         body,
@@ -5474,6 +5864,11 @@ function startJw() {
   if (Date.now() - state.lastSync > 12 * 36e5 || !state.programs.some(p => p.date >= mondayOf(todayISO()))) syncGuides(false);
   else ensureSongTitles(state.programs);
 }
+// Sin internet: se puede seguir usando; los cambios se suben solos al volver la conexión
+const offlineBar = h('div', { class: 'offline-bar', hidden: navigator.onLine ? true : null }, 'Sin internet: puedes seguir usando la app. Los cambios se guardan y se suben solos al volver la conexión.');
+document.querySelector('header').after(offlineBar);
+addEventListener('online', () => { offlineBar.hidden = true; toast('Volvió la conexión'); });
+addEventListener('offline', () => { offlineBar.hidden = false; });
 if (/^#ver&/.test(location.hash)) renderSharedTerritory(); // QR de una tarjeta de territorio
 else if (FB_CONFIG) startCloud();
 else { render(); startJw(); }

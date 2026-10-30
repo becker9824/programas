@@ -235,6 +235,30 @@ test('asistencia: la anotan y la ven los ancianos, no los publicadores', async (
   await assertFails(setDoc(cdoc(db('pub'), 'asistencia', '2026-10'), a));
 });
 
+test('calendario, salidas, limpieza e historial', async () => {
+  const ev = { tipo: 'visita', titulo: '', desde: '2026-11-10', hasta: '2026-11-15', notas: '' };
+  await assertSucceeds(setDoc(cdoc(db('secre'), 'eventos', 'e1'), ev));
+  await assertSucceeds(getDoc(cdoc(db('pub'), 'eventos', 'e1')));
+  await assertFails(setDoc(cdoc(db('pub'), 'eventos', 'e2'), ev));
+  await assertFails(setDoc(cdoc(db('secre'), 'eventos', 'e2'), { ...ev, tipo: 'fiesta' }));
+  const sal = { dia: 5, hora: '09:30', lugar: 'Salón del Reino', dirige: 'Pub', grupo: '', notas: '' };
+  await assertSucceeds(setDoc(cdoc(db('prog'), 'salidas', 's1'), sal));
+  await assertSucceeds(getDoc(cdoc(db('pub'), 'salidas', 's1')));
+  await assertFails(setDoc(cdoc(db('pub'), 'salidas', 's2'), sal));
+  await assertFails(setDoc(cdoc(db('prog'), 'salidas', 's2'), { ...sal, dia: 9 }));
+  await assertSucceeds(setDoc(cdoc(db('secre'), 'arreglos', 'limpieza'), { semanas: { '2026-11-02': 'Grupo 1' } }));
+  await assertSucceeds(getDoc(cdoc(db('pub'), 'arreglos', 'limpieza')));
+  await assertFails(setDoc(cdoc(db('pub'), 'arreglos', 'limpieza'), { semanas: {} }));
+  await assertFails(setDoc(cdoc(db('secre'), 'arreglos', 'otro'), { semanas: {} }));
+  await assertSucceeds(setDoc(cdoc(db('pub'), 'historial', 'h1'), { fecha: 1, por: 'pub', porNombre: 'Pub', cambios: ['Algo'] }));
+  await assertFails(setDoc(cdoc(db('pub'), 'historial', 'h2'), { fecha: 1, por: 'otro', porNombre: 'X', cambios: [] }));
+  await assertFails(getDoc(cdoc(db('pub'), 'historial', 'h1')));
+  await assertSucceeds(getDoc(cdoc(db('secre'), 'historial', 'h1')));
+  await assertFails(updateDoc(cdoc(db('secre'), 'historial', 'h1'), { cambios: [] }));
+  await assertFails(deleteDoc(cdoc(db('secre'), 'historial', 'h1')));
+  await assertSucceeds(deleteDoc(cdoc(db('admin'), 'historial', 'h1')));
+});
+
 test('el coordinador puede hacer coordinador a otro; alguien de fuera no ve nada', async () => {
   const a = db('admin'), o = db('otro');
   await assertSucceeds(updateDoc(cdoc(a, 'miembros', 'pub'), { admin: true }));
