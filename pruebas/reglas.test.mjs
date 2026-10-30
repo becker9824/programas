@@ -182,7 +182,10 @@ test('capitán: registra solo en el territorio que se le asignó; el siervo ve y
   await assertSucceeds(updateDoc(cdoc(a, 'miembros', 'pub'), { permisos: ['capitan'] }));
   await assertSucceeds(setDoc(cdoc(a, 'capitanes', 'lista'), { lista: [{ uid: 'pub', nombre: 'Pub' }] }));
   await assertFails(setDoc(cdoc(db('pub'), 'capitanes', 'lista'), { lista: [] }));
-  const terr = { numero: '20', nombre: 'Norte', tarjeta: '20-A', notas: '', coords: '[]', estado: 'asignado', asignadoA: 'Pub', capitan: 'pub', desde: '2026-10-01',
+  await assertSucceeds(setDoc(cdoc(db('prog'), 'capitanes', 'hermanos'), { lista: [{ perfil: 'p1', nombre: 'Pub' }] }));
+  await assertFails(setDoc(cdoc(db('prog'), 'capitanes', 'lista'), { lista: [] }));
+  await assertFails(setDoc(cdoc(db('pub'), 'capitanes', 'hermanos'), { lista: [] }));
+  const terr = { numero: '20', territorio: '3', nombre: 'Norte', tarjeta: '20-A', notas: '', coords: '[]', estado: 'asignado', asignadoA: 'Pub', capitan: 'pub', desde: '2026-10-01',
     historial: [], veces: 0, trabajadas: '', avance: '', noPredicar: '' };
   await assertSucceeds(setDoc(cdoc(a, 'territorios', 't20'), terr));
   await assertSucceeds(setDoc(cdoc(a, 'territorios', 't21'), { ...terr, numero: '21', capitan: 'otro' }));

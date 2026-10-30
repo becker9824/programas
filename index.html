@@ -112,6 +112,7 @@
   .pslots { display: grid; gap: 6px; }
   .slot { display: grid; grid-template-columns: 82px minmax(0, 1fr); gap: 8px; align-items: start; }
   .slabel { text-align: right; font-weight: 600; font-size: 13px; padding-top: 8px; }
+  .room { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin-top: 2px; }
   .slabel.soft { font-weight: 400; color: var(--muted); }
   .slot input { width: 100%; }
   .edit-in { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
@@ -307,6 +308,8 @@
   .mode-bar.trip { border-color: #d32f2f; }
   .trip-start { display: flex; flex-direction: column; align-items: center; gap: 2px; width: 100%; margin-top: 10px; padding: 12px; font-size: 16px; }
   .trip-start .small-text { font-weight: 400; opacity: .9; }
+  .leaflet-tooltip.terr-zone { background: #5b3cc4; color: #fff; border: 0; font-weight: 700; font-size: 12px; padding: 1px 6px; }
+  .leaflet-tooltip.terr-zone::before { display: none; }
   .terr-pin { background: none; border: 0; font-size: 22px; line-height: 26px; text-align: center; filter: drop-shadow(0 1px 1px rgba(0,0,0,.5)); }
   .leaflet-container { font: inherit; }
 </style>
@@ -325,7 +328,7 @@
 
 <script>
 const KEY = 'programas-app-v2';
-const APP_VERSION = '1.20.0'; // igual que "version" en package.json (publicar.ps1 lo revisa)
+const APP_VERSION = '1.21.0'; // igual que "version" en package.json (publicar.ps1 lo revisa)
 // Con FIREBASE_CONFIG (firebase-config.js) los datos viven en la nube de la congregación;
 // sin él, la app funciona como antes, solo en esta PC. "?emu" usa el Firebase local de prueba.
 const EMU = /[?&]emu\b/.test(location.search);
@@ -351,6 +354,9 @@ const defaults = () => ({
     pdfTitle: 'Programa para la reunión de entre semana', meetingDay: 2, startTime: '19:00', paper: 'letter',
     slipNote: 'En la Guía de actividades está la información para preparar su intervención. Repase también las indicaciones para la reunión Vida y Ministerio Cristianos.',
     slipFooter: '',
+    // Diseño y opciones del PDF del programa y de las hojas de asignación
+    pdfDesign: 's140', pdfDate: 'semana', pdfShowMin: true, auxRoom: false,
+    slipDate: 'larga', slipShowMin: true, slipShowText: true, slipShowLesson: true,
     filters: DEFAULT_FILTERS.map(f => ({ ...f })),
     nomPrefs: { ...DEFAULT_NOM_PREFS },
   },
@@ -508,13 +514,23 @@ function slotLabels(r) {
   if (r.helper === 'Ayudante') return { a: 'Estudiante', b: 'Ayudante', soft: true };
   return { a: '' };
 }
+// Sala auxiliar (Ajustes): las partes de estudiantes llevan también 'xa' y 'xb' (estudiante y ayudante
+// en la sala auxiliar) y las palabras de introducción, 'xa' = consejero de la sala auxiliar.
+const auxOn = () => !!state.settings.auxRoom;
+const hasAux = r => r.kind === 'chair' ? !!r.intro : hasCounsel(r);
+const isAux = slot => slot === 'xa' || slot === 'xb';
+const baseSlot = slot => slot === 'xa' ? 'a' : slot === 'xb' ? 'b' : slot;
+const mateSlot = slot => ({ a: 'b', b: 'a', xa: 'xb', xb: 'xa' })[slot];
+const auxLabel = (r, slot) => r.kind === 'chair' ? 'Consejero de la sala auxiliar' : slotLabels(r)[baseSlot(slot)];
 function slotNeedsMen(r, slot) {
+  slot = baseSlot(slot);
   if (r.kind === 'prayer' || r.kind === 'chair') return true;
   if (slot === 'b') return r.helper === 'Lector';
   return !!r.men;
 }
-const roleLabel = (r, slot) => slot === 'b' ? `${r.helper}: ${displayTitle(r)}`
-  : r.kind === 'prayer' ? 'Oración' : r.kind === 'chair' ? 'Presidente' : displayTitle(r);
+const roleLabel = (r, slot) => isAux(slot) && r.kind === 'chair' ? 'Consejero de la sala auxiliar'
+  : (baseSlot(slot) === 'b' ? `${r.helper}: ${displayTitle(r)}` : r.kind === 'prayer' ? 'Oración' : r.kind === 'chair' ? 'Presidente' : displayTitle(r))
+    + (isAux(slot) ? ' (sala auxiliar)' : '');
 
 // Privilegios: qué asignaciones puede recibir cada perfil (perfil.puede). Un perfil sin
 // privilegios marcados todavía (perfil.puede no existe) sale para todo, como antes.
@@ -561,6 +577,7 @@ const nomChips = onChange => h('div', { class: 'chips nom-chips' }, NOM_FILTERS.
     onclick: () => { nomFilter = k; onChange(); } }, t)));
 const privLabel = k => (PRIVS.find(([key]) => key === k) || [k, k])[1];
 function privFor(row, slot) {
+  slot = baseSlot(slot);
   if (row.kind === 'prayer') return 'oracion';
   if (row.kind === 'chair') return 'presidente';
   if (row.helper === 'Lector') return slot === 'b' ? 'lector' : 'conductor';
@@ -706,6 +723,10 @@ function slotsOf(p) {
     if (!isAssignable(row)) continue;
     out.push({ row, slot: 'a', pid: row.a });
     if (row.helper) out.push({ row, slot: 'b', pid: row.b });
+    if (auxOn() && hasAux(row)) {
+      out.push({ row, slot: 'xa', pid: row.xa });
+      if (row.helper && row.kind !== 'chair') out.push({ row, slot: 'xb', pid: row.xb });
+    }
   }
   return out;
 }
@@ -755,7 +776,7 @@ function statusFor(pid, p, ctx, counts, row, slot) {
   if (slotNeedsMen(row, slot) && prof.sex === 'F') return { cls: 's-warn', text: '⚠ Normalmente la asigna un varón' };
   if (!canDo(prof, privFor(row, slot))) return { cls: 's-warn', text: `⚠ No tiene marcado el privilegio “${privLabel(privFor(row, slot))}”` };
   if (row.helper === 'Ayudante') {
-    const other = profById(row[slot === 'a' ? 'b' : 'a']);
+    const other = profById(row[mateSlot(slot)]);
     if (other && other.sex !== prof.sex && !sameFamily(prof.id, other.id)) return { cls: 's-warn', text: '⚠ Pareja de distinto sexo que no es de la misma familia' };
   }
   const r = ctx.recent.get(pid);
@@ -1007,12 +1028,161 @@ function savePDF(doc, fname) {
   }
   doc.save(name);
 }
+// Diseños del programa (Ajustes → Programa y PDF). El de fábrica es el S-140.
+const PDF_DESIGNS = [
+  ['s140', 'S-140 (como el formulario oficial, 2 semanas por hoja)'],
+  ['clasico', 'Clásico (una semana por hoja)'],
+  ['compacto', 'Compacto en blanco y negro (ahorra tinta)'],
+  ['elegante', 'Elegante (letra con serifa)'],
+];
+const DATE_HEADERS = [['semana', '26 DE OCTUBRE A 1 DE NOVIEMBRE (la semana)'], ['reunion', 'Martes, 28 de octubre de 2026 (el día de la reunión)'], ['ambas', 'Las dos']];
+// Encabezado de cada semana según Ajustes
+function weekHeading(p, upper) {
+  const s = state.settings, wk = upper ? (p.title || '').toUpperCase() : p.title || '';
+  const day = fmtMeeting(p), read = p.reading ? (upper ? p.reading.toUpperCase() : p.reading) : '';
+  const main = s.pdfDate === 'reunion' ? day : s.pdfDate === 'ambas' ? `${wk} · ${day}` : wk;
+  return main + (read ? '  |  ' + read : '');
+}
+const minText = r => state.settings.pdfShowMin !== false && (r.kind === 'part' || r.kind === 'chair') && r.min ? ` (${r.min} ${+r.min === 1 ? 'min.' : 'mins.'})` : '';
+
 function downloadPDF(programs) {
   programs = [...programs].sort((a, b) => a.date.localeCompare(b.date));
   const J = window.jspdf && window.jspdf.jsPDF;
   if (!J) return toast('Se necesita internet para crear el PDF.');
-  const s = state.settings;
+  if (!programs.length) return toast('No hay semanas para el PDF.');
+  const s = state.settings, design = s.pdfDesign || 's140';
   const doc = new J({ unit: 'pt', format: s.paper === 'a4' ? 'a4' : 'letter' });
+  if (design === 'clasico') pdfClassic(doc, programs); else pdfFlow(doc, programs, design);
+  const fname = programs.length === 1 ? `Programa ${programs[0].title}` : `Programas ${programs[0].title} a ${programs[programs.length - 1].title}`;
+  savePDF(doc, fname);
+}
+
+// S-140, compacto y elegante: varias semanas seguidas por hoja, con columnas de nombres a la derecha
+// (y la de la sala auxiliar, si se usa).
+function pdfFlow(doc, programs, design) {
+  const s = state.settings, W = doc.internal.pageSize.getWidth(), H = doc.internal.pageSize.getHeight();
+  const ST = {
+    s140: { font: 'helvetica', head: 'times', size: 9.5, lh: 1.2, color: true, bar: 'fill', gapWeek: 16, songName: false },
+    compacto: { font: 'helvetica', head: 'helvetica', size: 9, lh: 1.18, color: false, bar: 'text', gapWeek: 14, songName: false },
+    elegante: { font: 'times', head: 'times', size: 10.5, lh: 1.22, color: true, bar: 'line', gapWeek: 22, songName: true },
+  }[design];
+  const M = 40, L = ST.size * ST.lh, name = id => (profById(id) || {}).name || '';
+  const aux = auxOn();
+  const xTime = M, xDot = M + 38, xTitle = M + 46;
+  const xMain = W - M - 140, xAux = aux ? xMain - 132 : xMain, colW = W - M - xMain;
+  const xLab = xAux - 6;
+  const gray = ST.color ? [90, 90, 90] : [70, 70, 70];
+  // En el S-140 la barra de Tesoros va en gris, como en el formulario
+  const secRgb = sec => !ST.color ? [40, 40, 40] : design === 's140' && sec === SECTIONS[0].name ? [87, 90, 93] : (sectionOf(sec) || { rgb: [87, 90, 93] }).rgb;
+  const font = (bold, size, f = ST.font) => { doc.setFont(f, bold ? 'bold' : 'normal'); doc.setFontSize(size); };
+  let y = 0;
+
+  function pageHeader() {
+    font(true, 11); doc.setTextColor(0);
+    if (design === 'elegante') {
+      font(true, 18, ST.head); doc.text(s.pdfTitle || 'Programa', W / 2, 46, { align: 'center' });
+      font(false, 11, ST.head); doc.setTextColor(80); if (s.congregation) doc.text(s.congregation.toUpperCase(), W / 2, 62, { align: 'center' });
+      doc.setDrawColor(120); doc.setLineWidth(0.6); doc.line(M, 70, W - M, 70); doc.line(M, 72.5, W - M, 72.5);
+      y = 96; return;
+    }
+    if (s.congregation) doc.text(s.congregation.toUpperCase(), M, 48);
+    font(true, design === 's140' ? 18 : 14, ST.head); doc.text(s.pdfTitle || 'Programa', W - M, 48, { align: 'right' });
+    doc.setDrawColor(110); doc.setLineWidth(design === 's140' ? 3 : 1.2); doc.line(M, 56, W - M, 56);
+    y = 80;
+  }
+  // Una línea de la semana: [hora, punto de color, título, etiqueta, auxiliar, principal]
+  function rowItems(p) {
+    const times = timesFor(p), out = [];
+    let sec = '';
+    for (const r of p.rows) {
+      if (r.section && r.section !== sec) { sec = r.section; out.push({ section: sec, student: p.rows.some(x => x.section === sec && hasCounsel(x)) }); }
+      const title = r.kind === 'prayer' || r.kind === 'song' ? (ST.songName ? songText(r) : `Canción ${r.song || ''}`) : displayTitle(r) + minText(r);
+      const lb = slotLabels(r), pair = (a, b) => [name(a), name(b)].filter(Boolean).join(' / ');
+      let label = '', main = '', side = '';
+      if (r.kind === 'prayer') { label = 'Oración:'; main = name(r.a); }
+      else if (r.kind === 'part' && isAssignable(r)) {
+        if (r.helper) { label = r.helper === 'Lector' ? 'Conductor/Lector:' : 'Estudiante/Ayudante:'; main = pair(r.a, r.b); if (aux && hasAux(r)) side = pair(r.xa, r.xb); }
+        else { label = hasCounsel(r) ? 'Estudiante:' : ''; main = name(r.a); if (aux && hasAux(r)) side = name(r.xa); }
+      }
+      out.push({ time: fmtTime(times[r.id]), sec: r.section, title, label, main, side, student: aux && hasAux(r) && r.kind === 'part' });
+    }
+    return out;
+  }
+  // Dibuja (o solo mide, si dry) una semana desde y; devuelve la altura
+  function week(p, y0, dry) {
+    let yy = y0;
+    const intro = p.rows.find(r => r.kind === 'chair' && r.intro);
+    const head = weekHeading(p, design !== 'elegante');
+    font(true, ST.size + 0.5, design === 'elegante' ? 'times' : ST.font);
+    const headLines = doc.splitTextToSize(head, xMain - 70 - M);
+    if (!dry) {
+      font(true, ST.size + 0.5, design === 'elegante' ? 'times' : ST.font); doc.setTextColor(design === 'elegante' ? 30 : 0);
+      doc.text(headLines, M, yy);
+      const tag = (label, value, yt) => { font(true, 7.5); doc.setTextColor(...gray); doc.text(label, xMain - 6, yt, { align: 'right' }); font(false, ST.size); doc.setTextColor(0); doc.text(value, xMain, yt); };
+      tag('Presidente:', name(intro && intro.a), yy);
+      if (aux) tag('Consejero de la sala auxiliar:', name(intro && intro.xa), yy + L);
+    }
+    yy += Math.max(headLines.length, aux ? 2 : 1) * L + 8;
+    for (const it of rowItems(p)) {
+      if (it.section) {
+        yy += 6;
+        if (!dry) {
+          const c = secRgb(it.section);
+          if (ST.bar === 'fill') {
+            doc.setFillColor(...c); doc.rect(M, yy - 10, Math.min((W - 2 * M) * 0.52, (aux ? xAux : xMain) - 12 - M), 13, 'F');
+            font(true, 8.5); doc.setTextColor(255); doc.text(it.section.toUpperCase(), M + 4, yy);
+          } else if (ST.bar === 'line') {
+            font(true, 9.5, 'times'); doc.setTextColor(...c); doc.text(it.section.toUpperCase(), M, yy);
+            doc.setDrawColor(...c); doc.setLineWidth(0.6); doc.line(M, yy + 3, W - M, yy + 3);
+          } else {
+            font(true, 9); doc.setTextColor(0); doc.text(it.section.toUpperCase(), M, yy);
+            doc.setDrawColor(60); doc.setLineWidth(0.8); doc.line(M, yy + 3, W - M, yy + 3);
+          }
+          if (aux && it.student) { font(true, 7); doc.setTextColor(...gray); doc.text('Sala auxiliar', xAux, yy); doc.text('Auditorio principal', xMain, yy); }
+        }
+        yy += ST.bar === 'fill' ? 14 : 13;
+        continue;
+      }
+      const labX = (it.student ? xAux : xMain) - 6;
+      font(true, 7.5);
+      const titleW = (it.label ? labX - doc.getTextWidth(it.label) - 10 : (it.student ? xAux : xMain) - 8) - xTitle;
+      font(false, ST.size);
+      const tl = doc.splitTextToSize(it.title, Math.max(120, titleW));
+      const ml = it.main ? doc.splitTextToSize(it.main, colW) : [], sl = it.side ? doc.splitTextToSize(it.side, xMain - xAux - 6) : [];
+      const n = Math.max(tl.length, ml.length, sl.length, 1);
+      if (!dry) {
+        font(true, 8); doc.setTextColor(...gray); doc.text(it.time, xTime, yy);
+        const c = secRgb(it.sec);
+        doc.setFillColor(...c); doc.circle(xDot, yy - 3, 2.2, 'F');
+        font(false, ST.size); doc.setTextColor(0); doc.text(tl, xTitle, yy, { lineHeightFactor: ST.lh });
+        if (it.label) { font(true, 7.5); doc.setTextColor(...gray); doc.text(it.label, labX, yy, { align: 'right' }); }
+        font(false, ST.size); doc.setTextColor(0);
+        if (sl.length) doc.text(sl, xAux, yy, { lineHeightFactor: ST.lh });
+        if (ml.length) doc.text(ml, xMain, yy, { lineHeightFactor: ST.lh });
+      }
+      yy += n * L + 1.5;
+    }
+    return yy - y0;
+  }
+
+  pageHeader();
+  programs.forEach((p, i) => {
+    const hgt = week(p, y, true);
+    if (i && y + hgt > H - 50) { doc.addPage(); pageHeader(); }
+    week(p, y, false);
+    y += hgt + ST.gapWeek;
+  });
+  const pages = doc.getNumberOfPages();
+  for (let i = 1; i <= pages; i++) {
+    doc.setPage(i); font(false, 7.5); doc.setTextColor(140);
+    if (design === 's140') doc.text('S-140-S', M, H - 26);
+    doc.text(`Impreso ${new Date().toLocaleDateString('es', { day: '2-digit', month: '2-digit', year: 'numeric' })}`, W - M, H - 26, { align: 'right' });
+  }
+}
+
+// Diseño clásico: una semana por hoja, con el título de cada sección en color
+function pdfClassic(doc, programs) {
+  const s = state.settings;
   const W = doc.internal.pageSize.getWidth(), H = doc.internal.pageSize.getHeight();
   const M = 36, LINE = 13;
   const xTime = M, xDot = M + 36, xTitle = M + 46, xNames = W - M - 170, xLabelR = xNames - 8;
@@ -1028,7 +1198,7 @@ function downloadPDF(programs) {
     if (s.congregation) doc.text(s.congregation, W - M, 46, { align: 'right' });
     doc.setDrawColor(0); doc.setLineWidth(1.4); doc.line(M, 54, W - M, 54);
     doc.setFontSize(13); doc.setTextColor(0, 112, 192);
-    doc.text(fmtMeeting(p) + (p.reading ? '  |  ' + p.reading.toUpperCase() : ''), M, 80);
+    doc.text(weekHeading(p, false), M, 80);
 
     let y = 106, sec = '';
     for (const r of p.rows) {
@@ -1043,7 +1213,7 @@ function downloadPDF(programs) {
         y += 24;
       }
       // Título (con minutos)
-      const min = (r.kind === 'part' || r.kind === 'chair') && r.min ? ` (${r.min} min.)` : '';
+      const min = minText(r);
       doc.setFont('helvetica', 'normal'); doc.setFontSize(10.5);
       const labels = slotLabels(r);
       const titleLines = doc.splitTextToSize(displayTitle(r) + min, xLabelR - xTitle - (labels.a && !labels.soft ? 62 : 6));
@@ -1057,6 +1227,7 @@ function downloadPDF(programs) {
           slots.push({ label: labels.a, lines: doc.splitTextToSize(name(r.a), W - M - xNames) });
           if (r.helper) slots.push({ label: labels.b, lines: doc.splitTextToSize(name(r.b), W - M - xNames) });
         }
+        if (auxOn() && hasAux(r)) slots.push({ label: r.kind === 'chair' ? 'Consejero aux.' : 'Sala aux.', lines: doc.splitTextToSize([name(r.xa), r.kind !== 'chair' && r.helper ? name(r.xb) : ''].filter(Boolean).join(' / '), W - M - xNames) });
       }
       const nameLines = slots.reduce((t, x) => t + Math.max(1, x.lines.length), 0);
       const lines = Math.max(titleLines.length, nameLines, 1);
@@ -1080,8 +1251,20 @@ function downloadPDF(programs) {
     doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor(140);
     doc.text('Impreso ' + printed, W - M, H - 22, { align: 'right' });
   });
-  const fname = programs.length === 1 ? `Programa ${programs[0].title}` : `Programas ${programs[0].title} a ${programs[programs.length - 1].title}`;
-  savePDF(doc, fname);
+}
+
+// Formatos de fecha (Ajustes): 'larga' martes, 28 de octubre de 2026 · 'media' 28 de octubre de 2026 · 'corta' 28/10/2026
+const DATE_FORMATS = [['larga', 'Martes, 28 de octubre de 2026'], ['media', '28 de octubre de 2026'], ['corta', '28/10/2026']];
+function fmtDate(iso, how) {
+  const d = toDate(iso);
+  if (how === 'corta') return d.toLocaleDateString('es', { day: '2-digit', month: '2-digit', year: 'numeric' });
+  if (how === 'media') return d.toLocaleDateString('es', { day: 'numeric', month: 'long', year: 'numeric' });
+  return capFirst(d.toLocaleDateString('es', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }));
+}
+// La descripción de la guía: el texto (cita, tema) y la lección aparte: "Jer 50:24-10 (th lección 11)"
+function splitDetail(detail) {
+  const m = (detail || '').match(/\((th|lmd|lff|be)\s[^)]*\)\.?\s*$/i);
+  return m ? { text: detail.slice(0, m.index).trim(), lesson: m[0].trim() } : { text: (detail || '').trim(), lesson: '' };
 }
 
 // ---------- Hojas de asignación (una por hoja) ----------
@@ -1099,9 +1282,8 @@ function downloadSlips(items) {
   // Medidas tomadas de la hoja de ejemplo (puntos, carta)
   const bold = size => { doc.setFont('helvetica', 'bold'); doc.setFontSize(size); };
   const regular = size => { doc.setFont('helvetica', 'normal'); doc.setFontSize(size); };
-  const slipDate = iso => iso.replace(/-/g, '/');
-
-  items.forEach(({ p, row }, idx) => {
+  items.forEach(({ p, row, aux }, idx) => {
+    const sa = aux ? 'xa' : 'a', sb = aux ? 'xb' : 'b';
     if (idx) doc.addPage();
     doc.setTextColor(0);
 
@@ -1119,9 +1301,9 @@ function downloadSlips(items) {
       if (lines.length) doc.text(lines, 209, y, { lineHeightFactor: 1.15 });
       y += Math.max(0, lines.length - 1) * 24 + 46;
     };
-    field('Nombre:', name(row.a));
-    field(row.helper === 'Lector' ? 'Lector:' : 'Ayudante:', row.helper ? name(row.b) : '');
-    field('Fecha:', slipDate(meetingDate(p)));
+    field('Nombre:', name(row[sa]));
+    field(row.helper === 'Lector' ? 'Lector:' : 'Ayudante:', row.helper ? name(row[sb]) : '');
+    field('Fecha:', fmtDate(meetingDate(p), s.slipDate || 'larga'));
 
     // "Intervención núm.:" va en dos renglones; el tipo de intervención pasa a la descripción
     const kind = (row.title || '').match(/^(.*\S)\s+\(([^)]+)\)$/);
@@ -1133,8 +1315,10 @@ function downloadSlips(items) {
     y += Math.max(24, (tLines.length - 1) * 24) + 41;
 
     // Descripción de la Guía de actividades
-    const desc = [row.min ? `(${row.min} ${row.min === 1 ? 'min.' : 'mins.'})` : '', kind ? kind[2].toUpperCase() + '.' : '', row.detail || '']
-      .filter(Boolean).join(' ');
+    // En Ajustes se elige qué poner: minutos, el texto (cita y tema) y la lección
+    const { text: dText, lesson } = splitDetail(row.detail);
+    const desc = [s.slipShowMin !== false && row.min ? `(${row.min} ${row.min === 1 ? 'min.' : 'mins.'})` : '', kind ? kind[2].toUpperCase() + '.' : '',
+      s.slipShowText !== false ? dText : '', s.slipShowLesson !== false ? lesson : ''].filter(Boolean).join(' ');
     if (desc) {
       regular(19);
       const dLines = doc.splitTextToSize(desc, W - 52 - 82);
@@ -1148,7 +1332,7 @@ function downloadSlips(items) {
     y += 36;
     ['Auditorio principal', 'Sala auxiliar núm. 1', 'Sala auxiliar núm. 2'].forEach((place, i) => {
       doc.setDrawColor(0); doc.setLineWidth(1); doc.rect(53, y - 13, 14, 14);
-      if (i === 0) { doc.setLineWidth(1.8); doc.lines([[3, 4], [7, -10]], 56, y - 5); }
+      if (i === (aux ? 1 : 0)) { doc.setLineWidth(1.8); doc.lines([[3, 4], [7, -10]], 56, y - 5); }
       regular(19); doc.text(place, 94, y - 1);
       y += 23;
     });
@@ -1172,20 +1356,23 @@ function downloadSlips(items) {
 
   const first = items[0];
   const fname = items.length === 1
-    ? `Asignación ${name(first.row.a) || 'sin nombre'} - ${first.p.title}`
+    ? `Asignación ${name(first.row[first.aux ? 'xa' : 'a']) || 'sin nombre'} - ${first.p.title}`
     : `Asignaciones ${[...new Set(items.map(x => x.p.title))].join(', ')}`;
   savePDF(doc, fname);
 }
 
 // Elegir qué hojas de asignación descargar
 function openSlipsDialog(p) {
-  const rows = p.rows.filter(r => r.kind === 'part');
-  const checks = rows.map(r => h('input', { type: 'checkbox', checked: isStudentPart(r) && !!r.a }));
+  // Una hoja por asignación; con sala auxiliar, también las de esa sala
+  const items = p.rows.filter(r => r.kind === 'part').flatMap(row => [{ p, row, aux: false }, ...(auxOn() && hasAux(row) ? [{ p, row, aux: true }] : [])]);
+  const rows = items.map(x => x.row);
+  const who = x => x.row[x.aux ? 'xa' : 'a'], mate = x => x.row[x.aux ? 'xb' : 'b'];
+  const checks = items.map(x => h('input', { type: 'checkbox', checked: isStudentPart(x.row) && !!who(x) }));
   const name = id => (profById(id) || {}).name;
-  const list = h('div', { class: 'slips' }, rows.map((r, i) => h('label', { class: 'slip' }, checks[i],
-    h('span', null, h('span', null, displayTitle(r)),
-      h('small', null, r.a ? [name(r.a), r.helper && r.b ? ` & ${name(r.b)}` : ''].join('') : 'Sin asignar')),
-    h('button', { class: 'btn small', title: 'Descargar solo esta', onclick: e => { e.preventDefault(); downloadSlips([{ p, row: r }]); } }, '⬇'))));
+  const list = h('div', { class: 'slips' }, items.map((x, i) => h('label', { class: 'slip' }, checks[i],
+    h('span', null, h('span', null, displayTitle(x.row), x.aux ? h('em', { class: 'muted' }, ' · sala auxiliar') : null),
+      h('small', null, who(x) ? [name(who(x)), x.row.helper && mate(x) ? ` & ${name(mate(x))}` : ''].join('') : 'Sin asignar')),
+    h('button', { class: 'btn small', title: 'Descargar solo esta', onclick: e => { e.preventDefault(); downloadSlips([x]); } }, '⬇'))));
   const setAll = v => checks.forEach(c => { c.checked = v; });
   const dlg = h('dialog', { class: 'dlg' },
     h('div', { class: 'dlg-body' },
@@ -1200,7 +1387,7 @@ function openSlipsDialog(p) {
     h('div', { class: 'dlg-foot' },
       h('button', { class: 'btn', onclick: () => dlg.close() }, 'Cerrar'),
       h('button', { class: 'btn primary', onclick: () => {
-        const chosen = rows.filter((r, i) => checks[i].checked).map(row => ({ p, row }));
+        const chosen = items.filter((x, i) => checks[i].checked);
         if (chosen.length) { downloadSlips(chosen); dlg.close(); } else toast('Marca al menos una asignación.');
       } }, '⬇ Descargar PDF')));
   dlg.addEventListener('close', () => dlg.remove());
@@ -1225,6 +1412,7 @@ function openProfileDialog(prof, opts = {}) {
   const nomSel = h('select', null, NOMBRAMIENTOS.map(([v, t]) => h('option', { value: v, selected: (prof && prof.nombramiento || '') === v ? true : null }, t)));
   const sitSel = h('select', null, SITUACIONES.map(([v, t]) => h('option', { value: v, selected: (prof && prof.situacion || '') === v ? true : null }, t)));
   const bautI = h('input', { type: 'checkbox', checked: !!(prof && prof.bautizado) });
+  const capI = h('input', { type: 'checkbox', checked: !!(prof && prof.capitan) });
   // Solo los varones pueden tener nombramiento
   const syncNom = () => { const f = sexF.checked; nomSel.disabled = f; if (f) nomSel.value = ''; };
   sexM.addEventListener('change', syncNom); sexF.addEventListener('change', syncNom); syncNom();
@@ -1321,7 +1509,8 @@ function openProfileDialog(prof, opts = {}) {
         h('label', { class: 'field' }, 'Informe mensual', tipoSel),
         h('label', { class: 'field' }, 'Nombramiento', nomSel),
         h('label', { class: 'field' }, 'Situación', sitSel),
-        h('label', { class: 'row', style: { gap: '6px', color: 'var(--text)', fontSize: '14px', paddingBottom: '8px' } }, bautI, 'Bautizado')),
+        h('label', { class: 'row', style: { gap: '6px', color: 'var(--text)', fontSize: '14px', paddingBottom: '8px' } }, bautI, 'Bautizado'),
+        h('label', { class: 'row', style: { gap: '6px', color: 'var(--text)', fontSize: '14px', paddingBottom: '8px' }, title: 'Sale en la lista al asignar tarjetas de territorio' }, capI, 'Capitán de territorios')),
       h('div', { class: 'row', style: { gap: '20px', alignItems: 'flex-end' } },
         state.families.length ? h('label', { class: 'field' }, 'Familia', famSel) : null,
         nube.grupos.length ? h('label', { class: 'field' }, 'Grupo', groupSel) : null),
@@ -1338,7 +1527,7 @@ function openProfileDialog(prof, opts = {}) {
       prof && !ro ? h('button', { class: 'btn danger', style: { marginRight: 'auto' }, onclick: () => {
         if (!confirm(`¿Eliminar a ${prof.name}?${hist.length ? ' Se quitará de las ' + hist.length + ' asignaciones donde aparece.' : ''}${account ? ' Su cuenta sigue en la congregación, sin hermano.' : ''}`)) return;
         state.profiles = state.profiles.filter(x => x !== prof);
-        for (const q of state.programs) for (const r of q.rows) { if (r.a === prof.id) r.a = null; if (r.b === prof.id) r.b = null; }
+        for (const q of state.programs) for (const r of q.rows) for (const k of ['a', 'b', 'xa', 'xb']) if (r[k] === prof.id) r[k] = null;
         if (account) memberUpdate(account, { perfil: null });
         if (oldGroup && (!FB_CONFIG || can('secretario'))) setGroupMember(prof.id, oldGroup, null);
         save(); saved = true; dlg.close(); render();
@@ -1360,7 +1549,10 @@ function openProfileDialog(prof, opts = {}) {
     const age = ageI.value === '' ? null : Math.max(0, Math.round(+ageI.value));
     const p = prof || { id: uid() };
     Object.assign(p, { name, sex: sexV, age, notes: squash(notesI.value), familyId: famSel.value || null, tipo: tipoSel.value,
-      nombramiento: sexV === 'M' ? nomSel.value : '', situacion: sitSel.value, bautizado: bautI.checked });
+      nombramiento: sexV === 'M' ? nomSel.value : '', situacion: sitSel.value, bautizado: bautI.checked, capitan: capI.checked });
+    // Si tiene cuenta, también se le da (o quita) la función Capitán para que registre en la app
+    if (account && !account.admin && capI.checked !== (account.permisos || []).includes('capitan'))
+      memberUpdate(account, { permisos: capI.checked ? F.arrayUnion('capitan') : F.arrayRemove('capitan') });
     // Si nunca se marcaron y se deja todo en blanco, sigue "sin configurar" (sale para todo)
     const puede = privBoxes.filter(x => x.box.checked).map(x => x.k);
     if (puede.length || Array.isArray(p.puede)) p.puede = puede;
@@ -1387,7 +1579,7 @@ function openProfileDialog(prof, opts = {}) {
 // Desde la 1.3 los datos van por partes (perfiles/, familias/, semanas/, config/ajustes) en vez de
 // un solo privado/estado (que tenía límite de 1 MB); privado/estado queda como copia de la 1.2.
 const nube = { user: null, cong: null, congData: null, me: null, acceso: '', listo: false, publico: null,
-  miembros: [], anuncios: [], contactos: new Map(), cuentas: [], cuentasIni: null, territorios: [], grupos: [], capitanes: [], trabajos: [], sent: {}, ultimoPub: '', registro: null, inicial: null, unsubMe: null, unsubDatos: [] };
+  miembros: [], anuncios: [], contactos: new Map(), cuentas: [], cuentasIni: null, territorios: [], grupos: [], capitanes: [], capitanesHermanos: [], trabajos: [], sent: {}, ultimoPub: '', registro: null, inicial: null, unsubMe: null, unsubDatos: [] };
 // Funciones que el coordinador puede dar a cada cuenta (el coordinador tiene todas)
 const PERMS = [
   ['programa', 'Programa VyM', 'Semanas, hermanos, familias y ajustes de la reunión'],
@@ -1432,7 +1624,7 @@ function memberFunctions(m) {
 let captainsSent = '';
 function publishCaptains() {
   const lista = nube.miembros.filter(m => m.estado === 'activo' && (m.permisos || []).includes('capitan'))
-    .map(m => ({ uid: m.id, nombre: (m.perfil && profById(m.perfil) || {}).name || m.nombre })).sort(byNombre);
+    .map(m => ({ uid: m.id, perfil: m.perfil || '', nombre: (m.perfil && profById(m.perfil) || {}).name || m.nombre })).sort(byNombre);
   const json = JSON.stringify(lista);
   if (json === captainsSent) return;
   captainsSent = json;
@@ -1560,7 +1752,7 @@ async function startCloud() {
   F.onAuthStateChanged(F.auth, async user => {
     stopListening(); if (nube.unsubMe) { nube.unsubMe(); nube.unsubMe = null; }
     Object.assign(nube, { user, cong: null, congData: null, me: null, acceso: '', listo: false, miembros: [], anuncios: [],
-      contactos: new Map(), cuentas: [], cuentasIni: null, territorios: [], grupos: [], capitanes: [], trabajos: [], publico: null, sent: {}, ultimoPub: '' });
+      contactos: new Map(), cuentas: [], cuentasIni: null, territorios: [], grupos: [], capitanes: [], capitanesHermanos: [], trabajos: [], publico: null, sent: {}, ultimoPub: '' });
     if (!user) return renderAuth();
     screen(h('div', { class: 'card auth-card' }, h('p', { class: 'muted' }, 'Cargando tu cuenta…')));
     let joinErr = '';
@@ -1619,7 +1811,10 @@ function enterCongregation() {
     return view.name === 'people';
   });
   // Capitanes (cuentas con la función): el coordinador publica la lista para que el siervo de territorios asigne
-  if (can('territorios')) listen('capitanes', congRef('capitanes', 'lista'), s => { nube.capitanes = (s.exists() && s.data().lista) || []; return false; });
+  if (can('territorios')) {
+    listen('capitanes', congRef('capitanes', 'lista'), s => { nube.capitanes = (s.exists() && s.data().lista) || []; return false; });
+    listen('capitanesHermanos', congRef('capitanes', 'hermanos'), s => { nube.capitanesHermanos = (s.exists() && s.data().lista) || []; return false; });
+  }
   // Registros de lo trabajado en territorios (desde el año pasado)
   if (can('territorios') || can('capitan')) listen('trabajos', F.query(F.collection(F.db, 'congregaciones', nube.cong, 'trabajos'),
     F.where('fecha', '>=', `${new Date().getFullYear() - 1}-01-01`)), s => {
@@ -1734,6 +1929,8 @@ async function uploadState() {
     }
     for (const id of [...sent.keys()]) if (!now.has(id)) { sent.delete(id); writes.push(F.deleteDoc(congRef(col, id))); }
   }
+  const caps = state.profiles.filter(p => p.capitan).map(p => ({ perfil: p.id, nombre: p.name })).sort(byNombre), capsJson = JSON.stringify(caps);
+  if (nube.sent.capitanes !== capsJson) { nube.sent.capitanes = capsJson; writes.push(F.setDoc(congRef('capitanes', 'hermanos'), { lista: caps })); }
   const config = clean(configOf(state)), json = stable(config);
   if (nube.sent.config !== json) { nube.sent.config = json; writes.push(F.setDoc(congRef('config', 'ajustes'), config)); }
   try { await Promise.all(writes); await publishProgram(); }
@@ -1750,7 +1947,9 @@ function publicWeeks() {
     return { id: p.id, date: p.date, day: meetingDate(p), title: p.title, reading: p.reading || '', meeting: fmtMeeting(p),
       rows: p.rows.map(r => ({ kind: r.kind, section: r.section || '', t: displayTitle(r), min: r.kind === 'part' ? +r.min || null : null,
         time: fmtTime(t[r.id]), detail: r.kind === 'part' ? r.detail || '' : '', labels: slotLabels(r),
-        a: isAssignable(r) ? person(r.a) : null, b: isAssignable(r) && r.helper ? person(r.b) : null })),
+        a: isAssignable(r) ? person(r.a) : null, b: isAssignable(r) && r.helper ? person(r.b) : null,
+        ...(auxOn() && isAssignable(r) && hasAux(r) ? { xa: person(r.xa), xb: r.helper && r.kind !== 'chair' ? person(r.xb) : null,
+          labels: { ...slotLabels(r), xa: auxLabel(r, 'xa') + (r.kind === 'chair' ? '' : ' (sala aux.)'), xb: (slotLabels(r).b || '') + ' (sala aux.)' } } : {}) })),
       // Asignaciones mecánicas (sin repetir presidente y lector de entre semana, que ya están arriba)
       mec: MEETINGS.map(([mtg, label]) => ({ label, day: mecDate(p, mtg),
         items: MEC.filter(r => !mecLinked(p, mtg, r.key)).map(r => ({ l: r.label, ...person(mecGet(p, mtg, r.key)) })).filter(x => x.id) }))
@@ -1876,9 +2075,9 @@ function myAssignments(weeks) {
   const pid = nube.me && nube.me.perfil, today = todayISO(), out = [];
   if (!pid) return out;
   for (const w of weeks) {
-    if ((w.day || addDays(w.date, 6)) >= today) for (const r of w.rows) for (const k of ['a', 'b']) {
+    if ((w.day || addDays(w.date, 6)) >= today) for (const r of w.rows) for (const k of ['a', 'b', 'xa', 'xb']) {
       if (!r[k] || r[k].id !== pid) continue;
-      const other = r[k === 'a' ? 'b' : 'a'];
+      const other = r[mateSlot(k)];
       out.push({ day: w.day || w.date, title: r.t, when: `${w.meeting} · ${r.time}`, role: r.labels[k] || '', with: other ? other.n : '', detail: r.detail });
     }
     for (const m of w.mec || []) if (m.day >= today) for (const it of m.items) if (it.id === pid)
@@ -1911,7 +2110,7 @@ function publicWeekCard(w, open) {
       sec = r.section; const s = sectionOf(sec);
       body.push(h('div', { class: 'psec', style: { '--sec': s ? s.css : 'var(--sec-none)' } }, h('i'), sec));
     }
-    const names = ['a', 'b'].filter(k => r[k]).map(k =>
+    const names = ['a', 'b', 'xa', 'xb'].filter(k => r[k]).map(k =>
       h('span', { class: r[k].id === pid ? 'yo' : null }, (r.labels[k] ? r.labels[k] + ': ' : '') + r[k].n));
     body.push(h('div', { class: 'vrow' }, h('span', { class: 'ptime' }, r.time),
       h('div', null, h('div', { class: 'pt' }, r.t, r.min ? h('span', { class: 'min' }, ` (${r.min} mins.)`) : null),
@@ -2459,13 +2658,24 @@ const housesOf = t => parseJ(t.noPredicar, []).map(x => ({ k: 'no', ...x }));
 const hasShape = t => coordsOf(t).length >= 3 || streetsOf(t).length > 0;
 const isMyTerritory = t => !!(t.capitan && nube.user && t.capitan === nube.user.uid);
 const dayCount = n => `${n} día${n === 1 ? '' : 's'}`;
-const terrTitle = t => `Territorio ${t.numero}${t.nombre ? ' · ' + t.nombre : ''}`;
+const terrTitle = t => `Tarjeta ${t.numero}${t.territorio ? ' · Territorio ' + t.territorio : ''}${t.nombre ? ' · ' + t.nombre : ''}`;
 const HOUSE = { no: { icon: '⛔', label: 'No predicar' }, nota: { icon: '📌', label: 'Nota' } };
 // Lo que cuenta en la nube de un territorio, sin el id (para crearlo completo)
-const terrData = t => ({ numero: t.numero, nombre: t.nombre || '', tarjeta: t.tarjeta || '', notas: t.notas || '', coords: t.coords || '[]', calles: t.calles || '',
+const terrData = t => ({ numero: t.numero, territorio: t.territorio || '', nombre: t.nombre || '', notas: t.notas || '', coords: t.coords || '[]', calles: t.calles || '',
   estado: t.estado === 'asignado' ? 'asignado' : 'disponible', asignadoA: t.asignadoA || '', capitan: t.capitan || '', desde: t.desde || null,
   historial: t.historial || [], veces: vecesDe(t), trabajadas: t.trabajadas || '', avance: t.avance || '', noPredicar: t.noPredicar || '' });
-// Capa del mapa con la forma del territorio: zona (polígono) o calles (líneas gruesas)
+// Contorno de un territorio: el polígono convexo que rodea todas sus tarjetas, un poco más grande
+function territoryHull(cards) {
+  const pts = cards.flatMap(t => [...coordsOf(t), ...streetsOf(t).flat()]).map(([a, b]) => [b, a]).sort((p, q) => p[0] - q[0] || p[1] - q[1]);
+  if (pts.length < 3) return null;
+  const cross = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+  const half = list => { const out = []; for (const p of list) { while (out.length >= 2 && cross(out[out.length - 2], out[out.length - 1], p) <= 0) out.pop(); out.push(p); } out.pop(); return out; };
+  const hull = [...half(pts), ...half([...pts].reverse())];
+  if (hull.length < 3) return null;
+  const cx = hull.reduce((a, p) => a + p[0], 0) / hull.length, cy = hull.reduce((a, p) => a + p[1], 0) / hull.length;
+  return hull.map(([x, y]) => [cy + (y - cy) * 1.06 + Math.sign(y - cy) * 0.00012, cx + (x - cx) * 1.06 + Math.sign(x - cx) * 0.00012]);
+}
+// Capa del mapa con la forma de la tarjeta: zona (polígono) o calles (líneas gruesas)
 function terrShape(L, t, style) {
   const c = coordsOf(t);
   if (c.length >= 3) return L.polygon(c, style);
@@ -2601,11 +2811,11 @@ function openQRDialog(t) {
     .catch(() => { box.textContent = 'No se pudo crear el QR.'; });
   const close = () => { dlg.close(); dlg.remove(); };
   const dlg = h('dialog', { class: 'dlg' },
-    h('div', { class: 'dlg-body' }, h('h3', null, `Territorio ${t.numero}${t.nombre ? ' · ' + t.nombre : ''}`), box,
+    h('div', { class: 'dlg-body' }, h('h3', null, terrTitle(t)), box,
       h('p', { class: 'muted small-text' }, 'Al escanearlo se abre la zona en el mapa, sin iniciar sesión. Si cambias el dibujo de la zona, vuelve a imprimir el QR.')),
     h('div', { class: 'dlg-foot' },
       h('button', { class: 'btn', onclick: () => navigator.clipboard.writeText(url).then(() => toast('Enlace copiado')) }, 'Copiar enlace'),
-      navigator.share ? h('button', { class: 'btn', onclick: () => navigator.share({ title: `Territorio ${t.numero}`, url }).catch(() => {}) }, 'Compartir') : null,
+      navigator.share ? h('button', { class: 'btn', onclick: () => navigator.share({ title: `Tarjeta ${t.numero}`, url }).catch(() => {}) }, 'Compartir') : null,
       h('button', { class: 'btn primary', onclick: close }, 'Cerrar')));
   document.body.append(dlg); dlg.showModal();
 }
@@ -2676,9 +2886,9 @@ async function territoryCardsPDF(list) {
     if (i && i % 2 === 0) doc.addPage();
     const x = M, y = M + (i % 2) * (ch + M);
     doc.setDrawColor(150); doc.setLineWidth(0.3); doc.roundedRect(x, y, cw, ch, 3, 3);
-    doc.setFont('helvetica', 'bold'); doc.setFontSize(20); doc.setTextColor(0); doc.text(`Territorio ${t.numero}`, x + 6, y + 11);
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(20); doc.setTextColor(0); doc.text(`Tarjeta ${t.numero}`, x + 6, y + 11);
     doc.setFont('helvetica', 'normal'); doc.setFontSize(12); doc.setTextColor(60);
-    doc.text([t.nombre, t.tarjeta ? `Tarjeta ${t.tarjeta}` : ''].filter(Boolean).join('   ·   '), x + 6, y + 18);
+    doc.text([t.territorio ? `Territorio ${t.territorio}` : '', t.nombre].filter(Boolean).join('   ·   '), x + 6, y + 18);
     // Mapa
     const img = await territoryMapImage(t, Math.round(mapW * 8), Math.round(mapH * 8));
     if (img) doc.addImage(img, 'JPEG', x + 6, y + 23, mapW, mapH);
@@ -2700,31 +2910,32 @@ async function territoryCardsPDF(list) {
     }
     if (t.notas) { doc.setFontSize(9); doc.setTextColor(60); doc.text(doc.splitTextToSize(t.notas, cw - 12).slice(0, 2), x + 6, y + ch - 6); }
   }
-  savePDF(doc, list.length === 1 ? `Territorio ${list[0].numero}` : `Tarjetas de territorio`);
+  savePDF(doc, list.length === 1 ? `Tarjeta ${list[0].numero}` : `Tarjetas de territorio`);
 }
 
 // Datos de un territorio. shape: { coords } o { calles } recién dibujados (territorio nuevo o redibujado)
 function openTerritoryDataDialog(t, shape) {
   const num = h('input', { type: 'text', maxlength: 20, value: t ? t.numero : '', placeholder: 'Ej.: 12', style: { width: '110px' } });
-  const card = h('input', { type: 'text', maxlength: 20, value: t ? t.tarjeta || '' : '', placeholder: 'Ej.: 12-A', style: { width: '110px' } });
+  const zone = h('input', { type: 'text', maxlength: 20, value: t ? t.territorio || '' : '', placeholder: 'Ej.: 3', style: { width: '110px' } });
   const name = h('input', { type: 'text', maxlength: 100, value: t ? t.nombre : '', placeholder: 'Ej.: Colonia Centro' });
   const notes = h('textarea', { rows: 3, maxlength: 1000, placeholder: 'Opcional: calles que abarca, indicaciones…' }, t ? t.notas : '');
   const err = h('div', { class: 'err' });
   const close = () => { dlg.close(); dlg.remove(); };
   const dlg = h('dialog', { class: 'dlg' },
-    h('div', { class: 'dlg-body' }, h('h3', null, t ? `Territorio ${t.numero}` : 'Nuevo territorio'),
+    h('div', { class: 'dlg-body' }, h('h3', null, t ? `Tarjeta ${t.numero}` : 'Nueva tarjeta'),
       h('div', { class: 'row', style: { gap: '16px', alignItems: 'flex-end' } },
-        h('label', { class: 'field' }, 'Número de territorio', num),
-        h('label', { class: 'field' }, 'Número de tarjeta', card)),
+        h('label', { class: 'field' }, 'Número de tarjeta', num),
+        h('label', { class: 'field' }, 'Territorio', zone)),
+      h('span', { class: 'small-text' }, 'El número de tarjeta no se repite. Un territorio puede tener varias tarjetas: en el mapa se marca su contorno.'),
       h('label', { class: 'field' }, 'Colonia', name),
       h('label', { class: 'field' }, 'Notas', notes), err),
     h('div', { class: 'dlg-foot' },
       h('button', { class: 'btn', onclick: close }, 'Cancelar'),
       h('button', { class: 'btn primary', onclick: async e => {
         const numero = squash(num.value);
-        if (!numero) return err.textContent = 'Escribe el número del territorio.';
-        if (nube.territorios.some(x => x.numero === numero && (!t || x.id !== t.id))) return err.textContent = 'Ya hay un territorio con ese número.';
-        const data = { numero, nombre: squash(name.value), tarjeta: squash(card.value), notas: notes.value.trim() };
+        if (!numero) return err.textContent = 'Escribe el número de la tarjeta.';
+        if (nube.territorios.some(x => x.numero === numero && (!t || x.id !== t.id))) return err.textContent = 'Ya hay una tarjeta con ese número.';
+        const data = { numero, territorio: squash(zone.value), nombre: squash(name.value), notas: notes.value.trim() };
         e.target.disabled = true;
         try {
           if (t) await F.updateDoc(congRef('territorios', t.id), data);
@@ -2740,28 +2951,37 @@ function openTerritoryDataDialog(t, shape) {
   document.body.append(dlg); dlg.showModal(); (t ? name : num).focus();
 }
 
-// Asignar a un capitán (de la lista que publica el coordinador) o a cualquier nombre o grupo
+// Capitanes para asignar: hermanos marcados como capitán (con su cuenta, si tiene) y cuentas con la
+// función Capitán. Quien tiene los datos los usa directo; los demás, las listas publicadas.
+function captainOptions() {
+  const accounts = isAdmin() ? nube.miembros.filter(m => m.estado === 'activo' && (m.permisos || []).includes('capitan')).map(m => ({ uid: m.id, perfil: m.perfil || '', nombre: m.nombre })) : nube.capitanes;
+  const people = can('programa') ? state.profiles.filter(p => p.capitan).map(p => ({ perfil: p.id, nombre: p.name })) : nube.capitanesHermanos;
+  const out = people.map(p => { const a = accounts.find(x => x.perfil && x.perfil === p.perfil); return { uid: a ? a.uid : '', nombre: p.nombre }; });
+  for (const a of accounts) if (!out.some(o => o.uid === a.uid)) out.push({ uid: a.uid, nombre: (a.perfil && profById(a.perfil) || {}).name || a.nombre });
+  return out.sort(byNombre);
+}
+// Asignar a un capitán o a cualquier nombre o grupo
 function openAssignDialog(t) {
-  const caps = [...nube.capitanes].sort(byNombre);
+  const caps = captainOptions();
   const capSel = h('select', { onchange: () => { who.style.display = capSel.value ? 'none' : ''; } },
-    caps.map(c => h('option', { value: c.uid }, c.nombre)), h('option', { value: '' }, 'Otro (escribir el nombre o el grupo)'));
+    caps.map((c, i) => h('option', { value: 'c' + i }, c.nombre + (c.uid ? '' : ' (sin cuenta en la app)'))), h('option', { value: '' }, 'Otro (escribir el nombre o el grupo)'));
   const who = h('input', { type: 'text', maxlength: 100, list: 'profiles-list', placeholder: 'Ej.: Grupo 3 o el nombre del hermano' });
   const since = h('input', { type: 'date', value: todayISO() });
   who.style.display = caps.length ? 'none' : '';
   const close = () => { dlg.close(); dlg.remove(); };
   const dlg = h('dialog', { class: 'dlg' },
-    h('div', { class: 'dlg-body' }, h('h3', null, `Asignar el territorio ${t.numero}`),
+    h('div', { class: 'dlg-body' }, h('h3', null, `Asignar la tarjeta ${t.numero}`),
       h('label', { class: 'field' }, '¿A quién?', capSel, who),
-      caps.length ? h('span', { class: 'small-text' }, 'El capitán lo verá en su app, en “Mis territorios”, y podrá registrar lo que se trabaje.')
-        : h('span', { class: 'small-text' }, 'Todavía no hay capitanes. El coordinador los nombra en Hermanos: en la cuenta del hermano, marca “Capitán”.'),
+      caps.length ? h('span', { class: 'small-text' }, 'Si el capitán tiene cuenta, la verá en su app, en “Mis tarjetas”, y podrá registrar lo que se trabaje.')
+        : h('span', { class: 'small-text' }, 'Todavía no hay capitanes. Se marcan en Hermanos: abre al hermano y marca “Capitán de territorios”.'),
       h('label', { class: 'field' }, 'Desde', since)),
     h('div', { class: 'dlg-foot' },
       h('button', { class: 'btn', onclick: close }, 'Cancelar'),
       h('button', { class: 'btn primary', onclick: async () => {
-        const cap = caps.find(c => c.uid === capSel.value);
+        const cap = capSel.value ? caps[+capSel.value.slice(1)] : null;
         const name = cap ? cap.nombre : squash(who.value);
         if (!name) return who.focus();
-        await updateTerritory(t, { estado: 'asignado', asignadoA: name, capitan: cap ? cap.uid : '', desde: since.value || todayISO() }, `Territorio ${t.numero} asignado a ${name}`);
+        await updateTerritory(t, { estado: 'asignado', asignadoA: name, capitan: cap ? cap.uid : '', desde: since.value || todayISO() }, `Tarjeta ${t.numero} asignada a ${name}`);
         close();
       } }, 'Asignar')));
   refreshDatalist();
@@ -2774,9 +2994,9 @@ async function updateTerritory(t, patch, msg) {
 }
 // Quitar la asignación sin completarlo: queda en el historial; se guarda hasta dónde se llegó
 function unassignTerritory(t) {
-  if (!confirm(`¿Quitarle el territorio ${t.numero} a ${t.asignadoA}? Se guarda lo trabajado y hasta dónde se llegó.`)) return;
+  if (!confirm(`¿Quitarle la tarjeta ${t.numero} a ${t.asignadoA}? Se guarda lo trabajado y hasta dónde se llegó.`)) return;
   const historial = [...(t.historial || []), { quien: t.asignadoA, desde: t.desde || '', hasta: todayISO(), completo: false }].slice(-50);
-  updateTerritory(t, { estado: 'disponible', asignadoA: '', capitan: '', desde: todayISO(), historial }, `Territorio ${t.numero}: ya no está asignado`);
+  updateTerritory(t, { estado: 'disponible', asignadoA: '', capitan: '', desde: todayISO(), historial }, `Tarjeta ${t.numero}: ya no está asignada`);
 }
 
 // Diálogo pequeño con una nota (casa marcada o hasta dónde se llegó)
@@ -2811,7 +3031,7 @@ function openWorkDialog(t, resumen) {
       h('p', { class: 'small-text muted', style: { margin: 0 } },
         `En el mapa hay ${lines.length} calle${lines.length === 1 ? '' : 's'} trabajada${lines.length === 1 ? '' : 's'}${av ? ' y un punto de “hasta aquí”' : ''}. Si falta marcar algo, cancela y usa los botones de arriba del mapa.`),
       h('label', { class: 'field' }, 'Fecha', fecha),
-      h('div', { class: 'field' }, h('span', null, '¿Se completó el territorio?'),
+      h('div', { class: 'field' }, h('span', null, '¿Se completó la tarjeta?'),
         h('div', { class: 'radios' }, h('label', null, full, 'Sí, todo'), h('label', null, part, 'No, quedó una parte'))),
       h('label', { class: 'field' }, 'Notas', notes), err),
     h('div', { class: 'dlg-foot' },
@@ -2829,7 +3049,7 @@ function openWorkDialog(t, resumen) {
             historial: [...(t.historial || []), { quien: t.asignadoA || (nube.me && nube.me.nombre) || '', desde: t.desde || f, hasta: f, completo: true }].slice(-50) });
           // Quedó una parte: la nota también explica hasta dónde llegaron
           else if (nota && avanceOf(t) && !avanceOf(t).n) await F.updateDoc(congRef('territorios', t.id), { avance: JSON.stringify({ ...avanceOf(t), n: nota.slice(0, 200) }) });
-          toast(completo ? `Territorio ${t.numero} completado` : 'Salida registrada');
+          toast(completo ? `Tarjeta ${t.numero} completada` : 'Salida registrada');
           close();
         } catch (ex) { err.textContent = errMsg(ex); e.target.disabled = false; }
       } }, 'Guardar')));
@@ -2967,8 +3187,8 @@ async function tripFinish() {
   if (Object.keys(patch).length && !await updateTerritory(t, patch)) return tripStart(t, trip); // no se pudo guardar: sigue la salida
   gpsTrip = null; tripSave(); tripUi();
   openWorkDialog(nube.territorios.find(x => x.id === t.id) || t,
-    segs.length ? `Recorrido con GPS: ${fmtMeters(tripMeters(trip))} dentro del territorio, ya marcado en morado; el último punto quedó como “hasta aquí”.`
-      : 'El GPS no grabó recorrido dentro del territorio.');
+    segs.length ? `Recorrido con GPS: ${fmtMeters(tripMeters(trip))} dentro de la tarjeta, ya marcado en morado; el último punto quedó como “hasta aquí”.`
+      : 'El GPS no grabó recorrido dentro de la tarjeta.');
 }
 // Marcar con la ubicación de este momento (durante la salida)
 function tripMarkHere(kind) {
@@ -2997,11 +3217,11 @@ function renderTerritories() {
   const actions = h('div'), modeBar = h('div'), panel = h('div'), list = h('div'), mine = h('div'), summary = h('div');
   const counts = h('div', { class: 'totals' });
   const tools = h('div', { class: 'row' });
-  const search = h('input', { type: 'search', value: terr.q, placeholder: '🔎 Territorio (número, colonia, tarjeta) o una dirección…', style: { flex: 1, minWidth: '200px' },
+  const search = h('input', { type: 'search', value: terr.q, placeholder: '🔎 Tarjeta, territorio, colonia o una dirección…', style: { flex: 1, minWidth: '200px' },
     oninput: () => { terr.q = search.value; addrBox.replaceChildren(); refresh(); focusMatches(); },
     onkeydown: e => { if (e.key === 'Enter' && !nube.territorios.some(matches)) findAddress(); } });
   const addrBox = h('div');
-  const matches = t => { const q = norm(terr.q); return !q || [t.numero, t.nombre, t.tarjeta].some(x => norm(x || '').includes(q)); };
+  const matches = t => { const q = norm(terr.q); return !q || [t.numero, t.nombre, t.territorio].some(x => norm(x || '').includes(q)); };
   const current = () => nube.territorios.find(x => x.id === terr.selected) || null;
   const fresh = t => t && (nube.territorios.find(x => x.id === t.id) || t); // por si cambió mientras se marcaba
 
@@ -3026,6 +3246,16 @@ function renderTerritories() {
   function drawLayers() {
     const L = terr.L, base = vueltaBase(), searching = !!terr.q.trim();
     terr.group.clearLayers(); terr.marks.clearLayers();
+    // Contorno de cada territorio (todas sus tarjetas), debajo de las tarjetas
+    const zones = new Map();
+    for (const t of nube.territorios) if (t.territorio && hasShape(t)) (zones.get(t.territorio) || zones.set(t.territorio, []).get(t.territorio)).push(t);
+    for (const [z, cards] of zones) {
+      const hull = territoryHull(cards);
+      if (!hull) continue;
+      const hit = searching && norm(z).includes(norm(terr.q));
+      L.polygon(hull, { color: '#5b3cc4', weight: hit ? 4 : 2.5, dashArray: '8 6', fill: true, fillColor: '#5b3cc4', fillOpacity: hit ? 0.12 : 0.04, interactive: false })
+        .bindTooltip(`Territorio ${z}`, { permanent: true, direction: 'top', className: 'terr-zone', offset: [0, 0] }).addTo(terr.group);
+    }
     for (const t of nube.territorios) {
       if (!hasShape(t)) continue;
       const sel = t.id === terr.selected, hit = searching && matches(t), color = TERR[estadoDe(t, base)].color, dim = searching && !hit;
@@ -3091,7 +3321,7 @@ function renderTerritories() {
   // poder deshacer el último toque aunque la ruta pegada a la calle haya puesto muchos puntos.
   const MODES = {
     zona: { help: 'Toca las esquinas de la zona en orden.', ready: m => m.points.length >= 3 },
-    calles: { help: 'Toca el inicio y luego el final de cada calle del territorio; la línea sigue la calle sola. Para otra calle, toca “＋ Otra calle”.', lines: true, ready: m => m.lines.some(l => l.length > 1) },
+    calles: { help: 'Toca el inicio y luego el final de cada calle de la tarjeta; la línea sigue la calle sola. Para otra calle, toca “＋ Otra calle”.', lines: true, ready: m => m.lines.some(l => l.length > 1) },
     trabajada: { help: 'Toca donde empezaron y luego donde terminaron la calle; la línea sigue la calle sola. Sin “Pegar a las calles”, tocas punto por punto.', lines: true, ready: m => m.lines.some(l => l.length > 1) },
     casa: { help: 'Toca en el mapa la casa que quieres marcar.' },
     avance: { help: 'Toca en el mapa el lugar exacto donde se quedaron.' },
@@ -3170,15 +3400,15 @@ function renderTerritories() {
     const m = terr.mode, t = fresh(m.t), lines = m.lines.filter(l => l.length > 1);
     stopMode();
     if (m.kind === 'zona') return t ? updateTerritory(t, { coords: JSON.stringify(m.points), calles: '' }, 'Zona guardada') : openTerritoryDataDialog(null, { coords: m.points });
-    if (m.kind === 'calles') return t ? updateTerritory(t, { calles: JSON.stringify(lines), coords: '[]' }, 'Calles del territorio guardadas') : openTerritoryDataDialog(null, { calles: lines });
+    if (m.kind === 'calles') return t ? updateTerritory(t, { calles: JSON.stringify(lines), coords: '[]' }, 'Calles de la tarjeta guardadas') : openTerritoryDataDialog(null, { calles: lines });
     if (m.kind === 'trabajada') updateTerritory(t, { trabajadas: JSON.stringify([...callesOf(t), ...lines]) }, `${lines.length === 1 ? 'Calle trabajada guardada' : lines.length + ' calles trabajadas guardadas'}`);
   }
   function barUpdate() {
     const m = terr.mode;
     if (!m) return modeBar.replaceChildren();
     const info = MODES[m.kind], cur = m.lines[m.lines.length - 1];
-    const what = { zona: m.t ? `Redibujar la zona del territorio ${m.t.numero}` : 'Nuevo territorio: dibujar la zona', calles: m.t ? `Redibujar las calles del territorio ${m.t.numero}` : 'Nuevo territorio: trazar sus calles',
-      trabajada: `Trazar calle trabajada · territorio ${m.t && m.t.numero}`, casa: `Marcar casa · territorio ${m.t && m.t.numero}`, avance: `Hasta aquí · territorio ${m.t && m.t.numero}` }[m.kind];
+    const what = { zona: m.t ? `Redibujar la zona de la tarjeta ${m.t.numero}` : 'Nueva tarjeta: dibujar la zona', calles: m.t ? `Redibujar las calles de la tarjeta ${m.t.numero}` : 'Nueva tarjeta: trazar sus calles',
+      trabajada: `Trazar calle trabajada · tarjeta ${m.t && m.t.numero}`, casa: `Marcar casa · tarjeta ${m.t && m.t.numero}`, avance: `Hasta aquí · tarjeta ${m.t && m.t.numero}` }[m.kind];
     const needsSave = m.kind === 'zona' || info.lines;
     modeBar.replaceChildren(h('div', { class: 'card mode-bar' },
       h('strong', null, what),
@@ -3200,9 +3430,9 @@ function renderTerritories() {
     const opt = (kind, title, text) => h('button', { class: 'btn', style: { textAlign: 'left', display: 'block', width: '100%', padding: '12px' }, onclick: () => { close(); startMode(kind, t); } },
       h('strong', null, title), h('div', { class: 'small-text muted' }, text));
     const dlg = h('dialog', { class: 'dlg' },
-      h('div', { class: 'dlg-body' }, h('h3', null, t ? `Redibujar el territorio ${t.numero}` : 'Nuevo territorio'), h('p', { class: 'small-text', style: { margin: 0 } }, '¿Cómo es el territorio?'),
+      h('div', { class: 'dlg-body' }, h('h3', null, t ? `Redibujar la tarjeta ${t.numero}` : 'Nueva tarjeta'), h('p', { class: 'small-text', style: { margin: 0 } }, '¿Cómo es la zona de la tarjeta?'),
         opt('zona', '▱ Una zona', 'Tocas las esquinas y se forma el área (por ejemplo, unas manzanas).'),
-        opt('calles', '〰 Unas calles', 'Trazas solo las calles que forman el territorio.')),
+        opt('calles', '〰 Unas calles', 'Trazas solo las calles que forman la tarjeta.')),
       h('div', { class: 'dlg-foot' }, h('button', { class: 'btn', onclick: close }, 'Cancelar')));
     document.body.append(dlg); dlg.showModal();
   }
@@ -3213,12 +3443,12 @@ function renderTerritories() {
     if (terr.mode) return actions.replaceChildren();
     // Salida con GPS en curso: lo único que se ve arriba es eso
     if (gpsTrip) return actions.replaceChildren(h('div', { class: 'card mode-bar trip' },
-      h('div', { class: 'row spread' }, h('strong', null, `● Grabando salida · territorio ${gpsTrip.numero}`),
+      h('div', { class: 'row spread' }, h('strong', null, `● Grabando salida · tarjeta ${gpsTrip.numero}`),
         h('span', { class: 'small-text' }, `desde las ${new Date(gpsTrip.inicio).toLocaleTimeString('es', { hour: 'numeric', minute: '2-digit' })}`)),
       h('div', { style: { fontSize: '26px', fontWeight: 700, margin: '6px 0' } }, fmtMeters(tripMeters(gpsTrip))),
       h('div', { class: 'small-text', style: { marginBottom: '8px' } },
         !gpsPos ? '📡 Esperando la señal del GPS…' : gpsPos.acc > 40 ? '📡 Señal del GPS imprecisa, espera un momento…'
-          : gpsTrip.out ? '📍 Estás fuera del territorio: no se graba. Al entrar, sigue grabando solo.' : '📍 Grabando por dónde caminan (en rojo). Dejen la app abierta.'),
+          : gpsTrip.out ? '📍 Estás fuera de la tarjeta: no se graba. Al entrar, sigue grabando solo.' : '📍 Grabando por dónde caminan (en rojo). Dejen la app abierta.'),
       h('div', { class: 'terr-actions' },
         h('button', { class: 'btn', onclick: () => tripMarkHere('casa') }, h('span', { style: { fontSize: '20px' } }, '🏠'), 'Marcar casa aquí'),
         h('button', { class: 'btn primary', onclick: tripFinish }, h('span', { style: { fontSize: '20px' } }, '■'), 'Terminar salida')),
@@ -3226,16 +3456,16 @@ function renderTerritories() {
     // Una salida que quedó a medias (se cerró la app)
     const stored = tripStored();
     if (stored && !gpsTrip) return actions.replaceChildren(h('div', { class: 'card mode-bar' },
-      h('strong', null, `Hay una salida con GPS sin terminar · territorio ${stored.numero}`),
+      h('strong', null, `Hay una salida con GPS sin terminar · tarjeta ${stored.numero}`),
       h('div', { class: 'small-text', style: { margin: '4px 0 8px' } }, `Llevaba ${fmtMeters(tripMeters(stored))} grabados.`),
       h('div', { class: 'row' },
         h('button', { class: 'btn small primary', onclick: () => { terr.selected = stored.tid; tripStart(null, stored); } }, '▶ Continuar'),
         h('button', { class: 'btn small', onclick: () => { gpsTrip = stored; tripFinish(); } }, '■ Terminar y registrar'),
         h('button', { class: 'btn small', onclick: () => { gpsTrip = stored; tripDiscard(); if (gpsTrip) gpsTrip = null; } }, 'Descartar'))));
     if (!t) return actions.replaceChildren(h('div', { class: 'card', style: { padding: '12px 14px', marginBottom: '10px' } },
-      h('div', { class: 'small-text' }, '👆 Toca un territorio en el mapa o en la lista para ver sus datos',
+      h('div', { class: 'small-text' }, '👆 Toca una tarjeta en el mapa o en la lista para ver sus datos',
         nube.territorios.some(canWork) ? ' y trabajar en él (marcar calles, casas y registrar salidas).' : '.'),
-      editor ? h('button', { class: 'btn small primary', style: { marginTop: '8px' }, onclick: () => askShape(null) }, '+ Nuevo territorio') : null));
+      editor ? h('button', { class: 'btn small primary', style: { marginTop: '8px' }, onclick: () => askShape(null) }, '+ Nueva tarjeta') : null));
     const st = estadoDe(t, base);
     const big = (icon, text, fn, primary) => h('button', { class: 'btn' + (primary ? ' primary' : ''), onclick: fn }, h('span', { style: { fontSize: '20px' } }, icon), text);
     actions.replaceChildren(h('div', { class: 'card', style: { padding: '12px 14px', marginBottom: '10px' } },
@@ -3245,13 +3475,13 @@ function renderTerritories() {
           st === 'asignado' ? h('span', { class: 'small-text' }, ` a ${t.asignadoA}`) : null),
         h('button', { class: 'btn small', onclick: () => { terr.selected = null; refresh(); } }, '✕')),
       canWork(t) ? h('button', { class: 'btn primary trip-start', onclick: () => tripStart(t) }, '▶ Empezar salida con GPS',
-        h('span', { class: 'small-text' }, 'Graba por dónde caminan dentro del territorio y al final lo registra')) : null,
+        h('span', { class: 'small-text' }, 'Graba por dónde caminan dentro de la tarjeta y al final lo registra')) : null,
       canWork(t) ? h('div', { class: 'terr-actions' },
         big('〰', 'Trazar calle trabajada', () => startMode('trabajada', t)),
         big('🏠', 'Marcar casa', () => startMode('casa', t)),
         big('🚩', 'Hasta aquí llegaron', () => startMode('avance', t)),
         big('✅', 'Registrar salida', () => openWorkDialog(t)))
-        : h('div', { class: 'small-text muted', style: { marginTop: '6px' } }, 'Para registrar aquí, el siervo de territorios tiene que asignártelo.'),
+        : h('div', { class: 'small-text muted', style: { marginTop: '6px' } }, 'Para registrar aquí, el siervo de territorios tiene que asignártela.'),
       editor ? h('div', { class: 'row', style: { marginTop: '8px' } },
         st !== 'asignado' ? h('button', { class: 'btn small primary', onclick: () => openAssignDialog(t) }, 'Asignar') : h('button', { class: 'btn small', onclick: () => unassignTerritory(t) }, 'Quitar asignación'),
         h('button', { class: 'btn small', onclick: () => panel.scrollIntoView({ behavior: 'smooth' }) }, 'Más opciones ↓')) : null));
@@ -3276,7 +3506,7 @@ function renderTerritories() {
     // Capitán: sus territorios
     const myOnes = all.filter(isMyTerritory);
     mine.replaceChildren(myOnes.length ? h('div', { class: 'card', style: { padding: '12px 14px', marginBottom: '12px' } },
-      h('strong', null, 'Mis territorios'),
+      h('strong', null, 'Mis tarjetas'),
       myOnes.map(t => h('div', { class: 'row spread', style: { marginTop: '8px' } },
         h('span', null, h('strong', null, terrTitle(t)), h('span', { class: 'muted small-text' }, ` · desde el ${fmtShort(t.desde)} (${dayCount(daysBetween(t.desde, today))})`)),
         h('button', { class: 'btn small primary', onclick: () => select(t.id) }, 'Trabajar aquí')))) : '');
@@ -3287,7 +3517,7 @@ function renderTerritories() {
     panel.replaceChildren(t ? h('div', { class: 'card', style: { padding: '14px', marginTop: '12px' } },
       h('strong', { style: { fontSize: '17px' } }, terrTitle(t)),
       h('div', { class: 'small-text', style: { marginTop: '6px', display: 'grid', gap: '4px' } },
-        h('div', null, `Número de tarjeta: ${t.tarjeta || '—'}`),
+        h('div', null, `Territorio: ${t.territorio || '—'}`),
         h('div', null, `Estado: ${TERR[st].label}${st === 'asignado' ? ` a ${t.asignadoA}` : ''}${t.desde ? ` · desde el ${fmtShort(t.desde)} (${dayCount(daysBetween(t.desde, today))})` : ''}`),
         h('div', null, `En ${year}: completado ${ys ? ys.completos : 0} ${ys && ys.completos === 1 ? 'vez' : 'veces'} · ${ys ? ys.salidas : 0} salida${ys && ys.salidas === 1 ? '' : 's'} registrada${ys && ys.salidas === 1 ? '' : 's'}.`),
         av ? h('div', null, '🚩 Hasta aquí llegaron', av.f ? ` (${fmtShort(av.f)})` : '', av.n ? `: ${av.n}` : '') : null,
@@ -3314,7 +3544,7 @@ function renderTerritories() {
           h('span', { class: 'muted' }, `${x.desde ? fmtShort(x.desde) : '?'} – ${x.hasta ? fmtShort(x.hasta) : '?'}`)))) : null,
       h('div', { class: 'row', style: { marginTop: '12px' } },
         editor && st === 'terminado' ? h('button', { class: 'btn small', onclick: () => {
-          if (confirm(`¿Regresar el territorio ${t.numero} a disponible en esta vuelta? Sus registros no se borran.`)) updateTerritory(t, { veces: vueltaBase() }, 'Ahora está disponible');
+          if (confirm(`¿Regresar la tarjeta ${t.numero} a disponible en esta vuelta? Sus registros no se borran.`)) updateTerritory(t, { veces: vueltaBase() }, 'Ahora está disponible');
         } }, 'Regresar a disponible') : null,
         h('button', { class: 'btn small', onclick: () => openQRDialog(t) }, '▦ QR'),
         h('button', { class: 'btn small', onclick: () => territoryCardsPDF([t]) }, '🖨 Tarjeta con mapa'),
@@ -3325,9 +3555,9 @@ function renderTerritories() {
           if (confirm('¿Borrar del mapa las calles trabajadas y el “hasta aquí”? Las salidas registradas no se borran.')) updateTerritory(t, { trabajadas: '', avance: '' }, 'Marcas borradas');
         } }, 'Borrar calles y avance') : null,
         editor ? h('button', { class: 'btn small danger', onclick: async () => {
-          if (!confirm(`¿Borrar el territorio ${t.numero}? Se pierde también su historial.`)) return;
-          try { await F.deleteDoc(congRef('territorios', t.id)); terr.selected = null; toast('Territorio borrado'); } catch (e) { toast(errMsg(e)); }
-        } }, 'Borrar territorio') : null)) : '');
+          if (!confirm(`¿Borrar la tarjeta ${t.numero}? Se pierde también su historial.`)) return;
+          try { await F.deleteDoc(congRef('territorios', t.id)); terr.selected = null; toast('Tarjeta borrada'); } catch (e) { toast(errMsg(e)); }
+        } }, 'Borrar tarjeta') : null)) : '');
 
     const shown = all.filter(t => (terr.filter === 'todos' || estadoDe(t, base) === terr.filter) && matches(t));
     const years = [...new Set([year, ...nube.trabajos.map(w => +String(w.fecha).slice(0, 4)).filter(Boolean)])].sort((a, b) => b - a);
@@ -3338,18 +3568,18 @@ function renderTerritories() {
         years.length > 1 ? h('label', { class: 'field' }, 'Año', h('select', { onchange: e => { terr.year = +e.target.value; refresh(); } },
           years.map(y => h('option', { value: y, selected: y === terr.year ? true : null }, y)))) : null),
       h('div', { class: 'tablewrap' }, h('table', { class: 'stats' },
-        h('thead', null, h('tr', null, ['Nº', 'Colonia', 'Tarjeta', 'Estado', 'Asignado a', 'Desde', `Completado ${terr.year}`, `Salidas ${terr.year}`].map(x => h('th', null, x)))),
+        h('thead', null, h('tr', null, ['Tarjeta', 'Territorio', 'Colonia', 'Estado', 'Asignado a', 'Desde', `Completado ${terr.year}`, `Salidas ${terr.year}`].map(x => h('th', null, x)))),
         h('tbody', null, shown.length ? shown.map(t => {
           const s = stats.get(t.id), e = estadoDe(t, base);
           return h('tr', { onclick: () => select(t.id), style: t.id === terr.selected ? { background: 'var(--surface-2)' } : null },
-            h('td', null, h('strong', null, t.numero)), h('td', null, t.nombre || '—'), h('td', null, t.tarjeta || '—'),
+            h('td', null, h('strong', null, t.numero)), h('td', null, t.territorio || '—'), h('td', null, t.nombre || '—'),
             h('td', null, h('span', { class: 'badge', style: { background: TERR[e].color, color: '#fff' } }, TERR[e].label)),
             h('td', null, e === 'asignado' ? t.asignadoA : '—'),
             h('td', { class: 'small-text' }, t.desde ? `${fmtShort(t.desde)} (${daysBetween(t.desde, today)} d)` : '—'),
             h('td', null, s ? `${s.completos}${s.ultimo ? ' · ' + fmtShort(s.ultimo) : ''}` : 0),
             h('td', null, s ? s.salidas : 0));
         })
-          : h('tr', null, h('td', { colspan: 8, class: 'empty' }, all.length ? 'Ninguno con este filtro.' : editor ? 'Todavía no hay territorios. Toca “+ Nuevo territorio”.' : 'Todavía no hay territorios.'))))));
+          : h('tr', null, h('td', { colspan: 8, class: 'empty' }, all.length ? 'Ninguno con este filtro.' : editor ? 'Todavía no hay tarjetas. Toca “+ Nueva tarjeta”.' : 'Todavía no hay tarjetas.'))))));
   }
   terr.refresh = refresh;
   refresh();
@@ -3357,8 +3587,8 @@ function renderTerritories() {
   return h('div', null,
     h('div', { class: 'row spread', style: { marginBottom: '10px' } },
       h('div', null, h('h1', null, 'Territorios'),
-        h('p', { class: 'sub', style: { margin: 0 } }, editor ? 'Elige un territorio para asignarlo, marcar lo trabajado y registrar salidas.'
-          : can('capitan') ? 'Tus territorios salen en “Mis territorios”. Elige uno para marcar lo trabajado y registrar la salida.' : 'Toca un territorio para ver sus datos y su QR.')),
+        h('p', { class: 'sub', style: { margin: 0 } }, editor ? 'Elige una tarjeta para asignarla, marcar lo trabajado y registrar salidas. Las tarjetas de un mismo territorio se rodean con su contorno.'
+          : can('capitan') ? 'Tus tarjetas salen en “Mis tarjetas”. Elige una para marcar lo trabajado y registrar la salida.' : 'Toca una tarjeta para ver sus datos y su QR.')),
       tools),
     mine,
     counts,
@@ -3372,7 +3602,7 @@ function renderTerritories() {
     h('div', { class: 'row spread', style: { margin: '18px 0 8px' } },
       h('h2', { class: 'group', style: { margin: 0 } }, 'Lista'),
       h('div', { class: 'row' },
-        editor ? h('button', { class: 'btn small primary', onclick: () => askShape(null) }, '+ Nuevo territorio') : null,
+        editor ? h('button', { class: 'btn small primary', onclick: () => askShape(null) }, '+ Nueva tarjeta') : null,
         h('button', { class: 'btn small', onclick: () => {
           const base = vueltaBase(), all = [...nube.territorios].sort(byNumero).filter(t => (terr.filter === 'todos' || estadoDe(t, base) === terr.filter) && matches(t));
           if (all.length) territoryCardsPDF(all); else toast('No hay territorios para imprimir');
@@ -3384,8 +3614,8 @@ function renderTerritories() {
 function renderSharedTerritory() {
   const q = new URLSearchParams(location.hash.slice(1));
   const pts = decodePoly(q.get('p') || ''), numero = q.get('n') || '', nombre = q.get('t') || '';
-  document.title = `Territorio ${numero}`;
-  setBrand(`Territorio ${numero}${nombre ? ' · ' + nombre : ''}`);
+  document.title = `Tarjeta ${numero}`;
+  setBrand(`Tarjeta ${numero}${nombre ? ' · ' + nombre : ''}`);
   const mapEl = h('div', { style: { height: 'calc(100vh - 170px)', minHeight: '320px', borderRadius: '12px' } });
   const tools = h('div', { class: 'row', style: { marginBottom: '10px' } });
   document.getElementById('app').replaceChildren(tools, mapEl);
@@ -3612,6 +3842,16 @@ function mecanicasPDF(weeks) {
 }
 
 // Elegir las semanas del PDF (marcadas las próximas 8)
+// Descargar todo un mes de una vez: se elige el mes (de las semanas que hay) y se arma el PDF
+function monthDownload(list, run) {
+  const months = [...new Set(list.map(p => meetingDate(p).slice(0, 7)))].sort();
+  if (!months.length) return null;
+  const cur = todayISO().slice(0, 7), def = months.includes(cur) ? cur : months[months.length - 1];
+  const sel = h('select', { title: 'Mes' }, months.map(m => h('option', { value: m, selected: m === def ? true : null }, fmtMonth(m))));
+  return h('div', { class: 'row', style: { gap: '6px' } }, sel,
+    h('button', { class: 'btn', onclick: () => run(list.filter(p => meetingDate(p).slice(0, 7) === sel.value)) }, '⬇ Mes completo'));
+}
+
 function openMecanicasPDFDialog(weeks) {
   const boxes = weeks.map((p, i) => ({ p, box: h('input', { type: 'checkbox', checked: i < 8 }) }));
   const close = () => { dlg.close(); dlg.remove(); };
@@ -3681,7 +3921,7 @@ function renderMecanicas() {
   return h('div', null,
     h('div', { class: 'row spread', style: { alignItems: 'flex-start' } },
       h('h1', null, 'Asignaciones mecánicas'),
-      weeks.length ? h('button', { class: 'btn primary', onclick: () => openMecanicasPDFDialog(weeks) }, '⬇ PDF') : null),
+      h('div', { class: 'row' }, monthDownload(state.programs, mecanicasPDF), weeks.length ? h('button', { class: 'btn primary', onclick: () => openMecanicasPDFDialog(weeks) }, '⬇ PDF') : null)),
     h('p', { class: 'sub' }, `Toca un espacio para ver a los hermanos más recomendados, o usa “✨ Sugerir” para llenar los vacíos de la semana. No se repite a nadie en ${state.settings.mecRestDays ?? 14} días ni en la misma reunión.`),
     weeks.length ? weeks.map(card) : h('div', { class: 'card empty' }, 'No hay semanas próximas. Agrégalas en Semanas.'));
 }
@@ -3910,7 +4150,7 @@ function renderList() {
   return h('div', null,
     h('div', { class: 'row spread', style: { marginBottom: '14px' } },
       h('div', null, h('h1', null, 'Semanas'), h('p', { class: 'sub', style: { margin: 0 } }, 'Programas de la reunión con sus asignaciones.')),
-      pdfBtn),
+      h('div', { class: 'row' }, monthDownload(state.programs, downloadPDF), pdfBtn)),
     FB_CONFIG && nube.me.perfil ? nextAssignmentCard(publicWeeks()) : null,
     location.protocol === 'file:' ? h('div', { class: 'notice warn' },
       'Abriste la app directamente. Para que busque las guías en jw.org, ciérrala y ábrela con el archivo “Programas.bat”.') : null,
@@ -3960,7 +4200,7 @@ function renderEditor(p) {
     for (const x of slotsOf(p)) {
       if (x.pid) continue;
       const key = x.row.id + '|' + x.slot;
-      const other = x.slot === 'b' ? x.row.a || (proposals.get(x.row.id + '|a') || {}).pr?.id : x.row.b;
+      const mate = mateSlot(x.slot), other = x.row[mate] || (/b$/.test(x.slot) ? (proposals.get(x.row.id + '|' + mate) || {}).pr?.id : undefined);
       const list = candidatesFor(p, x.row, x.slot, ctx, reserved, other);
       const c = list.length ? list[(skips.get(key) || 0) % list.length] : null;
       proposals.set(key, c);
@@ -4028,7 +4268,7 @@ function renderEditor(p) {
       `Solo quien tiene “${privLabel(priv)}”`) : '');
     // En una pareja de estudiantes, los familiares de la otra persona salen primero;
     // luego quien cumple el filtro de la parte (por ejemplo, edad escolar si habla de la escuela)
-    const partner = fr && fr.helper === 'Ayudante' ? fr[focus.slot === 'a' ? 'b' : 'a'] : null;
+    const partner = fr && fr.helper === 'Ayudante' ? fr[mateSlot(focus.slot)] : null;
     const rule = fr ? ruleFor(fr) : null;
     const items = state.profiles
       .filter(pr => !used.has(pr.id) && (!f || norm(pr.name).includes(f)))
@@ -4067,11 +4307,11 @@ function renderEditor(p) {
 
   function setFocus(row, slot) {
     focus = { rowId: row.id, slot };
-    const partner = row.helper === 'Ayudante' && profById(row[slot === 'a' ? 'b' : 'a']);
+    const partner = row.helper === 'Ayudante' && profById(row[mateSlot(slot)]);
     sexFilter = slotNeedsMen(row, slot) ? 'M' : partner ? partner.sex : 'all';
     const lb = slotLabels(row);
     const rule = ruleFor(row);
-    suggFor.textContent = `Para: ${slot === 'b' ? lb.b : lb.a && !lb.soft ? lb.a : displayTitle(row)}`
+    suggFor.textContent = `Para: ${isAux(slot) && row.kind === 'chair' ? 'Consejero de la sala auxiliar' : baseSlot(slot) === 'b' ? lb.b : lb.a && !lb.soft ? lb.a : displayTitle(row)}${isAux(slot) && row.kind !== 'chair' ? ' (sala auxiliar)' : ''}`
       + (rule ? ` · filtro “${rule.nombre}”${ruleText(rule) ? ` (${ruleText(rule)})` : ''}` : '');
     privOnly = true;
     body.querySelectorAll('input.focused').forEach(i => i.classList.remove('focused'));
@@ -4120,7 +4360,7 @@ function renderEditor(p) {
     const { row, slot, inp } = pick;
     const ctx = contextFor(p), counts = new Set([...slotsOf(p).filter(x => x.pid && !(x.row === row && x.slot === slot)).map(x => x.pid), ...mecIds(p, 'entre')]);
     const current = row[slot], typed = current && profById(current) && profById(current).name === inp.value ? '' : norm(inp.value);
-    const partner = slot === 'b' ? row.a : row.b;
+    const partner = row[mateSlot(slot)];
     const best = candidatesFor(p, row, slot, ctx, counts, partner).filter(c => c.pr.id !== current);
     const priv = privFor(row, slot), rule = ruleFor(row), men = slotNeedsMen(row, slot);
     let items;
@@ -4238,7 +4478,12 @@ function renderEditor(p) {
         h('div', { class: 'pdot', style: { background: so ? so.css : 'var(--sec-none)' } }),
         h('div', { class: 'ptitle' }, editing ? titleEditor(row) : titleNode(row)),
         h('div', { class: 'pslots' },
-          isAssignable(row) ? [slotNode(row, 'a', lb.a, lb.soft), row.helper ? slotNode(row, 'b', lb.b, lb.soft) : null] : null),
+          isAssignable(row) ? (auxOn() && hasAux(row)
+            // Con sala auxiliar: principal y auxiliar, cada una con su etiqueta
+            ? row.kind === 'chair' ? [slotNode(row, 'a', lb.a, lb.soft), slotNode(row, 'xa', 'Consejero sala aux.', false)]
+              : [h('div', { class: 'room' }, 'Auditorio principal'), slotNode(row, 'a', lb.a, lb.soft), row.helper ? slotNode(row, 'b', lb.b, lb.soft) : null,
+                h('div', { class: 'room' }, 'Sala auxiliar'), slotNode(row, 'xa', lb.a, lb.soft), row.helper ? slotNode(row, 'xb', lb.b, lb.soft) : null]
+            : [slotNode(row, 'a', lb.a, lb.soft), row.helper ? slotNode(row, 'b', lb.b, lb.soft) : null]) : null),
         editing ? h('div', { class: 'pacts' },
           h('button', { class: 'btn icon small', title: 'Subir', disabled: i === 0,
             onclick: () => { [p.rows[i - 1], p.rows[i]] = [p.rows[i], p.rows[i - 1]]; rebuild(); } }, '↑'), ' ',
@@ -4375,6 +4620,7 @@ function renderPeople() {
       return h('tr', { onclick: () => openProfileDialog(x.pr) },
         h('td', null, h('strong', null, x.pr.name),
           x.pr.nombramiento ? h('span', { class: 'tag-fam', style: { color: 'var(--accent)' } }, nomLabel(x.pr.nombramiento)) : null,
+          x.pr.capitan ? h('span', { class: 'tag-fam' }, 'Capitán') : null,
           x.pr.tipo === 'reg' || x.pr.tipo === 'no' ? h('span', { class: 'tag-fam' }, x.pr.tipo === 'reg' ? 'Precursor regular' : 'No publicador') : null,
           grp ? h('span', { class: 'tag-fam' }, grp.nombre) : null,
           acc ? h('div', { class: 'muted small-text', title: 'Tiene cuenta en la app' }, '🔑 ', acc.email,
@@ -4485,6 +4731,10 @@ function renderSettings() {
     h('input', { type: 'number', min, max, value: s[key], style: { width: '120px' }, onchange: e => { s[key] = Math.min(max, Math.max(min, Math.round(+e.target.value) || min)); e.target.value = s[key]; save(); } }));
   const text = (label, key, ph) => h('label', { class: 'field' }, label,
     h('input', { type: 'text', value: s[key], placeholder: ph, oninput: e => { s[key] = e.target.value; save(); } }));
+  const pick = (label, key, opts) => h('label', { class: 'field' }, label,
+    h('select', { onchange: e => { s[key] = e.target.value; save(); } }, opts.map(([v, t]) => h('option', { value: v, selected: (s[key] || opts[0][0]) === v ? true : null }, t))));
+  const check = (label, key) => h('label', { class: 'row', style: { gap: '8px', color: 'var(--text)', fontSize: '14px', alignItems: 'flex-start' } },
+    h('input', { type: 'checkbox', checked: s[key] !== false, onchange: e => { s[key] = e.target.checked; save(); } }), label);
   const fileIn = h('input', { type: 'file', accept: '.json,application/json', style: { display: 'none' }, onchange: e => {
     const f = e.target.files[0]; if (!f) return;
     f.text().then(txt => {
@@ -4511,6 +4761,10 @@ function renderSettings() {
     meetingTimesCard(),
     h('h2', { class: 'group' }, 'Programa y PDF'),
     h('div', { class: 'card settings' },
+      pick('Diseño del programa', 'pdfDesign', PDF_DESIGNS),
+      pick('Fecha de cada semana en el programa', 'pdfDate', DATE_HEADERS),
+      check('Poner los minutos de cada parte en el programa, por ejemplo “(4 mins.)”', 'pdfShowMin'),
+      check('Usamos sala auxiliar: las partes de estudiantes llevan también quién la presenta en la sala auxiliar, y la semana su consejero', 'auxRoom'),
       text('Título del programa', 'pdfTitle', 'Programa para la reunión de entre semana'),
       FB_CONFIG ? null : text('Nombre de la congregación', 'congregation', 'Opcional'),
       h('div', { class: 'row', style: { gap: '20px', alignItems: 'flex-end' } },
@@ -4521,6 +4775,11 @@ function renderSettings() {
       h('label', { class: 'field' }, 'Nota al estudiante (en las hojas de asignación)',
         h('textarea', { rows: 3, oninput: e => { s.slipNote = e.target.value; save(); } }, s.slipNote)),
       text('Texto al pie de las hojas de asignación', 'slipFooter', 'Opcional (por ejemplo, el código del formulario)'),
+      h('strong', { class: 'small-text' }, 'En las hojas de asignación'),
+      pick('Fecha', 'slipDate', DATE_FORMATS),
+      check('Poner los minutos, por ejemplo “(4 mins.)”', 'slipShowMin'),
+      check('Poner el texto de la parte, por ejemplo “Jer 50:24-10”', 'slipShowText'),
+      check('Poner la lección, por ejemplo “(th lección 11)”', 'slipShowLesson'),
       num('No repetir a nadie en … días (antes o después de su asignación)', 'restDays', 7, 120),
       num('Asignaciones mecánicas: no repetir a nadie en … días', 'mecRestDays', 0, 120),
       num('Marcar como “hace mucho” después de … días', 'staleDays', 1, 3650),

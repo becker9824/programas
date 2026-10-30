@@ -100,10 +100,11 @@ service cloud.firestore {
       // El capitán al que se le asignó uno puede registrar en él (avance, calles, no predicar,
       // completarlo); no puede cambiar sus datos ni pasárselo a otro.
       function validTerritory(d) {
-        return d.keys().hasOnly(['numero', 'nombre', 'tarjeta', 'notas', 'coords', 'calles', 'estado', 'asignadoA', 'capitan', 'desde', 'historial', 'veces', 'trabajadas', 'avance', 'noPredicar'])
+        return d.keys().hasOnly(['numero', 'territorio', 'nombre', 'tarjeta', 'notas', 'coords', 'calles', 'estado', 'asignadoA', 'capitan', 'desde', 'historial', 'veces', 'trabajadas', 'avance', 'noPredicar'])
           && d.numero is string && d.numero.size() > 0 && d.numero.size() <= 20
           && d.nombre is string && d.nombre.size() <= 100
           && d.get('tarjeta', '') is string && d.get('tarjeta', '').size() <= 20
+          && d.get('territorio', '') is string && d.get('territorio', '').size() <= 20
           && d.notas is string && d.notas.size() <= 1000
           && d.coords is string && d.coords.size() <= 30000
           && d.get('calles', '') is string && d.get('calles', '').size() <= 30000
@@ -150,10 +151,12 @@ service cloud.firestore {
         allow update: if can(c, 'territorios') && validWork(request.resource.data) && request.resource.data.por == resource.data.por;
         allow delete: if can(c, 'territorios');
       }
-      // Lista de capitanes (nombre y cuenta) que publica el coordinador para poder asignarles territorios.
+      // Capitanes, para que el siervo de territorios pueda asignarles tarjetas (no ve cuentas ni hermanos):
+      // capitanes/lista = cuentas con la función Capitán (la escribe el coordinador) y
+      // capitanes/hermanos = hermanos marcados como capitán (la escribe Programa VyM al guardar).
       match /capitanes/{doc} {
         allow read: if isActive(c);
-        allow write: if isAdmin(c);
+        allow write: if (doc == 'lista' && isAdmin(c)) || (doc == 'hermanos' && can(c, 'programa'));
       }
       // Anuncios: los leen todos los miembros activos; los publican los ancianos.
       match /anuncios/{id} {
