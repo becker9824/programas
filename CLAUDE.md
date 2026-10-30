@@ -106,6 +106,13 @@ App para organizar las asignaciones de la reunión semanal Vida y Ministerio Cri
 - Capitanes: casilla "Capitán de territorios" en el hermano (`perfil.capitan`; si tiene cuenta, también le da la función). `capitanes/hermanos` (lo escribe Programa VyM en `uploadState`) y `capitanes/lista` (cuentas; el coordinador); `captainOptions()` los une.
 - Para revisar PDFs sin abrirlos a mano: generarlos en el navegador y mandarlos con `fetch` POST a un receptor local (`recibir.js` en el scratchpad, puerto 8799); luego leerlos con Read.
 
+## WhatsApp, fin de semana, asistencia y S-21 (1.23.0)
+- WhatsApp: "💬 Avisar por WhatsApp" en el editor de la semana, en Mecánicas y en Fin de semana (`openWhatsAppDialog`, `weekAssignments`). Mensaje de `settings.waTemplate` (de fábrica `WA_TEMPLATE`; NO ponerlo en `defaults()`, que corre antes de definirse) con {nombre} {asignacion} {reunion} {fecha} {hora} {companero} {sala} {congregacion}; los renglones con llaves que quedan vacíos se quitan (`waMessage`). Se corrige antes de mandar. Teléfono del directorio; `waPhone` le pone la lada `settings.waCountry` (52). Se abre `wa.me`.
+- Fin de semana (vista `finsemana`, función programa): `p.fin` = { bosquejo, tema, orador, oradorId, cong, hosp, notas, salen: [...] }; presidente y lector son las mecánicas de 'fin'. Temas de bosquejos recordados en `state.talks` (va en config). PDF `weekendPDF`. Lo ven todos en el programa publicado (`fin` en `publicWeeks`); la semana sigue visible hasta su última reunión (`lastDay` en `renderPubList`).
+- Asistencia S-88 (vista `asistencia`, ancianos): `asistencia/{AAAA-MM}` = { entre: {fecha: n}, fin: {fecha: n} }; año de servicio sep–ago (`serviceMonths`); PDF `attendancePDF`.
+- S-21: en Informes (secretario) "Tarjetas del publicador" (`publisherCardsPDF`, 2 por hoja) con los informes del año. Ficha del hermano: `nacimiento` (calcula la edad), `bautismoFecha`, `esperanza` ('' otras ovejas | 'ungido').
+- Si el programa instalado está abierto, `npx electron . --prueba` se cierra sin decir nada (una sola copia): usar `--user-data-dir="$TEMP/programas-prueba"`.
+
 ## Pendiente / ideas
 - Pulir detalles mínimos del diseño que el usuario vaya encontrando.
 - Ajustar Cuentas si el usuario manda sus hojas S-26/S-30.

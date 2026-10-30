@@ -181,6 +181,13 @@ service cloud.firestore {
           && (request.resource.data.auxiliar == null || request.resource.data.auxiliar is string)
           && request.resource.data.miembros is list && request.resource.data.miembros.size() <= 300;
       }
+      // Asistencia a las reuniones (S-88): asistencia/{AAAA-MM} = { entre: {fecha: n}, fin: {fecha: n} }.
+      // La anotan y la ven los ancianos (cualquier función).
+      match /asistencia/{mes} {
+        allow read, delete: if isElder(c);
+        allow create, update: if isElder(c) && mes.matches('[0-9]{4}-[0-9]{2}')
+          && only(['entre', 'fin']) && request.resource.data.entre is map && request.resource.data.fin is map;
+      }
       match /familias/{id} {
         allow read, write: if can(c, 'programa');
       }

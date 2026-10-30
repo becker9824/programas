@@ -225,6 +225,16 @@ test('grupos: los arma el secretario, los ven los ancianos; la función Capitán
   await assertSucceeds(deleteDoc(cdoc(db('secre'), 'grupos', 'g1')));
 });
 
+test('asistencia: la anotan y la ven los ancianos, no los publicadores', async () => {
+  const a = { entre: { '2026-10-07': 85, '2026-10-14': 90 }, fin: { '2026-10-11': 110 } };
+  await assertSucceeds(setDoc(cdoc(db('secre'), 'asistencia', '2026-10'), a));
+  await assertSucceeds(getDoc(cdoc(db('prog'), 'asistencia', '2026-10')));
+  await assertFails(setDoc(cdoc(db('secre'), 'asistencia', 'octubre'), a));
+  await assertFails(setDoc(cdoc(db('secre'), 'asistencia', '2026-11'), { ...a, extra: 1 }));
+  await assertFails(getDoc(cdoc(db('pub'), 'asistencia', '2026-10')));
+  await assertFails(setDoc(cdoc(db('pub'), 'asistencia', '2026-10'), a));
+});
+
 test('el coordinador puede hacer coordinador a otro; alguien de fuera no ve nada', async () => {
   const a = db('admin'), o = db('otro');
   await assertSucceeds(updateDoc(cdoc(a, 'miembros', 'pub'), { admin: true }));
