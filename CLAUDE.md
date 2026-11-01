@@ -120,6 +120,11 @@ App para organizar las asignaciones de la reunión semanal Vida y Ministerio Cri
 - Historial (vista `historial`, ancianos): `historial/{id}` = { fecha, por, porNombre, cambios[] }; `logChange(texto)` junta 1.5 s; `uploadState` describe los cambios de semanas/hermanos/familias/ajustes (`describeChanges`: quién quedó y quién estaba); también territorios, cuentas, grupos, asistencia, eventos, salidas y limpieza.
 - Sin internet: Firebase va en `vendor/firebase` (copiado de node_modules/firebase con la importación cambiada a `./firebase-app.js`; al subir de versión de firebase, volver a copiarlo así) y Firestore usa `persistentLocalCache`. Barra `.offline-bar`. El service worker ya no borra la caché `mapas-…`.
 
+## Ausencias y descarga en imagen (1.25.0)
+- Ausencia: `ausencias/{perfil}` = { desde, hasta (último día), nota, por }. Cada quien la suya (tarjeta en Inicio y botón en Ajustes → cuenta); Programa VyM y secretario, en la ficha del hermano. La leen los ancianos (y cada quien la suya). `awayOn(pid, fecha)` saca a la persona de `candidatesFor` (Sugerencias y lista desplegable) y de `mecCandidates` ("Ausente"); en el editor van al final en "Ausentes" y sale aviso `awayWarning` si alguien asignado estará ausente. Etiqueta en Hermanos.
+- Imagen: `savePDF` pregunta PDF / PNG / JPG (`askFormat`) o usa lo elegido en Ajustes → cuenta (localStorage `formato-descarga`). Las imágenes se hacen dibujando el mismo PDF con pdf.js (`vendor/pdfjs`, legacy 4.10.38, renombrado de .mjs a .js para que se sirva como JavaScript, con `standard_fonts`): una imagen por hoja. En el celular se comparten juntas; en la PC, una descarga por hoja. La autoprueba de PC revisa `imagen`.
+- `h()` aplana listas anidadas (`flat(Infinity)`): antes salía "[object HTMLSpanElement]" junto a los eventos en el programa publicado.
+
 ## Pendiente / ideas
 - Pulir detalles mínimos del diseño que el usuario vaya encontrando.
 - Ajustar Cuentas si el usuario manda sus hojas S-26/S-30.

@@ -259,6 +259,24 @@ test('calendario, salidas, limpieza e historial', async () => {
   await assertSucceeds(deleteDoc(cdoc(db('admin'), 'historial', 'h1')));
 });
 
+test('ausencias: cada quien la suya; programa y secretario las de todos', async () => {
+  const aus = (por, extra = {}) => ({ desde: '2026-11-01', hasta: '2026-11-20', nota: 'De viaje', por, ...extra });
+  await assertSucceeds(setDoc(cdoc(db('pub'), 'ausencias', 'p1'), aus('pub')));          // pub es el perfil p1
+  await assertSucceeds(getDoc(cdoc(db('pub'), 'ausencias', 'p1')));
+  await assertFails(setDoc(cdoc(db('pub'), 'ausencias', 'p2'), aus('pub')));             // la de otro, no
+  await assertFails(getDoc(cdoc(db('pub'), 'ausencias', 'p2')));
+  await assertFails(getDocs(collection(db('pub'), 'congregaciones', C, 'ausencias')));
+  await assertFails(setDoc(cdoc(db('pub'), 'ausencias', 'p1'), aus('pub', { hasta: '2026-10-01' })));
+  await assertFails(setDoc(cdoc(db('pub'), 'ausencias', 'p1'), aus('otro')));
+  await assertFails(setDoc(cdoc(db('pub'), 'ausencias', 'p1'), aus('pub', { extra: 1 })));
+  await assertSucceeds(setDoc(cdoc(db('prog'), 'ausencias', 'p3'), aus('prog')));
+  await assertSucceeds(setDoc(cdoc(db('secre'), 'ausencias', 'p4'), aus('secre')));
+  await assertSucceeds(getDocs(collection(db('prog'), 'congregaciones', C, 'ausencias')));
+  await assertFails(getDoc(cdoc(db('otro'), 'ausencias', 'p1')));
+  await assertSucceeds(deleteDoc(cdoc(db('pub'), 'ausencias', 'p1')));
+  await assertSucceeds(deleteDoc(cdoc(db('secre'), 'ausencias', 'p3')));
+});
+
 test('el coordinador puede hacer coordinador a otro; alguien de fuera no ve nada', async () => {
   const a = db('admin'), o = db('otro');
   await assertSucceeds(updateDoc(cdoc(a, 'miembros', 'pub'), { admin: true }));

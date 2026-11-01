@@ -210,6 +210,21 @@ service cloud.firestore {
         allow read: if isActive(c);
         allow write: if isElder(c) && doc == 'limpieza' && only(['semanas']) && request.resource.data.semanas is map;
       }
+      // Ausencias: ausencias/{perfil} = { desde, hasta, nota, por }. Cada quien pone y quita la suya;
+      // Programa VyM y el secretario, las de cualquiera. Las ven los ancianos (y cada quien la suya).
+      match /ausencias/{perfil} {
+        function mine() { return isActive(c) && myProfile(c) == perfil; }
+        function setsAway() { return mine() || can(c, 'programa') || can(c, 'secretario'); }
+        allow get: if isElder(c) || mine();
+        allow list: if isElder(c);
+        allow delete: if setsAway();
+        allow create, update: if setsAway() && only(['desde', 'hasta', 'nota', 'por'])
+          && request.resource.data.desde is string && request.resource.data.desde.matches('[0-9]{4}-[0-9]{2}-[0-9]{2}')
+          && request.resource.data.hasta is string && request.resource.data.hasta.matches('[0-9]{4}-[0-9]{2}-[0-9]{2}')
+          && request.resource.data.hasta >= request.resource.data.desde
+          && request.resource.data.nota is string && request.resource.data.nota.size() <= 200
+          && request.resource.data.por == me();
+      }
       // Historial de cambios: cada quien agrega lo suyo; lo leen los ancianos; nadie lo cambia.
       match /historial/{id} {
         allow read: if isElder(c);

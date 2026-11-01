@@ -172,6 +172,9 @@
   .guide-dots span.on { background: var(--accent); width: 18px; border-radius: 4px; }
   .offline-bar { background: #b45309; color: #fff; text-align: center; font-size: 13px; padding: 6px 12px; position: sticky; top: 0; z-index: 4; }
   .room { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin-top: 2px; }
+  .fmt-opts { display: grid; gap: 8px; }
+  .fmt-opt { display: grid; gap: 2px; text-align: left; padding: 12px 14px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface-2); color: var(--text); cursor: pointer; font: inherit; }
+  .fmt-opt:hover { border-color: var(--accent); }
   .dlg-sec { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--accent); border-top: 1px solid var(--border); padding-top: 12px; margin-top: 4px; }
   .priv-group { display: grid; gap: 4px; margin-top: 4px; }
   .priv-title { font-size: 13px; font-weight: 600; color: var(--text); }
@@ -397,7 +400,7 @@
 
 <script>
 const KEY = 'programas-app-v2';
-const APP_VERSION = '1.24.0'; // igual que "version" en package.json (publicar.ps1 lo revisa)
+const APP_VERSION = '1.25.0'; // igual que "version" en package.json (publicar.ps1 lo revisa)
 // Con FIREBASE_CONFIG (firebase-config.js) los datos viven en la nube de la congregación;
 // sin él, la app funciona como antes, solo en esta PC. "?emu" usa el Firebase local de prueba.
 const EMU = /[?&]emu\b/.test(location.search);
@@ -489,7 +492,7 @@ function h(tag, props, ...kids) {
     else if (k === 'value' || k === 'checked') el[k] = v;
     else el.setAttribute(k, v === true ? '' : v);
   }
-  for (const kid of kids.flat()) {
+  for (const kid of kids.flat(Infinity)) {
     if (kid == null || kid === false) continue;
     el.append(kid.nodeType ? kid : document.createTextNode(String(kid)));
   }
@@ -505,6 +508,7 @@ const ICONS = {
   calendario: '<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/><path d="M8 14h2M14 14h2M8 17h2"/>',
   arreglos: '<path d="M9 4h6a1 1 0 011 1v2H8V5a1 1 0 011-1z"/><rect x="5" y="6" width="14" height="15" rx="2"/><path d="M9 12l2 2 4-4"/>',
   historial: '<path d="M3 12a9 9 0 103-6.7"/><path d="M3 4v4h4"/><path d="M12 8v4l3 2"/>',
+  ausencia: '<rect x="3" y="7" width="18" height="13" rx="2"/><path d="M8 7V5a2 2 0 012-2h4a2 2 0 012 2v2M3 12h18"/>',
   finsemana: '<rect x="4" y="9" width="16" height="11" rx="1"/><path d="M2 10l10-6 10 6"/><path d="M10 20v-5h4v5"/>',
   asistencia: '<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>',
   grupos: '<circle cx="12" cy="7" r="3"/><circle cx="5" cy="10" r="2.2"/><circle cx="19" cy="10" r="2.2"/><path d="M7 20c0-3 2.2-5 5-5s5 2 5 5"/><path d="M1.5 19c0-2.4 1.5-4 3.5-4M22.5 19c0-2.4-1.5-4-3.5-4"/>',
@@ -738,7 +742,7 @@ function mecCandidates(p, mtg, key) {
     const dates = hist.get(pr.id) || [];
     const before = dates.filter(d => d < date).sort().pop();
     const near = dates.some(d => Math.abs(daysBetween(d, date)) < rest);
-    const why = busy.has(pr.id) ? 'Ya tiene asignación en esta reunión' : !canDo(pr, priv) ? 'Sin privilegio' : near ? 'Descansando' : '';
+    const why = busy.has(pr.id) ? 'Ya tiene asignación en esta reunión' : awayOn(pr.id, date) ? 'Ausente' : !canDo(pr, priv) ? 'Sin privilegio' : near ? 'Descansando' : '';
     return { pr, why, pref: prefersMe(pr, priv), days: before ? daysBetween(before, date) : Infinity };
   }).sort((a, b) => (!b.why - !a.why) || b.pref - a.pref || b.days - a.days || a.pr.name.localeCompare(b.pr.name, 'es'));
 }
@@ -760,7 +764,7 @@ function candidatesFor(p, row, slot, ctx, reserved, partnerId) {
   const priv = privFor(row, slot), rule = ruleFor(row), men = slotNeedsMen(row, slot);
   const partner = row.helper === 'Ayudante' && partnerId ? profById(partnerId) : null;
   const list = state.profiles
-    .filter(pr => !reserved.has(pr.id) && canDo(pr, priv) && !(men && pr.sex === 'F') && !ctx.recent.has(pr.id)
+    .filter(pr => !reserved.has(pr.id) && canDo(pr, priv) && !(men && pr.sex === 'F') && !ctx.recent.has(pr.id) && !awayOn(pr.id, meetingDate(p))
       && (!partner || partner.sex === pr.sex || sameFamily(partner.id, pr.id)))
     .map(pr => { const l = ctx.last.get(pr.id); return { pr, rule, fits: fitsRule(pr, rule), pref: prefersMe(pr, priv), days: l ? daysBetween(l.q.date, p.date) : Infinity }; })
     .sort((a, b) => (rule ? b.fits - a.fits : 0) || b.pref - a.pref || b.days - a.days || a.pr.name.localeCompare(b.pr.name, 'es'));
@@ -1083,10 +1087,14 @@ async function addWeek(dateISO) {
 // ---------- PDF ----------
 // En el celular abre "Compartir" (WhatsApp, Drive, guardar…); en la PC lo descarga.
 // En la app de Android no hay descargas: el archivo se guarda dentro de la app y se abre "Compartir".
-async function nativeShareFile(blob, name) {
-  const data = await new Promise(ok => { const fr = new FileReader(); fr.onload = () => ok(fr.result.split(',')[1]); fr.readAsDataURL(blob); });
-  const { uri } = await NP.files.writeFile({ path: name, data, directory: 'CACHE' });
-  await NP.share.share({ title: name, files: [uri] }).catch(() => {});
+const nativeShareFile = (blob, name) => nativeShareFiles([[blob, name]]);
+async function nativeShareFiles(list) {
+  const uris = [];
+  for (const [blob, name] of list) {
+    const data = await new Promise(ok => { const fr = new FileReader(); fr.onload = () => ok(fr.result.split(',')[1]); fr.readAsDataURL(blob); });
+    uris.push((await NP.files.writeFile({ path: name, data, directory: 'CACHE' })).uri);
+  }
+  await NP.share.share({ title: list[0][1], files: uris }).catch(() => {});
 }
 if (NATIVE) {
   // Los CSV y el respaldo se "descargan" con un enlace temporal (a.click()); aquí se comparten.
@@ -1098,14 +1106,88 @@ if (NATIVE) {
   };
   navigator.share = d => NP.share.share({ title: d.title, text: d.text, url: d.url });
 }
+// Cualquier PDF de la app también se baja como imagen: cada hoja del mismo PDF se dibuja con
+// pdf.js (vendor/pdfjs). El formato se elige al descargar o queda fijo en Ajustes (en cada equipo).
+const DL_FORMATS = [['ask', 'Preguntar cada vez'], ['pdf', 'PDF'], ['png', 'Imagen PNG'], ['jpg', 'Imagen JPG']];
+const dlFormat = () => { try { return localStorage.getItem('formato-descarga') || 'ask'; } catch (e) { return 'ask'; } };
+const setDlFormat = v => { try { localStorage.setItem('formato-descarga', v); } catch (e) {} };
+const cleanName = s => s.replace(/[\\/:*?"<>|]+/g, '');
 function savePDF(doc, fname) {
-  const name = fname.replace(/[\\/:*?"<>|]+/g, '') + '.pdf';
+  const fmt = dlFormat();
+  if (fmt === 'ask') return askFormat(f => saveAs(doc, fname, f));
+  return saveAs(doc, fname, fmt);
+}
+function saveAs(doc, fname, fmt) {
+  return fmt === 'png' || fmt === 'jpg' ? saveImages(doc, fname, fmt) : savePdfFile(doc, fname);
+}
+function savePdfFile(doc, fname) {
+  const name = cleanName(fname) + '.pdf';
   if (NATIVE) return nativeShareFile(doc.output('blob'), name).catch(() => toast('No se pudo guardar el PDF'));
   const file = typeof File === 'function' ? new File([doc.output('blob')], name, { type: 'application/pdf' }) : null;
   if (file && navigator.canShare && matchMedia('(pointer: coarse)').matches && navigator.canShare({ files: [file] })) {
     return navigator.share({ files: [file], title: name }).catch(e => { if (e.name !== 'AbortError') doc.save(name); });
   }
   doc.save(name);
+}
+function askFormat(done) {
+  const remember = h('input', { type: 'checkbox' });
+  const choose = f => { if (remember.checked) setDlFormat(f); dlg.close(); done(f); };
+  const opt = (f, title, sub) => h('button', { class: 'fmt-opt', onclick: () => choose(f) },
+    h('strong', null, title), h('span', { class: 'small-text muted' }, sub));
+  const dlg = h('dialog', { class: 'dlg' },
+    h('div', { class: 'dlg-body' },
+      h('h3', null, '¿Cómo lo quieres descargar?'),
+      h('div', { class: 'fmt-opts' },
+        opt('pdf', 'PDF', 'Para imprimir'),
+        opt('png', 'Imagen PNG', 'Se ve nítida; para mandarla por WhatsApp'),
+        opt('jpg', 'Imagen JPG', 'Más ligera; la abre cualquier celular')),
+      h('label', { class: 'row small-text muted', style: { gap: '6px', marginTop: '12px' } }, remember, 'Recordar mi elección (se cambia en Ajustes)')),
+    h('div', { class: 'dlg-foot' }, h('button', { class: 'btn', onclick: () => dlg.close() }, 'Cancelar')));
+  dlg.addEventListener('close', () => dlg.remove());
+  document.body.append(dlg); dlg.showModal();
+}
+let pdfjsLib = null;
+async function loadPdfjs() {
+  if (!pdfjsLib) {
+    pdfjsLib = await import(new URL('vendor/pdfjs/pdf.min.js', location.href).href);
+    pdfjsLib.GlobalWorkerOptions.workerSrc = new URL('vendor/pdfjs/pdf.worker.min.js', location.href).href;
+  }
+  return pdfjsLib;
+}
+// Cada hoja como imagen, a 2.5× (nítida al imprimir o al hacer zoom en el celular)
+async function pdfToImages(doc, fmt) {
+  const lib = await loadPdfjs();
+  const pdf = await lib.getDocument({ data: doc.output('arraybuffer'), standardFontDataUrl: new URL('vendor/pdfjs/standard_fonts/', location.href).href }).promise;
+  const out = [];
+  try {
+    for (let i = 1; i <= pdf.numPages; i++) {
+      const page = await pdf.getPage(i), vp = page.getViewport({ scale: 2.5 });
+      const cv = h('canvas', { width: Math.ceil(vp.width), height: Math.ceil(vp.height) }), ctx = cv.getContext('2d');
+      ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, cv.width, cv.height);
+      await page.render({ canvasContext: ctx, viewport: vp }).promise;
+      out.push(await new Promise(ok => cv.toBlob(ok, fmt === 'jpg' ? 'image/jpeg' : 'image/png', 0.92)));
+    }
+  } finally { pdf.destroy(); }
+  return out;
+}
+async function saveImages(doc, fname, fmt) {
+  toast('Preparando la imagen…');
+  let blobs;
+  try { blobs = await pdfToImages(doc, fmt); } catch (e) { console.error(e); return toast('No se pudo hacer la imagen. Prueba con PDF.'); }
+  const base = cleanName(fname), ext = fmt === 'jpg' ? '.jpg' : '.png';
+  const names = blobs.map((b, i) => base + (blobs.length > 1 ? ` (${i + 1} de ${blobs.length})` : '') + ext);
+  if (NATIVE) return nativeShareFiles(blobs.map((b, i) => [b, names[i]])).catch(() => toast('No se pudo guardar la imagen'));
+  const files = typeof File === 'function' ? blobs.map((b, i) => new File([b], names[i], { type: b.type })) : null;
+  if (files && navigator.canShare && matchMedia('(pointer: coarse)').matches && navigator.canShare({ files })) {
+    try { return await navigator.share({ files, title: base }); } catch (e) { if (e.name === 'AbortError') return; }
+  }
+  // En la PC: una descarga por hoja
+  for (const [i, b] of blobs.entries()) {
+    const a = h('a', { href: URL.createObjectURL(b), download: names[i] });
+    document.body.append(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 60000);
+    if (i < blobs.length - 1) await new Promise(ok => setTimeout(ok, 400));
+  }
 }
 // Diseños del programa (Ajustes → Programa y PDF). El de fábrica es el S-140.
 const PDF_DESIGNS = [
@@ -1580,6 +1662,12 @@ function openProfileDialog(prof, opts = {}) {
     privField.querySelectorAll('button').forEach(b => b.remove());
   }
 
+  // Ausencia: la ponen Programa VyM y el secretario (cada quien, la suya en Inicio)
+  const awayBox = FB_CONFIG && prof && (can('programa') || can('secretario')) ? h('div', { class: 'row spread' }) : null;
+  const paintAway = () => { if (!awayBox) return; const a = awayNow(prof.id);
+    awayBox.replaceChildren(h('span', { class: 'small-text', style: a ? { color: 'var(--orange)' } : null }, a ? awayText(a) + (a.nota ? ` · ${a.nota}` : '') : 'No está ausente.'),
+      h('button', { class: 'btn small', type: 'button', onclick: () => openAbsenceDialog(prof.id, prof.name, () => setTimeout(paintAway, 300)) }, a ? 'Cambiar' : 'Poner ausencia')); };
+  paintAway();
   const hist = [];
   if (prof) for (const q of sortedPrograms()) for (const x of assignmentsOf(q)) if (x.pid === prof.id) hist.push({ q, x });
 
@@ -1611,6 +1699,8 @@ function openProfileDialog(prof, opts = {}) {
       h('span', { class: 'small-text' }, 'El capitán sale en la lista al asignar tarjetas de territorio; si tiene cuenta, también registra lo trabajado en la app.'),
       h('div', { class: 'dlg-sec' }, 'Asignaciones que puede recibir'),
       privField,
+      awayBox ? h('div', { class: 'dlg-sec' }, 'Ausencia') : null,
+      awayBox,
       contactField ? h('div', { class: 'dlg-sec' }, 'Directorio') : null,
       contactField,
       accountField ? h('div', { class: 'dlg-sec' }, 'Cuenta en la app') : null,
@@ -1680,7 +1770,7 @@ function openProfileDialog(prof, opts = {}) {
 // Desde la 1.3 los datos van por partes (perfiles/, familias/, semanas/, config/ajustes) en vez de
 // un solo privado/estado (que tenía límite de 1 MB); privado/estado queda como copia de la 1.2.
 const nube = { user: null, cong: null, congData: null, me: null, acceso: '', listo: false, publico: null,
-  miembros: [], anuncios: [], contactos: new Map(), cuentas: [], cuentasIni: null, territorios: [], grupos: [], capitanes: [], capitanesHermanos: [], trabajos: [], asistencia: new Map(), eventos: [], salidas: [], limpieza: null, sent: {}, ultimoPub: '', registro: null, inicial: null, unsubMe: null, unsubDatos: [] };
+  miembros: [], anuncios: [], contactos: new Map(), cuentas: [], cuentasIni: null, territorios: [], grupos: [], capitanes: [], capitanesHermanos: [], trabajos: [], asistencia: new Map(), eventos: [], salidas: [], limpieza: null, ausencias: new Map(), sent: {}, ultimoPub: '', registro: null, inicial: null, unsubMe: null, unsubDatos: [] };
 // Funciones que el coordinador puede dar a cada cuenta (el coordinador tiene todas)
 const PERMS = [
   ['programa', 'Programa VyM', 'Semanas, hermanos, familias y ajustes de la reunión'],
@@ -1856,7 +1946,7 @@ async function startCloud() {
   F.onAuthStateChanged(F.auth, async user => {
     stopListening(); if (nube.unsubMe) { nube.unsubMe(); nube.unsubMe = null; }
     Object.assign(nube, { user, cong: null, congData: null, me: null, acceso: '', listo: false, miembros: [], anuncios: [],
-      contactos: new Map(), cuentas: [], cuentasIni: null, territorios: [], grupos: [], capitanes: [], capitanesHermanos: [], trabajos: [], asistencia: new Map(), eventos: [], salidas: [], limpieza: null, publico: null, sent: {}, ultimoPub: '' });
+      contactos: new Map(), cuentas: [], cuentasIni: null, territorios: [], grupos: [], capitanes: [], capitanesHermanos: [], trabajos: [], asistencia: new Map(), eventos: [], salidas: [], limpieza: null, ausencias: new Map(), publico: null, sent: {}, ultimoPub: '' });
     if (!user) return renderAuth();
     screen(h('div', { class: 'card auth-card' }, h('p', { class: 'muted' }, 'Cargando tu cuenta…')));
     let joinErr = '';
@@ -1934,6 +2024,10 @@ function enterCongregation() {
   listen('eventos', F.collection(F.db, 'congregaciones', nube.cong, 'eventos'), s => { nube.eventos = s.docs.map(d => ({ id: d.id, ...d.data() })); return ['calendario', 'list', 'inicio', 'edit'].includes(view.name); }, true);
   listen('salidas', F.collection(F.db, 'congregaciones', nube.cong, 'salidas'), s => { nube.salidas = s.docs.map(d => ({ id: d.id, ...d.data() })); return view.name === 'arreglos'; }, true);
   listen('limpieza', congRef('arreglos', 'limpieza'), s => { nube.limpieza = s.exists() ? s.data() : null; return ['arreglos', 'inicio'].includes(view.name); }, true);
+  // Ausencias: los ancianos ven todas; cada quien, la suya
+  const gotAway = () => ['inicio', 'people', 'mecanicas', 'finsemana'].includes(view.name);
+  if (isElder()) listen('ausencias', F.collection(F.db, 'congregaciones', nube.cong, 'ausencias'), s => { nube.ausencias = new Map(s.docs.map(d => [d.id, d.data()])); return gotAway(); }, true);
+  else if (nube.me.perfil) listen('ausencias', congRef('ausencias', nube.me.perfil), s => { nube.ausencias = new Map(s.exists() ? [[s.id, s.data()]] : []); return gotAway(); }, true);
   if (isElder()) listen('asistencia', F.collection(F.db, 'congregaciones', nube.cong, 'asistencia'), s => {
     nube.asistencia = new Map(s.docs.map(d => [d.id, d.data()]));
     return view.name === 'asistencia';
@@ -2075,7 +2169,8 @@ function publicWeeks() {
         time: fmtTime(t[r.id]), detail: r.kind === 'part' ? r.detail || '' : '', labels: slotLabels(r),
         a: isAssignable(r) ? person(r.a) : null, b: isAssignable(r) && r.helper ? person(r.b) : null,
         ...(auxOn(p) && isAssignable(r) && hasAux(r) ? { xa: person(r.xa), xb: r.helper && r.kind !== 'chair' ? person(r.xb) : null,
-          labels: { ...slotLabels(r), xa: auxLabel(r, 'xa') + (r.kind === 'chair' ? '' : ' (sala aux.)'), xb: (slotLabels(r).b || '') + ' (sala aux.)' } } : {}) })),
+          labels: { ...slotLabels(r), xa: r.kind === 'chair' ? auxLabel(r, 'xa') : auxLabel(r, 'xa') ? auxLabel(r, 'xa') + ' (sala aux.)' : 'Sala auxiliar',
+          xb: slotLabels(r).b ? slotLabels(r).b + ' (sala aux.)' : 'Sala auxiliar' } } : {}) })),
       // Asignaciones mecánicas (sin repetir presidente y lector de entre semana, que ya están arriba)
       fin: p.fin && (p.fin.tema || p.fin.orador) ? { tema: p.fin.tema || '', bosquejo: p.fin.bosquejo || '', orador: p.fin.orador || '', cong: p.fin.cong || '', oradorId: p.fin.oradorId || null, day: mecDate(p, 'fin') } : null,
       mec: MEETINGS.map(([mtg, label]) => ({ label, day: mecDate(p, mtg),
@@ -2283,7 +2378,12 @@ function accountCard() {
   return h('div', { class: 'card settings', style: { marginBottom: '14px' } },
     h('div', null, h('strong', null, nube.me.nombre),
       h('div', { class: 'muted small-text' }, nube.user.email + (roles.length ? ' · ' + roles.join(', ') : ''))),
-    h('div', { class: 'row' }, h('button', { class: 'btn', onclick: openGuide }, 'Ver la guía de la app'), signOutBtn()));
+    h('label', { class: 'field', style: { margin: '10px 0' } }, 'Al descargar programas y hojas',
+      h('select', { style: { maxWidth: '260px' }, onchange: e => { setDlFormat(e.target.value); toast('Listo'); } },
+        DL_FORMATS.map(([v, t]) => h('option', { value: v, selected: dlFormat() === v ? true : null }, t)))),
+    h('div', { class: 'row' },
+      nube.me.perfil ? h('button', { class: 'btn', onclick: () => openAbsenceDialog(nube.me.perfil, nube.me.nombre, render) }, awayNow(nube.me.perfil) ? 'Mi ausencia' : 'Avisar una ausencia') : null,
+      h('button', { class: 'btn', onclick: openGuide }, 'Ver la guía de la app'), signOutBtn()));
 }
 
 // Solo el coordinador: nombre de la congregación y quién usa la app
@@ -4579,7 +4679,7 @@ function guideSteps() {
   if (can('territorios')) steps.push({ icon: 'territorios', title: 'Territorios', text: 'Dibuja cada tarjeta en el mapa, asígnala a un capitán y revisa lo que se trabajó. Cuando se completan todas, empieza otra vuelta sola.' });
   else if (can('capitan')) steps.push({ icon: 'territorios', title: 'Capitán de territorios', text: 'En Territorios salen “Mis tarjetas”. Al llegar, toca “Empezar salida con GPS”: graba lo que recorren y al terminar lo registra. También puedes marcar casas y hasta dónde llegaron.' });
   if (isElder()) steps.push({ icon: 'calendario', title: 'Calendario y arreglos', text: 'En Calendario van la visita del superintendente de circuito, asambleas y la Conmemoración. En Arreglos, las salidas de predicación y la limpieza del Salón. En Historial ves quién cambió qué.' });
-  steps.push({ icon: 'report', title: 'Tu parte', text: 'En Inicio ves tu próxima asignación. ' + (reportsByMembers() ? 'Cada mes mandas tu informe desde Informe. ' : '') + 'Si se va el internet, la app sigue funcionando y guarda los cambios para subirlos después.' });
+  steps.push({ icon: 'report', title: 'Tu parte', text: 'En Inicio ves tu próxima asignación. ' + (reportsByMembers() ? 'Cada mes mandas tu informe desde Informe. ' : '') + 'Si vas a faltar un tiempo, activa tu Ausencia en Inicio y no te tomarán en cuenta para asignaciones. Si se va el internet, la app sigue funcionando y guarda los cambios para subirlos después.' });
   return steps;
 }
 function openGuide() {
@@ -4672,6 +4772,57 @@ function renderHistory() {
     h('p', { class: 'sub' }, 'Quién cambió qué y cuándo: asignaciones, hermanos, territorios, cuentas, calendario y más. Se ven los últimos 300 movimientos.'),
     h('div', { style: { marginBottom: '12px' } }, search),
     box);
+}
+
+// ---------- ausencias ----------
+// ausencias/{perfil} = { desde, hasta, nota, por }. Cada quien avisa la suya desde Inicio (o Programa VyM
+// y el secretario la ponen en la ficha del hermano). Mientras dure, no se le recomienda para nada.
+const awayOn = (pid, iso) => { const a = FB_CONFIG && pid && nube.ausencias.get(pid); return a && a.desde <= iso && iso <= a.hasta ? a : null; };
+const awayNow = pid => { const a = FB_CONFIG && pid && nube.ausencias.get(pid); return a && a.hasta >= todayISO() ? a : null; };
+const awayText = a => a.desde > todayISO() ? `Ausente del ${fmtShort(a.desde)} al ${fmtShort(a.hasta)}` : `Ausente hasta el ${fmtShort(a.hasta)}`;
+// En el editor: asignados que estarán ausentes esa semana
+function awayWarning(p) {
+  const names = [...new Set(slotsOf(p).filter(x => x.pid && awayOn(x.pid, meetingDate(p))).map(x => profById(x.pid)).filter(Boolean))];
+  return names.length ? h('div', { class: 'notice warn' }, `Estará${names.length > 1 ? 'n' : ''} ausente${names.length > 1 ? 's' : ''} esa semana: `,
+    names.map(pr => pr.name).join(', '), '. Conviene cambiar su asignación.') : null;
+}
+function openAbsenceDialog(pid, name, done) {
+  const cur = awayNow(pid), own = !!nube.me && nube.me.perfil === pid, today = todayISO();
+  const fromI = h('input', { type: 'date', value: cur ? cur.desde : today });
+  const toI = h('input', { type: 'date', value: cur ? cur.hasta : addDays(today, 14) });
+  const noteI = h('input', { type: 'text', maxlength: 200, value: cur ? cur.nota || '' : '', placeholder: 'Opcional: por ejemplo, de viaje' });
+  const err = h('div', { class: 'small-text', style: { color: 'var(--orange)' } });
+  const who = own ? '' : ` de ${name}`;
+  const finish = msg => { toast(msg); logChange(msg + who); dlg.close(); if (done) done(); };
+  async function saveIt() {
+    const desde = fromI.value, hasta = toI.value;
+    if (!desde || !hasta) return void (err.textContent = 'Pon las dos fechas.');
+    if (hasta < desde) return void (err.textContent = 'La fecha de regreso va después de la de salida.');
+    try {
+      await F.setDoc(congRef('ausencias', pid), { desde, hasta, nota: squash(noteI.value).slice(0, 200), por: nube.user.uid });
+      finish(`Ausencia guardada: ${fmtShort(desde)} – ${fmtShort(hasta)}`);
+    } catch (e) { err.textContent = errMsg(e); }
+  }
+  async function removeIt() {
+    try { await F.deleteDoc(congRef('ausencias', pid)); finish('Ausencia quitada'); } catch (e) { err.textContent = errMsg(e); }
+  }
+  const dlg = h('dialog', { class: 'dlg' },
+    h('div', { class: 'dlg-body' },
+      h('h3', null, own ? 'Mi ausencia' : 'Ausencia' + who),
+      h('p', { class: 'muted small-text', style: { marginTop: 0 } }, own
+        ? 'Si vas a faltar un tiempo (viaje, enfermedad, trabajo…), ponlo aquí. Mientras dure, el programa no te recomendará para ninguna asignación.'
+        : 'Mientras dure, el programa no lo recomendará para ninguna asignación.'),
+      h('div', { class: 'row', style: { gap: '12px' } },
+        h('label', { class: 'field' }, 'Desde', fromI),
+        h('label', { class: 'field' }, 'Hasta (último día)', toI)),
+      h('label', { class: 'field' }, 'Motivo', noteI),
+      err),
+    h('div', { class: 'dlg-foot' },
+      cur ? h('button', { class: 'btn danger', style: { marginRight: 'auto' }, onclick: removeIt }, 'Quitar ausencia') : null,
+      h('button', { class: 'btn', onclick: () => dlg.close() }, 'Cancelar'),
+      h('button', { class: 'btn primary', onclick: saveIt }, 'Guardar')));
+  dlg.addEventListener('close', () => dlg.remove());
+  document.body.append(dlg); dlg.showModal();
 }
 
 // ---------- sección Mecánicas (función Programa VyM) ----------
@@ -4888,6 +5039,11 @@ function renderHome() {
     tiles.push(t);
   }
 
+  if (nube.me.perfil) {
+    const a = awayNow(nube.me.perfil);
+    tiles.push(tile('ausencia', 'Ausencia', a ? awayText(a) : 'No estás ausente', a ? 'Toca para cambiarla o quitarla' : 'Avisa si vas a faltar un tiempo',
+      () => openAbsenceDialog(nube.me.perfil, nube.me.nombre, render), a ? 'warn' : null));
+  }
   const unread = unreadAnnouncements(), ann = visibleAnnouncements();
   tiles.push(tile('anuncios', 'Anuncios', unread ? `${unread} nuevo${unread > 1 ? 's' : ''}` : ann.length ? 'Al día' : 'Sin anuncios',
     ann[0] ? ann[0].titulo : null, () => go({ name: 'anuncios' }), unread ? 'warn' : null));
@@ -5256,7 +5412,7 @@ function renderEditor(p) {
       .map(pr => {
         const l = ctx.last.get(pr.id);
         return { pr, fam: !!partner && sameFamily(partner, pr.id), days: l ? daysBetween(l.q.date, p.date) : Infinity,
-          rest: ctx.recent.get(pr.id), able: !priv || canDo(pr, priv), fits: !!rule && fitsRule(pr, rule), pref: !!priv && prefersMe(pr, priv) };
+          rest: ctx.recent.get(pr.id), able: !priv || canDo(pr, priv), fits: !!rule && fitsRule(pr, rule), pref: !!priv && prefersMe(pr, priv), away: awayOn(pr.id, meetingDate(p)) };
       })
       .filter(it => (it.fam || sexFilter === 'all' || it.pr.sex === sexFilter) && (!privOnly || it.able) && nomOk(it.pr))
       .sort((a, b) => b.fam - a.fam || b.able - a.able || b.fits - a.fits || b.pref - a.pref || b.days - a.days || a.pr.name.localeCompare(b.pr.name, 'es'));
@@ -5264,10 +5420,12 @@ function renderEditor(p) {
       h('span', { class: 'nm' }, it.pr.name, ' ', h('small', null, `${it.pr.sex === 'M' ? '♂' : '♀'}${it.pr.age != null ? ' ' + it.pr.age : ''}`),
         it.fam ? h('span', { class: 'tag-fam' }, 'Familia') : null,
         it.fits ? h('span', { class: 'tag-fam', title: 'Cumple el filtro de esta parte' }, '✓ ' + rule.nombre) : null,
-        it.able ? null : h('span', { class: 'tag-fam', style: { color: 'var(--orange)' } }, 'Sin privilegio')),
+        it.able ? null : h('span', { class: 'tag-fam', style: { color: 'var(--orange)' } }, 'Sin privilegio'),
+        it.away ? h('span', { class: 'tag-fam', style: { color: 'var(--orange)' } }, awayText(it.away)) : null),
       h('span', { class: 'hint ' + (it.rest ? 's-recent' : it.days === Infinity || it.days >= s.staleDays ? 's-stale' : 's-ok') },
         it.days === Infinity ? 'nunca' : `hace ${it.days} d`));
-    let ready = items.filter(it => !it.rest), resting = items.filter(it => it.rest);
+    const away = items.filter(it => it.away);
+    let ready = items.filter(it => !it.rest && !it.away), resting = items.filter(it => it.rest && !it.away);
     // Seamos mejores maestros: 2 hermanas por cada hermano (familiares, con privilegio y filtro siguen primero)
     if (fr && womenFirst(fr, focus.slot, partner) && sexFilter === 'all') {
       const key = it => `${+it.fam}${+it.able}${+it.fits}`;
@@ -5280,6 +5438,8 @@ function renderEditor(p) {
       resting.length ? h('div', { class: 'small-text muted', style: { padding: '8px 8px 2px', borderTop: ready.length ? '1px solid var(--border)' : null } },
         `Descansando (menos de ${s.restDays} días)`) : null,
       ...resting.map(it => { const b = item(it); b.style.opacity = '.6'; return b; }),
+      away.length ? h('div', { class: 'small-text muted', style: { padding: '8px 8px 2px', borderTop: '1px solid var(--border)' } }, 'Ausentes') : null,
+      ...away.map(it => { const b = item(it); b.style.opacity = '.5'; return b; }),
       priv && unset ? h('div', { class: 'small-text muted', style: { padding: '8px' } },
         `${unset} perfil${unset > 1 ? 'es' : ''} sin privilegios marcados sale${unset > 1 ? 'n' : ''} para todo. Márcalos en Hermanos.`) : null,
     ].filter(Boolean)
@@ -5352,7 +5512,7 @@ function renderEditor(p) {
       for (const pr of state.profiles) {
         if (shown.has(pr.id) || pr.id === current || !nameMatch(pr.name, typed)) continue;
         const l = ctx.last.get(pr.id);
-        const why = counts.has(pr.id) ? 'Ya asignado esta semana' : ctx.recent.has(pr.id) ? 'Descansando'
+        const why = counts.has(pr.id) ? 'Ya asignado esta semana' : awayOn(pr.id, meetingDate(p)) ? 'Ausente' : ctx.recent.has(pr.id) ? 'Descansando'
           : !canDo(pr, priv) ? 'Sin privilegio' : men && pr.sex === 'F' ? 'Normalmente un varón' : 'Pareja de distinto sexo';
         items.push({ pr, rule, fits: fitsRule(pr, rule), days: l ? daysBetween(l.q.date, p.date) : Infinity, why });
       }
@@ -5548,6 +5708,7 @@ function renderEditor(p) {
       h('div', { class: 'card sheet ' + themeClass() },
         h('div', { class: 'ph1' }, h('span', null, s.pdfTitle || 'Programa'), s.congregation ? h('span', null, s.congregation) : null),
         heading,
+        awayWarning(p),
         weekEvents(p).length ? h('div', { class: 'ev-banner' }, weekEvents(p).map(e => h('div', { class: 'row spread' },
           h('span', null, eventChip(e), ' ', h('span', { class: 'small-text muted' }, fmtRange(e) + (e.notas ? ' · ' + e.notas : ''))),
           e.tipo === 'visita' ? h('button', { class: 'btn small', onclick: () => { if (adjustForVisit(p)) build(); } }, 'Ajustar el programa para la visita') : null))) : null,
@@ -5569,6 +5730,7 @@ function renderEditor(p) {
 }
 
 // Los ancianos (cualquier función) ven la lista y el directorio; solo Programa VyM cambia los demás datos
+const awayTag = pr => { const a = awayNow(pr.id); return a ? h('span', { class: 'tag-fam', style: { color: 'var(--orange)' }, title: a.nota || null }, awayText(a)) : null; };
 function renderPeople() {
   const prog = !FB_CONFIG || can('programa'), elder = FB_CONFIG && isElder();
   let sort = prog ? 'stale' : 'az', sexF = 'all';
@@ -5605,13 +5767,14 @@ function renderPeople() {
       const link = (href, text) => h('a', { href, target: href.startsWith('http') ? '_blank' : null, rel: 'noopener', onclick: e => e.stopPropagation() }, text);
       const phone = c.tel ? h('div', { class: 'small-text' }, '📞 ', link(telLink(c.tel), c.tel), ' · ', link(waLink(c.tel), 'WhatsApp')) : null;
       if (!prog) return h('tr', { onclick: () => openProfileDialog(x.pr) },
-        h('td', null, h('strong', null, x.pr.name), x.pr.nombramiento ? h('span', { class: 'tag-fam', style: { color: 'var(--accent)' } }, nomLabel(x.pr.nombramiento)) : null, phone,
+        h('td', null, h('strong', null, x.pr.name), x.pr.nombramiento ? h('span', { class: 'tag-fam', style: { color: 'var(--accent)' } }, nomLabel(x.pr.nombramiento)) : null, awayTag(x.pr), phone,
           c.dir ? h('div', { class: 'small-text muted' }, c.dir) : null),
         h('td', null, x.pr.sex === 'M' ? 'Masculino' : 'Femenino'), h('td', null, x.pr.age ?? '—'), h('td', { class: 'small-text' }, grp ? grp.nombre : '—'));
       return h('tr', { onclick: () => openProfileDialog(x.pr) },
         h('td', null, h('strong', null, x.pr.name),
           x.pr.nombramiento ? h('span', { class: 'tag-fam', style: { color: 'var(--accent)' } }, nomLabel(x.pr.nombramiento)) : null,
           x.pr.capitan ? h('span', { class: 'tag-fam' }, 'Capitán') : null,
+          awayTag(x.pr),
           x.pr.tipo === 'reg' || x.pr.tipo === 'no' ? h('span', { class: 'tag-fam' }, x.pr.tipo === 'reg' ? 'Precursor regular' : 'No publicador') : null,
           grp ? h('span', { class: 'tag-fam' }, grp.nombre) : null,
           acc ? h('div', { class: 'muted small-text', title: 'Tiene cuenta en la app' }, '🔑 ', acc.email,
