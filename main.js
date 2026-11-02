@@ -86,6 +86,7 @@ async function selfTest(win) {
     if (FB_CONFIG) { for (let i = 0; i < 50 && !F; i++) await new Promise(r => setTimeout(r, 200)); out.firebase = !!F; }
     out.mapa = await loadLeaflet().then(L => !!L.map, () => false);
     out.qr = await loadQR().then(q => typeof q === 'function', () => false);
+    out.excel = await loadExcel().then(async X => { const wb = new X.Workbook(); wb.addWorksheet('Prueba').getCell('A1').value = 1; return (await wb.xlsx.writeBuffer()).byteLength; }).catch(e => 'error ' + e.message);
     out.imagen = await (async () => { const d = new window.jspdf.jsPDF(); d.text('Prueba', 20, 20); const [b] = await pdfToImages(d, 'png'); return b.size; })().catch(e => 'error ' + e.message);
     out.teselas = await new Promise(res => { const i = new Image(); i.onload = () => res(i.width); i.onerror = () => res('error');
       i.src = 'https://tile.openstreetmap.org/5/7/14.png'; });

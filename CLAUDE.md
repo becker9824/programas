@@ -125,6 +125,13 @@ App para organizar las asignaciones de la reunión semanal Vida y Ministerio Cri
 - Imagen: `savePDF` pregunta PDF / PNG / JPG (`askFormat`) o usa lo elegido en Ajustes → cuenta (localStorage `formato-descarga`). Las imágenes se hacen dibujando el mismo PDF con pdf.js (`vendor/pdfjs`, legacy 4.10.38, renombrado de .mjs a .js para que se sirva como JavaScript, con `standard_fonts`): una imagen por hoja. En el celular se comparten juntas; en la PC, una descarga por hoja. La autoprueba de PC revisa `imagen`.
 - `h()` aplana listas anidadas (`flat(Infinity)`): antes salía "[object HTMLSpanElement]" junto a los eventos en el programa publicado.
 
+## Hoja de informes y guardar sin trabarse (1.26.0)
+- Informes → "Hoja de informes del mes": `reportSheet(mes, informes)` arma secciones publicadores / precursores regulares / auxiliares con número continuo y número y color del grupo de servicio (`serviceGroupInfo`, colores `GROUP_COLORS` como la hoja de Excel del secretario). PDF `reportsPDF` en diseños `REPORT_DESIGNS` (hoja = copia del Excel, por grupos de servicio, sencillo en blanco y negro; se recuerda en el equipo, localStorage `diseno-informes`).
+- Excel de verdad (.xlsx) con ExcelJS (`vendor/exceljs.min.js` 4.4.0, se carga al usarlo): `reportsExcel` (una pestaña por mes, colores, bordes y totales con fórmulas) y `reportsYearExcel` (año de servicio sep–ago, hasta el mes elegido). Sustituye el CSV de informes.
+- `saveBlob(blob, nombre)`: en APK/celular se comparte; en la PC se descarga con el enlace vivo 60 s (antes 1 s y sin estar en la página: en algunos navegadores el archivo no se guardaba). Lo usan Excel, CSV de cuentas y respaldo.
+- Guardar no se traba: en `loadFirebase`, `setDoc`/`updateDoc`/`deleteDoc`/`addDoc` esperan al servidor máximo 8 s (0.3 s sin internet); después siguen (queda guardado en el equipo y se sube solo) y si el servidor lo rechaza más tarde sale un aviso. `addDoc` se hace con `doc()` + `setDoc` para tener el id al instante.
+- Informe propio sin conexión: si no se puede leer el anterior, se muestra el formulario igual.
+
 ## Pendiente / ideas
 - Pulir detalles mínimos del diseño que el usuario vaya encontrando.
 - Ajustar Cuentas si el usuario manda sus hojas S-26/S-30.
