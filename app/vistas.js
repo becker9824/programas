@@ -96,6 +96,25 @@ function buildNav(items = navItems()) {
   ].filter(Boolean));
   const name = FB_CONFIG && nube.listo ? congName() : '';
   setBrand(name || 'Programas');
+  // Píldora que se desliza a la sección activa; el ícono da un saltito solo al cambiar de sección
+  const changed = buildNav.last !== view.name; buildNav.last = view.name;
+  const top = document.querySelector('header nav'), bottom = document.querySelector('.tabbar');
+  slideInk(top, top.querySelector(':scope > button.active'));
+  slideInk(bottom, bottom.querySelector('button.active'), '.ic');
+  if (changed) document.querySelectorAll('header nav > button.active, .tabbar button.active').forEach(b => b.classList.add('pop'));
+}
+// Las barras se vuelven a armar en cada render: la píldora parte de donde estaba (bar._ink) y se anima a la nueva
+function slideInk(bar, target, inner) {
+  const ink = h('span', { class: 'nav-ink', 'aria-hidden': 'true' });
+  bar.append(ink);
+  const el = target && (inner ? target.querySelector(inner) : target);
+  if (!el || !el.offsetWidth) { ink.style.opacity = '0'; bar._ink = null; return; }
+  const b = bar.getBoundingClientRect(), r = el.getBoundingClientRect();
+  const to = { x: r.left - b.left, y: r.top - b.top, w: r.width, h: r.height };
+  const put = p => Object.assign(ink.style, { transform: `translate(${p.x}px, ${p.y}px)`, width: p.w + 'px', height: p.h + 'px' });
+  ink.style.transition = 'none'; put(bar._ink || to); void ink.offsetWidth;
+  ink.style.transition = ''; put(to);
+  bar._ink = to;
 }
 // Arriba (PC y tableta) van las secciones que caben; las demás, en "Más ▾". Se vuelve a acomodar
 // al cambiar el tamaño de la ventana.
@@ -136,10 +155,13 @@ addEventListener('resize', () => { clearTimeout(navResize); navResize = setTimeo
 
 function openMoreSheet(items) {
   const close = () => { dlg.close(); dlg.remove(); };
-  const dlg = h('dialog', { class: 'sheet', onclick: e => { if (e.target === dlg) close(); } },
+  // Cuadrícula de íconos, como el menú de apps del celular; aparecen uno tras otro
+  const dlg = h('dialog', { class: 'sheet more-sheet', onclick: e => { if (e.target === dlg) close(); } },
     h('div', { class: 'grab' }),
-    items.map(([v, t, n]) => h('button', { class: 'item' + (isActiveView(v) ? ' active' : ''), onclick: () => { close(); go({ name: v }); } },
-      icon(v, 22), t, badge(n))));
+    h('div', { class: 'more-title' }, 'Más secciones'),
+    h('div', { class: 'more-grid' }, items.map(([v, t, n], k) => h('button', { class: 'more-item' + (isActiveView(v) ? ' active' : ''),
+      style: { '--d': (k * 25) + 'ms' }, onclick: () => { close(); go({ name: v }); } },
+      h('span', { class: 'more-ic' }, icon(v, 24), badge(n)), h('span', { class: 'more-t' }, t)))));
   document.body.append(dlg); dlg.showModal();
 }
 
