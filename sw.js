@@ -1,6 +1,6 @@
 // Guarda la app en el celular para que abra rápido y funcione sin internet.
 // Sube el número de versión cada vez que cambies index.html o app/.
-const CACHE = 'programas-v47';
+const CACHE = 'programas-v48';
 const FILES = [
   './',
   './index.html',
@@ -57,4 +57,23 @@ self.addEventListener('fetch', e => {
       })
       .catch(() => caches.match(e.request, { ignoreSearch: true }).then(r => r || caches.match('./index.html')))
   );
+});
+
+// Avisos al celular (Firebase Cloud Messaging, ver app/mas.js): se muestran aunque la app esté cerrada.
+// Al tocarlo se abre la app en la sección del aviso (?ir=…).
+self.addEventListener('push', e => {
+  let d = {};
+  try { d = e.data ? e.data.json() : {}; } catch (x) {}
+  const n = d.notification || {}, data = d.data || {};
+  e.waitUntil(self.registration.showNotification(n.title || 'Programas', {
+    body: n.body || '', icon: n.icon || 'icon.png', badge: 'icon.png', tag: data.vista || 'programas', renotify: true,
+    data: { link: data.link || (d.fcmOptions && d.fcmOptions.link) || './' } }));
+});
+self.addEventListener('notificationclick', e => {
+  e.notification.close();
+  const link = (e.notification.data && e.notification.data.link) || './';
+  e.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(list => {
+    const w = list.find(c => new URL(c.url).origin === location.origin);
+    return w ? w.navigate(link).then(c => (c || w).focus()) : self.clients.openWindow(link);
+  }));
 });

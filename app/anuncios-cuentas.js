@@ -49,6 +49,7 @@ function openAnnouncementDialog(a) {
   const title = h('input', { type: 'text', maxlength: 150, value: a ? a.titulo : '', placeholder: 'Ej.: Asamblea de circuito' });
   const text = h('textarea', { rows: 7, maxlength: 5000, placeholder: 'Escribe el anuncio. Puedes pegar enlaces.' }, a ? a.texto : '');
   const pin = h('input', { type: 'checkbox', checked: a ? a.fijado : false });
+  const notify = h('input', { type: 'checkbox', checked: !EMU });
   const until = h('input', { type: 'date', value: a && a.vence ? a.vence : '' });
   // Con fecha, un anuncio nuevo se puede poner también en el Calendario
   const cal = h('input', { type: 'checkbox', checked: true });
@@ -70,6 +71,7 @@ function openAnnouncementDialog(a) {
         h('label', { class: 'field' }, 'Mostrar hasta (opcional)', until)),
       calRow,
       h('label', { class: 'row', style: { gap: '6px', color: 'var(--text)' } }, pin, '📌 Fijar arriba'),
+      a ? null : h('label', { class: 'row', style: { gap: '6px', color: 'var(--text)' } }, notify, '🔔 Avisar al celular de quienes lo pueden ver'),
       err),
     h('div', { class: 'dlg-foot' },
       h('button', { class: 'btn', onclick: () => dlg.close() }, 'Cancelar'),
@@ -80,8 +82,13 @@ function openAnnouncementDialog(a) {
         e.target.disabled = true;
         try {
           if (a) await F.updateDoc(congRef('anuncios', a.id), { ...data, editado: F.serverTimestamp() });
-          else await F.addDoc(F.collection(F.db, 'congregaciones', nube.cong, 'anuncios'),
-            { ...data, autor: nube.user.uid, autorNombre: nube.me.nombre, fecha: F.serverTimestamp() });
+          else {
+            const d = await F.addDoc(F.collection(F.db, 'congregaciones', nube.cong, 'anuncios'),
+              { ...data, autor: nube.user.uid, autorNombre: nube.me.nombre, fecha: F.serverTimestamp() });
+            // El aviso se manda aparte: si falla (sin internet), el anuncio ya quedó publicado
+            if (notify.checked) setTimeout(() => sendPush({ tipo: 'anuncio', id: d.id })
+              .then(r => r.enviados && toast(`Aviso enviado a ${r.enviados} celular${r.enviados > 1 ? 'es' : ''}`)).catch(() => {}), 1500);
+          }
           if (!a && data.cuando && cal.checked) await F.addDoc(F.collection(F.db, 'congregaciones', nube.cong, 'eventos'),
             { tipo: data.tipo === 'asamblea' ? 'asamblea' : 'otro', titulo: data.titulo.slice(0, 120), desde: data.cuando, hasta: data.cuando, notas: data.texto.slice(0, 1000) }).catch(() => {});
           toast(a ? 'Anuncio actualizado' : data.publico ? 'Anuncio publicado para toda la congregación' : 'Anuncio publicado para los ancianos');

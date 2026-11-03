@@ -282,6 +282,7 @@ function renderHome() {
 
   return h('div', null,
     hero,
+    FB_CONFIG && !EMU ? pushCard(true) : null,
     (myView() || {}).sinAsignacion ? null : nextAssignmentCard(weeks),
     h('div', { class: 'tiles' }, customTiles(tiles)));
 }

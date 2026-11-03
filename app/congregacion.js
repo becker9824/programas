@@ -196,7 +196,20 @@ function openWhatsAppDialog(p) {
     h('div', { class: 'dlg-body' }, h('h3', null, `Avisar por WhatsApp · ${p.title}`),
       h('p', { class: 'small-text muted', style: { margin: 0 } }, 'Toca “Enviar” y se abre WhatsApp con el mensaje listo; solo falta darle enviar. El texto se cambia en “Ver mensaje”, y el modelo de todos los mensajes, en Ajustes.'),
       box),
-    h('div', { class: 'dlg-foot' }, h('button', { class: 'btn primary', onclick: close }, 'Listo')));
+    h('div', { class: 'dlg-foot' },
+      // Avisos al celular: a cada quien la suya (solo les llega a quienes los activaron)
+      list.length && FB_CONFIG && !EMU ? h('button', { class: 'btn', style: { marginRight: 'auto' }, onclick: async e => {
+        e.target.disabled = true; e.target.textContent = 'Avisando…';
+        try {
+          const r = await sendPush({ tipo: 'asignaciones', lista: list.map(a => ({ perfil: a.pid, titulo: a.asignacion,
+            texto: [a.reunion, [a.fecha, a.hora].filter(Boolean).join(' · '), a.companero, a.sala].filter(Boolean).join('\n') })) });
+          toast(r.enviados ? `Aviso enviado a ${r.enviados} celular${r.enviados > 1 ? 'es' : ''}${r.sinCelular ? ` · ${r.sinCelular} sin avisos activados` : ''}`
+            : 'Nadie de esta semana tiene los avisos activados todavía.');
+          logChange(`Mandó avisos al celular de la semana ${p.title}`);
+        } catch (x) { toast(x.message); }
+        e.target.disabled = false; e.target.textContent = '🔔 Avisar al celular';
+      } }, '🔔 Avisar al celular') : null,
+      h('button', { class: 'btn primary', onclick: close }, 'Listo')));
   document.body.append(dlg); dlg.showModal();
 }
 

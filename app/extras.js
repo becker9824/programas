@@ -301,6 +301,7 @@ async function openSessionsDialog(all) {
 function accountExtras() {
   return h('div', null,
     nube.me.perfil ? remindersToggle() : null,
+    pushCard(false),
     h('div', { class: 'row', style: { marginTop: '8px' } },
       h('button', { class: 'btn', onclick: () => openSessionsDialog(false) }, '📱 Mis sesiones abiertas'),
       isAdmin() ? h('button', { class: 'btn', onclick: () => openSessionsDialog(true) }, '👥 Sesiones de todos') : null,

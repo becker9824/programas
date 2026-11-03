@@ -5,7 +5,8 @@
 //   /jw/semana?y=2026&w=43        → HTML de la Guía de actividades de esa semana ISO
 //   /jw/titulo?path=/es/wol/d/…   → título de un documento (nombres de las canciones)
 // Solo responde a la app (ORIGENES) y guarda las respuestas unas horas para no cargar a jw.org.
-const ORIGENES = ['https://programas-congregacion.web.app', 'https://programas-congregacion.firebaseapp.com', 'https://becker9824.github.io', 'app://programas', 'http://localhost:8765'];
+import { sendRequest, reportReminder, health } from './avisos.js';
+const ORIGENES = ['https://programas-congregacion.web.app', 'https://programas-congregacion.firebaseapp.com', 'https://becker9824.github.io', 'app://programas', 'http://localhost:8765', 'https://localhost', 'capacitor://localhost']; // las dos últimas: la app de Android
 const HORAS = 6;
 
 const decodeHtml = s => s
@@ -43,7 +44,17 @@ export default {
   async fetch(req, env, ctx) {
     const url = new URL(req.url), origin = req.headers.get('Origin') || '';
     const cors = ORIGENES.includes(origin) ? { 'Access-Control-Allow-Origin': origin, 'Vary': 'Origin' } : {};
-    if (req.method === 'OPTIONS') return new Response(null, { headers: { ...cors, 'Access-Control-Allow-Methods': 'GET' } });
+    if (req.method === 'OPTIONS') return new Response(null, { headers: { ...cors, 'Access-Control-Allow-Methods': 'GET, POST',
+      'Access-Control-Allow-Headers': 'Authorization, Content-Type', 'Access-Control-Max-Age': '86400' } });
+    // Avisos al celular (avisos.js): revisan la cuenta con su token, no dependen del origen
+    if (url.pathname.startsWith('/avisos/')) {
+      const json = (body, status = 200) => new Response(JSON.stringify(body), { status, headers: { ...cors, 'Content-Type': 'application/json; charset=utf-8' } });
+      try {
+        if (url.pathname === '/avisos/salud' && req.method === 'GET') return json({ ok: await health(env) });
+        if (url.pathname === '/avisos/enviar' && req.method === 'POST') return json(await sendRequest(req, env));
+        return json({ error: 'No encontrado' }, 404);
+      } catch (e) { return json({ error: e.message }, e.status || 500); }
+    }
     if (req.method !== 'GET') return new Response('Solo GET', { status: 405, headers: cors });
     if (!cors['Access-Control-Allow-Origin'] && origin) return new Response('Origen no permitido', { status: 403 });
     // Respuestas guardadas unas horas (la misma semana la piden varios hermanos)
@@ -58,4 +69,6 @@ export default {
     Object.entries(cors).forEach(([k, v]) => res.headers.set(k, v));
     return res;
   },
+  // Recordatorio del informe del mes pasado (los días 1 y 5; ver avisos.js y [triggers] en wrangler.toml)
+  async scheduled(event, env, ctx) { ctx.waitUntil(reportReminder(env, new Date(event.scheduledTime))); },
 };

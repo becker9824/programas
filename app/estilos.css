@@ -696,3 +696,9 @@ dialog.dlg.search-dlg { width: min(620px, calc(100vw - 24px)); margin: 12vh auto
 a.btn { text-decoration: none; }
 .chips.wide { margin: 0; flex-wrap: wrap; } .chips.wide button { flex: 0 1 auto; white-space: nowrap; padding: 6px 12px; }
 .chart-svg { max-width: 760px; }
+/* Tarjeta para activar los avisos al celular */
+.push-card, .push-card-flat { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.push-card { padding: 14px 16px; margin-bottom: 14px; border: 1.5px solid color-mix(in srgb, var(--accent) 35%, var(--border)); }
+.push-card-flat { margin: 10px 0; }
+.push-ic { width: 42px; height: 42px; border-radius: 12px; display: grid; place-items: center; background: var(--accent-2); font-size: 20px; flex: none; }
+.push-txt { flex: 1; min-width: 200px; display: grid; gap: 2px; }

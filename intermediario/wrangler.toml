@@ -3,3 +3,7 @@
 name = "programas-jw"
 main = "worker.js"
 compatibility_date = "2026-10-01"
+
+# Recordatorio del informe: cada 10 minutos de 16:00 a 18:59 UTC (10 a 12 en México) los días 1 y 5
+[triggers]
+crons = ["*/10 16-18 1,5 * *"]

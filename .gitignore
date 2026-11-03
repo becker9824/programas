@@ -6,3 +6,5 @@ dist/
 .wrangler/
 web/
 .firebase/
+# Avisos al celular: archivo de Firebase para el APK (no va en el repositorio público)
+movil/android/app/google-services.json

@@ -395,3 +395,100 @@ function openSearch() {
 addEventListener('keydown', e => {
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k' && (!FB_CONFIG || nube.listo)) { e.preventDefault(); openSearch(); }
 });
+
+// ---------- avisos al celular (Firebase Cloud Messaging) ----------
+// Cada celular guarda su token en avisos/{uid} = { perfil, tokens: [hasta 3] }; el intermediario (intermediario/avisos.js)
+// los manda. En la web llegan al service worker (sw.js, evento push); en el APK, con el plugin PushNotifications.
+// En la app de PC no hay avisos de este tipo.
+const VAPID = 'BER4_t75U3fRWKCERfXVQQVelyZwRM-86UbTwbvZcBnX44pw3Ms44cEAYFkUH-PbJ3tFMgfPLJSGnoMwbazjKNw';
+const PushN = NATIVE ? capacitorExports.registerPlugin('PushNotifications') : null;
+const pushKey = () => 'avisos-' + (nube.user ? nube.user.uid : '');
+const pushOn = () => { try { return !!localStorage.getItem(pushKey()); } catch (e) { return false; } };
+const messaging = () => import(new URL('vendor/firebase/firebase-messaging.js', location.href).href);
+async function pushSupported() {
+  if (!FB_CONFIG || EMU) return false;
+  if (NATIVE) return true;
+  if (location.protocol === 'app:' || !('serviceWorker' in navigator) || !('Notification' in window)) return false;
+  try { return await (await messaging()).isSupported(); } catch (e) { return false; }
+}
+// ask: pedir permiso (al tocar "Activar"); sin ask solo se renueva el token si ya se dio permiso
+async function pushToken(ask) {
+  if (NATIVE) {
+    let perm = await PushN.checkPermissions();
+    if (perm.receive !== 'granted' && ask) perm = await PushN.requestPermissions();
+    if (perm.receive !== 'granted') throw new Error('permiso');
+    return new Promise((ok, no) => {
+      PushN.addListener('registration', t => ok(t.value));
+      PushN.addListener('registrationError', e => no(new Error(e.error || 'registro')));
+      PushN.register();
+    });
+  }
+  if (Notification.permission !== 'granted' && (!ask || await Notification.requestPermission() !== 'granted')) throw new Error('permiso');
+  const m = await messaging();
+  return m.getToken(m.getMessaging(), { vapidKey: VAPID, serviceWorkerRegistration: await navigator.serviceWorker.ready });
+}
+async function enablePush(ask = true) {
+  const token = await pushToken(ask);
+  const ref = congRef('avisos', nube.user.uid), cur = await F.getDoc(ref).then(s => s.exists() ? s.data().tokens || [] : [], () => []);
+  await F.setDoc(ref, { perfil: nube.me.perfil || null, tokens: [...cur.filter(t => t !== token), token].slice(-3), actualizado: F.serverTimestamp() });
+  try { localStorage.setItem(pushKey(), token); } catch (e) {}
+  return token;
+}
+async function disablePush() {
+  let token = null;
+  try { token = localStorage.getItem(pushKey()); localStorage.removeItem(pushKey()); } catch (e) {}
+  if (!token) return;
+  const ref = congRef('avisos', nube.user.uid), cur = await F.getDoc(ref).then(s => s.exists() ? s.data().tokens || [] : [], () => []);
+  await F.setDoc(ref, { perfil: nube.me.perfil || null, tokens: cur.filter(t => t !== token), actualizado: F.serverTimestamp() }).catch(() => {});
+  if (NATIVE) PushN.unregister().catch(() => {});
+}
+// Pide al intermediario que mande; va por tandas hasta terminar. Devuelve { enviados, sinCelular }.
+async function sendPush(payload) {
+  const auth = 'Bearer ' + await F.auth.currentUser.getIdToken();
+  let desde = 0, enviados = 0, sinCelular = 0;
+  for (let i = 0; i < 40 && desde != null; i++) {
+    const r = await fetch(JW_PROXY + '/avisos/enviar', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: auth },
+      body: JSON.stringify({ cong: nube.cong, desde, ...payload }) });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.error || 'No se pudo mandar el aviso');
+    enviados += j.enviados || 0; if (!i) sinCelular = j.sinCelular || 0; desde = j.siguiente;
+  }
+  return { enviados, sinCelular };
+}
+// Al abrir: renueva el token si ya estaban activados; al tocar un aviso, abre su sección
+function startPush() {
+  if (!FB_CONFIG || EMU) return;
+  if (NATIVE) {
+    PushN.addListener('pushNotificationActionPerformed', a => { const v = a.notification && a.notification.data && a.notification.data.vista; if (v && navItems(true).some(i => i[0] === v)) go({ name: v }); });
+    // Con la app abierta Android no muestra el aviso: se muestra como recordatorio del celular
+    PushN.addListener('pushNotificationReceived', n => LN.schedule({ notifications: [{ id: Math.floor(Math.random() * 2e9), title: n.title || 'Programas', body: n.body || '' }] }).catch(() => {}));
+  }
+  if (pushOn()) enablePush(false).catch(() => {});
+  const ir = new URLSearchParams(location.search).get('ir');
+  if (ir && navItems(true).some(i => i[0] === ir)) { go({ name: ir }); history.replaceState(null, '', location.pathname); }
+}
+// Tarjeta para activar o apagar los avisos (Ajustes y, mientras no estén activos, Inicio)
+function pushCard(compact) {
+  const box = h('div', { class: compact ? 'card push-card' : 'push-card-flat' });
+  const paint = async () => {
+    if (!(await pushSupported())) { box.replaceChildren(compact ? '' : h('p', { class: 'muted small-text' }, location.protocol === 'app:'
+      ? '🔔 Los avisos al celular llegan en la app del celular o en la página web; en la app de PC no.' : '🔔 Este navegador no puede recibir avisos.')); if (compact) box.remove(); return; }
+    const on = pushOn();
+    if (compact && (on || (() => { try { return localStorage.getItem('avisos-no-' + nube.user.uid); } catch (e) { return null; } })())) { box.remove(); return; }
+    box.replaceChildren(
+      h('div', { class: 'push-ic' }, '🔔'),
+      h('div', { class: 'push-txt' }, h('strong', null, on ? 'Avisos activados en este equipo' : 'Recibe avisos en este celular'),
+        h('span', { class: 'muted small-text' }, on ? 'Te llegan tus asignaciones, los anuncios y el recordatorio del informe.' : 'Tus asignaciones, los anuncios y el recordatorio del informe, aunque no abras la app.')),
+      h('div', { class: 'row' },
+        on ? h('button', { class: 'btn small', onclick: async e => { e.target.disabled = true; try { const r = await sendPush({ tipo: 'prueba' }); toast(r.enviados ? 'Aviso de prueba enviado' : 'No se pudo entregar; vuelve a activarlos'); } catch (x) { toast(x.message); } e.target.disabled = false; } }, 'Probar') : null,
+        on ? h('button', { class: 'btn small', onclick: async () => { await disablePush(); toast('Avisos apagados en este equipo'); paint(); } }, 'Apagar')
+          : h('button', { class: 'btn small primary', onclick: async e => {
+            e.target.disabled = true;
+            try { await enablePush(true); toast('¡Listo! Los avisos están activados'); paint(); }
+            catch (x) { e.target.disabled = false; toast(x.message === 'permiso' ? 'Hay que permitir las notificaciones (en los ajustes del celular o del navegador).' : 'No se pudieron activar: ' + x.message); }
+          } }, 'Activar'),
+        compact && !on ? h('button', { class: 'btn small', onclick: () => { try { localStorage.setItem('avisos-no-' + nube.user.uid, '1'); } catch (e) {} box.remove(); } }, 'Ahora no') : null));
+  };
+  paint();
+  return box;
+}

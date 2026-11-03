@@ -154,6 +154,16 @@ test('predicación pública: los ancianos arman turnos y cada quien se apunta so
   await assertFails(deleteDoc(cdoc(db('pub'), 'publica', 't1')));
 });
 
+test('avisos al celular: cada quien guarda solo sus tokens y nadie más los ve', async () => {
+  await assertSucceeds(setDoc(cdoc(db('pub'), 'avisos', 'pub'), { perfil: 'p1', tokens: ['t1'], actualizado: 1 }));
+  await assertFails(setDoc(cdoc(db('pub'), 'avisos', 'prog'), { perfil: 'p1', tokens: ['t1'], actualizado: 1 }));  // la de otro
+  await assertFails(setDoc(cdoc(db('pub'), 'avisos', 'pub'), { perfil: 'p9', tokens: ['t1'], actualizado: 1 }));   // otro perfil
+  await assertFails(setDoc(cdoc(db('pub'), 'avisos', 'pub'), { perfil: 'p1', tokens: ['a', 'b', 'c', 'd'], actualizado: 1 }));
+  await assertSucceeds(getDoc(cdoc(db('pub'), 'avisos', 'pub')));
+  await assertFails(getDoc(cdoc(db('admin'), 'avisos', 'pub')));
+  await assertFails(getDocs(collection(db('admin'), 'congregaciones', C, 'avisos')));
+});
+
 test('pastoreo: solo los ancianos lo ven y lo anotan', async () => {
   const visita = uid => ({ perfil: 'p1', fecha: '2026-11-01', quien: 'Hnos. X y Y', notas: '', por: uid });
   await assertSucceeds(setDoc(cdoc(db('secre'), 'pastoreo', 'v1'), visita('secre')));

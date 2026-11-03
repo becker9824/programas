@@ -417,6 +417,7 @@ async function firstLoad() {
   setTimeout(maybeShowGuide, 700);
   setTimeout(publishPioneers, 2000);
   setTimeout(scheduleReminders, 1500);
+  setTimeout(startPush, 2500); // avisos al celular (mas.js)
   if (isAdmin()) setTimeout(autoBackup, 6000);
   // Antes de la 1.33 todos los anuncios eran para todos: se marcan como compartidos para que se sigan viendo
   if (isElder()) setTimeout(() => nube.anuncios.filter(a => !('publico' in a))

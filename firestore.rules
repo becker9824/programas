@@ -237,6 +237,15 @@ service cloud.firestore {
           && (!(myProfile(c) in request.resource.data.inscritos)
             || (request.resource.data.inscritos[myProfile(c)] is string && request.resource.data.inscritos[myProfile(c)].size() <= 80));
       }
+      // Avisos al celular: avisos/{uid} = { perfil, tokens: [hasta 3], actualizado }. Cada quien solo la suya;
+      // los manda el intermediario de Cloudflare con su cuenta de servicio (no pasa por estas reglas).
+      match /avisos/{uid} {
+        allow read: if isMember(c) && me() == uid;
+        allow create, update: if isMember(c) && me() == uid && only(['perfil', 'tokens', 'actualizado'])
+          && request.resource.data.tokens is list && request.resource.data.tokens.size() <= 3
+          && request.resource.data.perfil == myProfile(c);
+        allow delete: if isMember(c) && me() == uid;
+      }
       // Pastoreo: pastoreo/{id} = { perfil, fecha, quien, notas, por }. Solo los ancianos.
       match /pastoreo/{id} {
         allow read, delete: if isElder(c);
