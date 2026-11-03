@@ -263,12 +263,15 @@ function speakerCandidates() {
     .map(pr => ({ pr, days: last.has(pr.id) ? daysBetween(last.get(pr.id), today) : Infinity, pref: !!pr.nombramiento }))
     .sort((a, b) => b.pref - a.pref || b.days - a.days || a.pr.name.localeCompare(b.pr.name, 'es'));
 }
-function talkInputs(obj) {
+// fecha: la del discurso aquí; con ella se avisa si el bosquejo ya se dio en menos de un año
+function talkInputs(obj, fecha) {
+  const warn = h('div', { class: 'hint s-warn' }), check = () => { warn.textContent = talkRepeat(obj.bosquejo, fecha); };
   const tema = h('input', { type: 'text', value: obj.tema || '', placeholder: 'Tema del discurso', style: { flex: 1, minWidth: '200px' },
     onchange: e => { obj.tema = squash(e.target.value); if (obj.bosquejo && obj.tema) state.talks[obj.bosquejo] = obj.tema; save(); } });
   const num = h('input', { type: 'text', inputmode: 'numeric', value: obj.bosquejo || '', placeholder: 'Núm.', style: { width: '80px' },
-    onchange: e => { obj.bosquejo = squash(e.target.value); if (!tema.value && state.talks[obj.bosquejo]) { tema.value = obj.tema = state.talks[obj.bosquejo]; } save(); } });
-  return h('div', { class: 'row', style: { gap: '8px' } }, num, tema);
+    onchange: e => { obj.bosquejo = squash(e.target.value); if (!tema.value && state.talks[obj.bosquejo]) { tema.value = obj.tema = state.talks[obj.bosquejo]; } save(); check(); } });
+  check();
+  return h('div', null, h('div', { class: 'row', style: { gap: '8px' } }, num, tema), fecha ? warn : null);
 }
 
 function renderWeekend() {
@@ -295,10 +298,11 @@ function renderWeekend() {
       h('div', { class: 'fin-grid' },
         field('Presidente', mecField(p, 'fin', 'presidente', render)),
         field('Lector de La Atalaya', mecField(p, 'fin', 'lector', render))),
-      field('Discurso público', talkInputs(f)),
+      field('Discurso público', talkInputs(f, mecDate(p, 'fin'))),
       h('div', { class: 'fin-grid' },
         field('Orador', speakerInput(f)),
         field('Congregación del orador', text(f, 'cong', 'Vacío si es de aquí')),
+        field('Teléfono del orador', h('input', { type: 'tel', value: f.oradorTel || '', placeholder: 'Para avisarle o confirmar', onchange: e => { f.oradorTel = squash(e.target.value); save(); } })),
         field('Hospitalidad', text(f, 'hosp', 'Quién atiende al orador')),
         field('Notas', text(f, 'notas', 'Opcional'))),
       h('details', { class: 'fin-out', open: (f.salen || []).length ? true : null },
@@ -314,7 +318,9 @@ function renderWeekend() {
       h('div', { class: 'row' }, monthDownload(state.programs, weekendPDF), weeks.length ? h('button', { class: 'btn primary', onclick: () => weekendPDF(weeks.slice(0, 8)) }, '⬇ PDF de las próximas') : null)),
     h('p', { class: 'sub' }, ro ? 'Discurso público, orador, presidente, lector de La Atalaya y hospitalidad. Aquí solo se ve: lo cambia el encargado de Programa VyM.'
       : 'Discurso público, orador, presidente, lector de La Atalaya y hospitalidad. El presidente y el lector son los mismos de Mecánicas. Al escribir el número de un bosquejo que ya usaste, el tema sale solo.'),
-    weeks.length ? weeks.map(card) : h('div', { class: 'card empty' }, 'No hay semanas próximas. Agrégalas en Semanas.'));
+    weekendTabs(),
+    weekendTab === 'historial' ? renderTalkHistory() : weekendTab === 'oradores' ? renderSpeakers()
+      : weeks.length ? weeks.map(card) : h('div', { class: 'card empty' }, 'No hay semanas próximas. Agrégalas en Semanas.'));
 }
 
 // PDF: una tabla por hoja horizontal, un renglón por fin de semana
@@ -767,6 +773,7 @@ function renderArrangements() {
           h('div', { class: 'info' }, h('strong', null, o.lugar), h('div', { class: 'small-text muted' },
             [o.dirige ? 'Dirige: ' + o.dirige : '', o.grupo, o.notas].filter(Boolean).join(' · ')))))))
         : h('div', { class: 'empty' }, editor ? 'Todavía no hay salidas. Toca “+ Nueva salida”.' : 'Todavía no hay salidas.')),
+    ...publicTurnsSection(),
     h('div', { class: 'row spread', style: { margin: '18px 0 8px' } },
       h('h2', { class: 'group', style: { margin: 0 } }, 'Limpieza del Salón del Reino'),
       editor ? h('button', { class: 'btn small', onclick: rotate }, 'Repartir entre los grupos') : null),

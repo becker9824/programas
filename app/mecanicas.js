@@ -270,6 +270,16 @@ function renderHome() {
       h('p', null, congName() || 'Programas y asignaciones')),
     isAdmin() && !homeEdit ? h('button', { class: 'hello-edit', title: 'Ordenar u ocultar las tarjetas de Inicio', onclick: startHomeEdit }, icon('edit', 16), 'Editar') : null);
   if (homeEdit && isAdmin()) return homeEditor(hero, tiles, weeks);
+  // Predicación pública: tu próximo turno, o cuántos hay con lugar
+  const mt = myTurns()[0], openTurns = turnsAhead().filter(t => Object.keys(t.inscritos || {}).length < t.cupo).length;
+  if (mt) tiles.push(tile('publica', 'Predicación pública', `${capFirst(toDate(mt.fecha).toLocaleDateString('es', { weekday: 'short', day: 'numeric', month: 'short' }))} · ${fmtHora(mt.hora)}`, mt.lugar, () => go({ name: 'arreglos' }), 'ok'));
+  else if (openTurns) tiles.push(tile('publica', 'Predicación pública', `${openTurns} turno${openTurns > 1 ? 's' : ''} con lugar`, 'Toca para apuntarte', () => go({ name: 'arreglos' })));
+  // Pastoreo: hermanos sin visita en 6 meses
+  if (isElder() && state.profiles.length) {
+    const last = lastVisits(), due = state.profiles.filter(pr => { const v = last.get(pr.id); return !v || daysBetween(v.fecha, today) >= 180; }).length;
+    tiles.push(tile('pastoreo', 'Pastoreo', due ? `${due} sin visita en 6 meses` : 'Todos visitados', 'Visitas de los ancianos', () => go({ name: 'pastoreo' }), due ? 'warn' : 'ok'));
+  }
+
   return h('div', null,
     hero,
     (myView() || {}).sinAsignacion ? null : nextAssignmentCard(weeks),

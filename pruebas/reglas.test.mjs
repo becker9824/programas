@@ -2,7 +2,7 @@
 import { test, before, after } from 'node:test';
 import { readFileSync } from 'node:fs';
 import { initializeTestEnvironment, assertSucceeds, assertFails } from '@firebase/rules-unit-testing';
-import { doc, getDoc, setDoc, updateDoc, deleteDoc, collection, getDocs, query, where } from 'firebase/firestore';
+import { doc, getDoc, setDoc, updateDoc, deleteDoc, deleteField, collection, getDocs, query, where } from 'firebase/firestore';
 
 let env;
 const C = 'cong1', CODE = 'ABC234';
@@ -137,6 +137,30 @@ test('anuncios: los publica cualquier anciano; los publicadores solo ven los com
   await assertFails(getDoc(cdoc(db('otro'), 'anuncios', 'a1')));
   await assertFails(deleteDoc(cdoc(db('pub'), 'anuncios', 'a1')));
   await assertSucceeds(deleteDoc(cdoc(db('secre'), 'anuncios', 'a1')));
+});
+
+test('predicación pública: los ancianos arman turnos y cada quien se apunta solo a sí mismo', async () => {
+  const turno = { fecha: '2026-12-05', hora: '10:00', horaFin: '12:00', lugar: 'Plaza', cupo: 2, inscritos: {}, notas: '' };
+  await assertSucceeds(setDoc(cdoc(db('prog'), 'publica', 't1'), turno));
+  await assertFails(setDoc(cdoc(db('pub'), 'publica', 't2'), turno));
+  await assertFails(setDoc(cdoc(db('prog'), 'publica', 't3'), { ...turno, cupo: 50 }));
+  await assertSucceeds(getDoc(cdoc(db('pub'), 'publica', 't1')));
+  await assertSucceeds(updateDoc(cdoc(db('pub'), 'publica', 't1'), { 'inscritos.p1': 'Pub' }));       // se apunta
+  await assertFails(updateDoc(cdoc(db('pub'), 'publica', 't1'), { 'inscritos.p9': 'Otro' }));       // no apunta a otro
+  await assertFails(updateDoc(cdoc(db('pub'), 'publica', 't1'), { lugar: 'Otro lugar' }));           // no cambia el turno
+  await assertSucceeds(updateDoc(cdoc(db('prog'), 'publica', 't1'), { 'inscritos.p7': 'Siete' }));   // un anciano sí
+  await assertFails(updateDoc(cdoc(db('secre'), 'publica', 't1'), { 'inscritos.p8': 'Ocho' }));     // ya no cabe (cupo 2)
+  await assertSucceeds(updateDoc(cdoc(db('pub'), 'publica', 't1'), { 'inscritos.p1': deleteField() })); // se quita
+  await assertFails(deleteDoc(cdoc(db('pub'), 'publica', 't1')));
+});
+
+test('pastoreo: solo los ancianos lo ven y lo anotan', async () => {
+  const visita = uid => ({ perfil: 'p1', fecha: '2026-11-01', quien: 'Hnos. X y Y', notas: '', por: uid });
+  await assertSucceeds(setDoc(cdoc(db('secre'), 'pastoreo', 'v1'), visita('secre')));
+  await assertFails(setDoc(cdoc(db('secre'), 'pastoreo', 'v2'), visita('prog')));   // "por" es quien lo anota
+  await assertFails(setDoc(cdoc(db('pub'), 'pastoreo', 'v3'), visita('pub')));
+  await assertFails(getDoc(cdoc(db('pub'), 'pastoreo', 'v1')));
+  await assertSucceeds(getDoc(cdoc(db('prog'), 'pastoreo', 'v1')));
 });
 
 test('directorio: lo ven los ancianos (cualquier función), no los publicadores', async () => {

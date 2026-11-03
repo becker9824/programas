@@ -6,6 +6,8 @@ const path = require('node:path');
 const fs = require('node:fs/promises');
 
 const ROOT = __dirname;
+// Prueba de pantallas: siempre en una carpeta nueva (sin sesión ni datos de antes)
+if (process.argv.includes('--pantallas')) app.setPath('userData', path.join(require('node:os').tmpdir(), 'programas-pantallas-' + Date.now()));
 // --emu: usa el Firebase local de prueba (npm run nube-local)
 const START_URL = 'app://programas/index.html' + (process.argv.includes('--emu') ? '?emu' : '');
 const TYPES = {
@@ -96,6 +98,57 @@ async function selfTest(win) {
   app.quit();
 }
 
+// Prueba de pantallas (npm run prueba-pantallas): con el Firebase local de prueba crea una congregación,
+// abre cada sección y las ventanas principales, y avisa si alguna falla. Corre en una carpeta temporal nueva.
+async function screenTest(win) {
+  const run = code => win.webContents.executeJavaScript(code);
+  const phase = await run(`localStorage.getItem('pantallas')`);
+  if (!phase) {
+    await run(`(async () => {
+      for (let i = 0; i < 100 && !F; i++) await new Promise(r => setTimeout(r, 100));
+      await F.createUserWithEmailAndPassword(F.auth, 'pantallas' + Date.now() + '@prueba.test', crypto.randomUUID());
+      for (let i = 0; i < 100 && !nube.user; i++) await new Promise(r => setTimeout(r, 100));
+      await createCongregation('Congregación de prueba', 'Coordinador Prueba');
+      localStorage.setItem('pantallas', '2'); location.reload();
+    })()`);
+    return; // sigue al volver a cargar
+  }
+  const result = await run(`(async () => {
+    const wait = ms => new Promise(r => setTimeout(r, ms)), errors = [];
+    addEventListener('error', e => errors.push(e.message));
+    addEventListener('unhandledrejection', e => errors.push(String(e.reason && e.reason.message || e.reason)));
+    for (let i = 0; i < 150 && !nube.listo; i++) await wait(100);
+    if (!nube.listo) return { error: 'No entró a la congregación' };
+    const closeAll = () => document.querySelectorAll('dialog').forEach(d => { d.close(); d.remove(); });
+    await wait(800); closeAll();
+    const mk = (name, sex, nom) => ({ id: uid(), name, sex, age: 40, nombramiento: nom || '', bautizado: true });
+    state.profiles.push(mk('Ana Prueba', 'F'), mk('Beto Anciano', 'M', 'anciano'), mk('Carlos Siervo', 'M', 'sm'), mk('Dario Prueba', 'M'));
+    save(); await wait(800);
+    const views = {}, dialogs = {};
+    for (const [v] of navItems(true)) {
+      const before = errors.length;
+      try { go({ name: v }); await wait(700); closeAll(); views[v] = document.getElementById('app').childElementCount ? (errors.length > before ? 'error' : 'ok') : 'vacía'; }
+      catch (e) { views[v] = 'error: ' + e.message; }
+    }
+    const tryDlg = async (name, fn) => { const before = errors.length; try { go({ name: 'inicio' }); await wait(300); await fn(); await wait(300);
+      dialogs[name] = document.querySelector('dialog[open]') || document.querySelector('.tiles.editing') ? (errors.length > before ? 'error' : 'ok') : 'no abrió'; }
+      catch (e) { dialogs[name] = 'error: ' + e.message; } closeAll(); };
+    await tryDlg('guia', () => openGuide());
+    await tryDlg('busqueda', () => openSearch());
+    await tryDlg('anuncio', () => openAnnouncementDialog(null));
+    await tryDlg('turno', () => openTurnDialog(null));
+    await tryDlg('visita', () => openVisitDialog(state.profiles[0], null));
+    await tryDlg('hermano', () => openProfileDialog(state.profiles[1]));
+    await tryDlg('ausencia', () => openAbsenceDialog(state.profiles[0].id, 'Ana', () => {}));
+    await tryDlg('editarInicio', () => startHomeEdit());
+    homeEdit = null;
+    const bad = [...Object.entries(views), ...Object.entries(dialogs)].filter(([, s]) => s !== 'ok').map(([k, s]) => k + ': ' + s);
+    return { secciones: Object.keys(views).length, ventanas: Object.keys(dialogs).length, fallas: bad, errores: errors.slice(0, 10) };
+  })()`);
+  console.log('PANTALLAS ' + JSON.stringify(result));
+  app.exit(result.error || result.fallas.length || result.errores.length ? 1 : 0);
+}
+
 // Actualizaciones: busca versiones nuevas en GitHub Releases, las descarga
 // en segundo plano y pregunta si reiniciar. Si se dice "Más tarde", se vuelve a preguntar la próxima vez.
 // El instalador se muestra (no silencioso) para que se vea el avance; en discos lentos
@@ -128,7 +181,7 @@ function createWindow() {
   const win = new BrowserWindow({
     width: 1280, height: 860, minWidth: 420, minHeight: 500,
     title: 'Programas', icon: path.join(ROOT, 'icon.png'), autoHideMenuBar: true,
-    show: !process.argv.includes('--prueba'),
+    show: !process.argv.includes('--prueba') && !process.argv.includes('--pantallas'),
     webPreferences: { contextIsolation: true, sandbox: true },
   });
   win.loadURL(START_URL);
@@ -140,6 +193,7 @@ function createWindow() {
   const link = process.argv.find(isLink);
   if (link) win.webContents.once('did-finish-load', () => sendLink(win, link));
   if (process.argv.includes('--prueba')) win.webContents.once('did-finish-load', () => selfTest(win).catch(e => { console.log('PRUEBA ERROR ' + e.message); app.quit(); }));
+  if (process.argv.includes('--pantallas')) win.webContents.on('did-finish-load', () => screenTest(win).catch(e => { console.log('PANTALLAS ERROR ' + e.message); app.exit(1); }));
   return win;
 }
 

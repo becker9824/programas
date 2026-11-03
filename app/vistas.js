@@ -71,7 +71,7 @@ function navItems(all = false) {
   // Hermanos incluye el directorio: lo ven todos los ancianos (cualquier función)
   if (isElder()) items.push(['people', 'Hermanos', isAdmin() ? nube.miembros.filter(m => m.estado !== 'activo').length : 0]);
   if (can('programa')) items.push(['families', 'Familias']);
-  if (isElder()) items.push(['grupos', 'Grupos'], ['asistencia', 'Asistencia'], ['historial', 'Historial']);
+  if (isElder()) items.push(['grupos', 'Grupos'], ['pastoreo', 'Pastoreo'], ['asistencia', 'Asistencia'], ['estadisticas', 'Estadísticas'], ['historial', 'Historial']);
   if (can('secretario')) items.push(['report', 'Informes']);
   else if (reportsByMembers()) items.push(['report', 'Informe']);
   items.push(['anuncios', 'Anuncios', unreadAnnouncements()], ['calendario', 'Calendario'], ['arreglos', 'Arreglos']);
@@ -96,6 +96,9 @@ function buildNav(items = navItems()) {
   ].filter(Boolean));
   const name = FB_CONFIG && nube.listo ? congName() : '';
   setBrand(name || 'Programas');
+  // Lupa de búsqueda rápida (también con Ctrl+K)
+  const sb = document.querySelector('.search-btn');
+  if (sb) { sb.hidden = !items.length; if (!sb.childElementCount) { sb.append(icon('search', 19)); sb.onclick = openSearch; } }
   // Píldora que se desliza a la sección activa; el ícono da un saltito solo al cambiar de sección
   const changed = buildNav.last !== view.name; buildNav.last = view.name;
   const top = document.querySelector('header nav'), bottom = document.querySelector('.tabbar');
@@ -182,6 +185,8 @@ function render() {
   if (view.name === 'asistencia') return app.replaceChildren(renderAttendance());
   if (view.name === 'calendario') return app.replaceChildren(renderCalendar());
   if (view.name === 'arreglos') return app.replaceChildren(renderArrangements());
+  if (view.name === 'pastoreo') return app.replaceChildren(renderShepherding());
+  if (view.name === 'estadisticas') return app.replaceChildren(renderStats());
   if (view.name === 'historial') return app.replaceChildren(renderHistory());
   if (view.name === 'finsemana') return app.replaceChildren(renderWeekend());
   if (view.name === 'anuncios') { app.replaceChildren(renderAnnouncements()); return buildNav(); }

@@ -312,7 +312,7 @@ function accountExtras() {
 // Al abrir la app el coordinador, si el último tiene 7 días o más, se hace uno solo. Se guardan los últimos 8.
 // El archivo descargado sirve en "Cargar respaldo" (programa, hermanos y ajustes); lo demás queda en "congregacion".
 const BACKUP_COLS = ['miembros', 'contactos', 'informes', 'territorios', 'trabajos', 'cuentas', 'cuentasConfig', 'grupos', 'asistencia',
-  'eventos', 'salidas', 'arreglos', 'ausencias', 'anuncios', 'capitanes', 'confirmaciones'];
+  'eventos', 'salidas', 'arreglos', 'ausencias', 'anuncios', 'capitanes', 'confirmaciones', 'publica', 'pastoreo'];
 const backupsCol = () => F.collection(F.db, 'congregaciones', nube.cong, 'respaldos');
 const toB64 = bytes => { let out = ''; for (let i = 0; i < bytes.length; i += 0x8000) out += String.fromCharCode(...bytes.subarray(i, i + 0x8000)); return btoa(out); };
 const fromB64 = b64 => Uint8Array.from(atob(b64), c => c.charCodeAt(0));
@@ -379,7 +379,8 @@ function backupsCard() {
 // Solo la ve esa cuenta; los demás siguen viendo el orden de siempre.
 const HOME_TILES = [['list', 'Próxima reunión'], ['report', 'Tu informe del mes'], ['ausencia', 'Ausencia'], ['anuncios', 'Anuncios'],
   ['people', 'Asignaciones por completar'], ['mecanicas', 'Asignaciones mecánicas'], ['users', 'Cuentas nuevas'], ['informes', 'Informes de la congregación'],
-  ['cuentas', 'Cuentas'], ['calendario', 'Próximo evento'], ['arreglos', 'Limpieza del Salón'], ['territorios', 'Territorios']];
+  ['cuentas', 'Cuentas'], ['calendario', 'Próximo evento'], ['arreglos', 'Limpieza del Salón'], ['territorios', 'Territorios'],
+  ['publica', 'Predicación pública'], ['pastoreo', 'Pastoreo']];
 const myView = () => (FB_CONFIG && isAdmin() && nube.vista) || null;
 const arrangeBy = (list, key, order, hidden, keep) => {
   const pos = k => { const i = (order || []).indexOf(k); return i < 0 ? 1000 + list.findIndex(x => key(x) === k) : i; };

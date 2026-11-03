@@ -32,7 +32,7 @@ function nextAssignmentCard(weeks) {
     h('div', null, x.when),
     x.role ? h('div', null, h('strong', null, x.role), x.with ? ` · con ${x.with}` : '') : null,
     x.detail ? h('div', { class: 'detail' }, x.detail) : null,
-    h('div', { style: { marginTop: '8px' } }, confirmButton(x)),
+    h('div', { class: 'row', style: { marginTop: '8px' } }, confirmButton(x), calendarButton([x, ...rest])),
     rest.length ? h('div', { class: 'small-text muted', style: { marginTop: '10px' } }, 'Después:',
       rest.map(y => h('div', { class: 'row mine-next' }, h('span', null, `${fmtShort(y.day)} · ${y.title}`), confirmButton(y, true)))) : null);
 }

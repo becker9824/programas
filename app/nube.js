@@ -8,7 +8,7 @@
 // Desde la 1.3 los datos van por partes (perfiles/, familias/, semanas/, config/ajustes) en vez de
 // un solo privado/estado (que tenía límite de 1 MB); privado/estado queda como copia de la 1.2.
 const nube = { user: null, cong: null, congData: null, me: null, acceso: '', listo: false, publico: null,
-  miembros: [], anuncios: [], contactos: new Map(), cuentas: [], cuentasIni: null, territorios: [], grupos: [], capitanes: [], capitanesHermanos: [], trabajos: [], asistencia: new Map(), eventos: [], salidas: [], limpieza: null, ausencias: new Map(), confirmaciones: new Map(), vista: null, sent: {}, ultimoPub: '', registro: null, inicial: null, unsubMe: null, unsubDatos: [] };
+  miembros: [], anuncios: [], contactos: new Map(), cuentas: [], cuentasIni: null, territorios: [], grupos: [], capitanes: [], capitanesHermanos: [], trabajos: [], asistencia: new Map(), eventos: [], salidas: [], publica: [], pastoreo: [], limpieza: null, ausencias: new Map(), confirmaciones: new Map(), vista: null, sent: {}, ultimoPub: '', registro: null, inicial: null, unsubMe: null, unsubDatos: [] };
 // Funciones que el coordinador puede dar a cada cuenta (el coordinador tiene todas)
 const PERMS = [
   ['programa', 'Programa VyM', 'Semanas, hermanos, familias y ajustes de la reunión'],
@@ -219,7 +219,7 @@ function watchAuth() {
     stopListening(); if (nube.unsubMe) { nube.unsubMe(); nube.unsubMe = null; }
     histCache = null; reportsCache = { key: '', docs: [] }; // lo leído con la cuenta anterior no se queda
     Object.assign(nube, { user, mesInforme: null, mesInformes: null, cong: null, congData: null, me: null, acceso: '', listo: false, miembros: [], anuncios: [],
-      contactos: new Map(), cuentas: [], cuentasIni: null, territorios: [], grupos: [], capitanes: [], capitanesHermanos: [], trabajos: [], asistencia: new Map(), eventos: [], salidas: [], limpieza: null, ausencias: new Map(), confirmaciones: new Map(), vista: null, publico: null, sent: {}, ultimoPub: '' });
+      contactos: new Map(), cuentas: [], cuentasIni: null, territorios: [], grupos: [], capitanes: [], capitanesHermanos: [], trabajos: [], asistencia: new Map(), eventos: [], salidas: [], publica: [], pastoreo: [], limpieza: null, ausencias: new Map(), confirmaciones: new Map(), vista: null, publico: null, sent: {}, ultimoPub: '' });
     if (!user) return renderAuth();
     screen(h('div', { class: 'card auth-card' }, h('p', { class: 'muted' }, 'Cargando tu cuenta…')));
     let joinErr = '';
@@ -300,6 +300,9 @@ function enterCongregation() {
   // Calendario y arreglos: los ven todos
   listen('eventos', F.collection(F.db, 'congregaciones', nube.cong, 'eventos'), s => { nube.eventos = s.docs.map(d => ({ id: d.id, ...d.data() })); return ['calendario', 'list', 'inicio', 'edit'].includes(view.name); }, true);
   listen('salidas', F.collection(F.db, 'congregaciones', nube.cong, 'salidas'), s => { nube.salidas = s.docs.map(d => ({ id: d.id, ...d.data() })); return view.name === 'arreglos'; }, true);
+  // Predicación pública (turnos desde hace una semana) y pastoreo (solo ancianos)
+  listen('publica', F.query(F.collection(F.db, 'congregaciones', nube.cong, 'publica'), F.where('fecha', '>=', addDays(todayISO(), -7))), s => { nube.publica = s.docs.map(d => ({ id: d.id, ...d.data() })); return ['arreglos', 'inicio'].includes(view.name); }, true);
+  if (isElder()) listen('pastoreo', F.collection(F.db, 'congregaciones', nube.cong, 'pastoreo'), s => { nube.pastoreo = s.docs.map(d => ({ id: d.id, ...d.data() })); return ['pastoreo', 'inicio'].includes(view.name); }, true);
   listen('limpieza', congRef('arreglos', 'limpieza'), s => { nube.limpieza = s.exists() ? s.data() : null; return ['arreglos', 'inicio'].includes(view.name); }, true);
   // Ausencias: los ancianos ven todas; cada quien, la suya
   const gotAway = () => ['inicio', 'people', 'mecanicas', 'finsemana'].includes(view.name);

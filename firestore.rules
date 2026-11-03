@@ -216,6 +216,37 @@ service cloud.firestore {
           && request.resource.data.dia is int && request.resource.data.dia >= 0 && request.resource.data.dia <= 6
           && request.resource.data.lugar is string && request.resource.data.lugar.size() > 0 && request.resource.data.lugar.size() <= 120;
       }
+      // Predicación pública: publica/{id} = { fecha, hora, horaFin, lugar, cupo, inscritos: { perfil: nombre }, notas }.
+      // Los ven todos; los arman los ancianos; cada hermano se apunta o se quita solo a sí mismo, sin pasar el cupo.
+      match /publica/{id} {
+        function validTurn(d) {
+          return d.keys().hasOnly(['fecha', 'hora', 'horaFin', 'lugar', 'cupo', 'inscritos', 'notas'])
+            && d.fecha is string && d.fecha.matches('[0-9]{4}-[0-9]{2}-[0-9]{2}') && d.hora is string && d.hora.size() <= 5
+            && d.get('horaFin', '') is string && d.get('horaFin', '').size() <= 5
+            && d.lugar is string && d.lugar.size() > 0 && d.lugar.size() <= 120
+            && d.cupo is int && d.cupo >= 1 && d.cupo <= 10
+            && d.inscritos is map && d.inscritos.size() <= d.cupo && d.get('notas', '') is string && d.get('notas', '').size() <= 300;
+        }
+        allow read: if isActive(c);
+        allow delete: if isElder(c);
+        allow create, update: if isElder(c) && validTurn(request.resource.data);
+        allow update: if isActive(c) && myProfile(c) != null
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['inscritos'])
+          && request.resource.data.inscritos.diff(resource.data.inscritos).affectedKeys().hasOnly([myProfile(c)])
+          && request.resource.data.inscritos.size() <= resource.data.cupo
+          && (!(myProfile(c) in request.resource.data.inscritos)
+            || (request.resource.data.inscritos[myProfile(c)] is string && request.resource.data.inscritos[myProfile(c)].size() <= 80));
+      }
+      // Pastoreo: pastoreo/{id} = { perfil, fecha, quien, notas, por }. Solo los ancianos.
+      match /pastoreo/{id} {
+        allow read, delete: if isElder(c);
+        allow create, update: if isElder(c) && only(['perfil', 'fecha', 'quien', 'notas', 'por'])
+          && request.resource.data.perfil is string && request.resource.data.fecha is string
+          && request.resource.data.fecha.matches('[0-9]{4}-[0-9]{2}-[0-9]{2}')
+          && request.resource.data.quien is string && request.resource.data.quien.size() <= 120
+          && request.resource.data.notas is string && request.resource.data.notas.size() <= 200
+          && request.resource.data.por == me();
+      }
       match /arreglos/{doc} {
         allow read: if isActive(c);
         allow write: if isElder(c) && doc == 'limpieza' && only(['semanas']) && request.resource.data.semanas is map;
