@@ -970,12 +970,36 @@ async function checkApkUpdate() {
     const r = await fetch('https://api.github.com/repos/becker9824/programas/releases/latest', { cache: 'no-store' });
     const v = r.ok ? String((await r.json()).tag_name || '').replace(/^v/, '') : '';
     if (!v || !newerVersion(v, APP_VERSION)) return;
+    // Se baja dentro de la app y se abre el instalador de Android (plugin propio Actualizar, desde la 1.31.0).
+    // Si algo falla, como antes: se baja con el navegador.
+    const bar = h('div', { style: { height: '100%', width: '0%', background: 'var(--accent)', borderRadius: '6px', transition: 'width .2s' } });
+    const barBox = h('div', { style: { height: '10px', background: 'var(--accent-2)', borderRadius: '6px', overflow: 'hidden', marginTop: '10px', display: 'none' } }, bar);
+    const msg = h('p', null, `Tienes la ${APP_VERSION} y ya salió la ${v}. Toca “Actualizar ahora”: se baja aquí mismo y Android te pide confirmar la instalación. Tus datos no se pierden.`);
+    const later = h('button', { class: 'btn', onclick: () => dlg.close() }, 'Después');
+    const go = h('button', { class: 'btn primary', onclick: async () => {
+      const UP = capacitorExports.registerPlugin('Actualizar');
+      go.disabled = true; later.disabled = true;
+      try {
+        if (!(await UP.puedeInstalar()).valor) {
+          msg.textContent = 'Android necesita tu permiso (solo esta vez): activa “Permitir de esta fuente” y vuelve a la app con la flecha de atrás.';
+          await UP.pedirPermiso();
+          await new Promise(ok => document.addEventListener('visibilitychange', function back() {
+            if (document.visibilityState === 'visible') { document.removeEventListener('visibilitychange', back); ok(); } }));
+          if (!(await UP.puedeInstalar()).valor) { msg.textContent = 'Sin ese permiso no se puede instalar. Vuelve a tocar “Actualizar ahora” cuando quieras.'; go.disabled = false; later.disabled = false; return; }
+        }
+        msg.textContent = 'Bajando la versión ' + v + '…'; barBox.style.display = '';
+        const sub = await UP.addListener('progreso', e => { if (e.p >= 0) { bar.style.width = e.p + '%'; msg.textContent = `Bajando la versión ${v}… ${e.p}%`; } });
+        await UP.descargarEInstalar({ url: APK_URL });
+        sub.remove();
+        msg.textContent = 'Listo: toca “Actualizar” en la ventana de Android.'; later.disabled = false; later.textContent = 'Cerrar';
+      } catch (e) {
+        msg.textContent = 'No se pudo bajar aquí (' + ((e && e.message) || e) + '). Se abrirá el navegador para bajarla.';
+        setTimeout(() => { window.open(APK_URL, '_blank'); dlg.close(); }, 2500);
+      }
+    } }, '⬇ Actualizar ahora');
     const dlg = h('dialog', { class: 'dlg' },
-      h('div', { class: 'dlg-body' }, h('h3', null, 'Hay una versión nueva'),
-        h('p', null, `Tienes la ${APP_VERSION} y ya salió la ${v}. Toca “Descargar”, abre el archivo que se baja e instálalo encima: tus datos no se pierden.`)),
-      h('div', { class: 'dlg-foot' },
-        h('button', { class: 'btn', onclick: () => dlg.close() }, 'Después'),
-        h('button', { class: 'btn primary', onclick: () => { window.open(APK_URL, '_blank'); dlg.close(); } }, '⬇ Descargar')));
+      h('div', { class: 'dlg-body' }, h('h3', null, 'Hay una versión nueva'), msg, barBox),
+      h('div', { class: 'dlg-foot' }, later, go));
     dlg.addEventListener('close', () => dlg.remove());
     document.body.append(dlg); dlg.showModal();
   } catch (e) {}
