@@ -382,7 +382,7 @@ function openViewDialog() {
   const store = async vista => {
     try {
       await F.setDoc(ref('usuarios', nube.user.uid), { vista }, { merge: true });
-      nube.vista = vista; dlg.close(); render(); toast('Listo: así se verá solo en tu cuenta');
+      nube.vista = vista; homeEdit = null; dlg.close(); render(); toast('Listo: así se verá solo en tu cuenta');
     } catch (e) { toast(errMsg(e)); }
   };
   const dlg = h('dialog', { class: 'dlg' },
@@ -401,6 +401,81 @@ function openViewDialog() {
         inicio: tilesAll.map(x => x.k), inicioOcultas: tilesAll.filter(x => !x.on).map(x => x.k), sinAsignacion: !showMine }) }, 'Guardar')));
   dlg.addEventListener('close', () => dlg.remove());
   document.body.append(dlg); dlg.showModal();
+}
+
+// Modo de edición de Inicio (coordinador): se arrastran las tarjetas con ⠿ y el ojo las oculta o muestra.
+// homeEdit = { order: [claves], hidden: Set, mine } mientras se edita; se guarda en la vista propia al tocar “Listo”.
+let homeEdit = null;
+function startHomeEdit() {
+  const v = myView() || {};
+  homeEdit = { order: (v.inicio || []).slice(), hidden: new Set(v.inicioOcultas || []), mine: !v.sinAsignacion };
+  render(); scrollTo({ top: 0, behavior: 'smooth' });
+}
+function homeEditor(hero, tiles, weeks) {
+  const e = homeEdit, grid = h('div', { class: 'tiles editing' });
+  const keys = () => [...grid.children].map(t => t.dataset.k);
+  for (const t of arrangeBy(tiles, t => t.dataset.k, e.order, [], () => true)) {
+    const k = t.dataset.k, eye = h('span', { class: 'tile-eye', role: 'button', title: 'Mostrar u ocultar' });
+    const paint = () => { t.classList.toggle('off', e.hidden.has(k)); eye.replaceChildren(icon(e.hidden.has(k) ? 'eyeoff' : 'eye', 18)); };
+    eye.addEventListener('click', ev => { ev.stopPropagation(); e.hidden.has(k) ? e.hidden.delete(k) : e.hidden.add(k); paint(); });
+    t.lastChild.replaceWith(eye); // en vez de la flecha
+    t.prepend(h('span', { class: 'tile-grip', title: 'Arrastra para mover' }, icon('grip', 18)));
+    t.tabIndex = -1; paint();
+    grid.append(t);
+  }
+  // En edición las tarjetas no abren su sección (se detiene el clic antes de que llegue)
+  grid.addEventListener('click', ev => { if (!ev.target.closest('.tile-eye')) { ev.stopPropagation(); ev.preventDefault(); } }, true);
+  // Arrastrar con el dedo o el ratón desde ⠿: la tarjeta se cambia de lugar al pasar sobre otra
+  let drag = null;
+  grid.addEventListener('pointerdown', ev => {
+    const grip = ev.target.closest('.tile-grip');
+    if (!grip) return;
+    ev.preventDefault();
+    drag = { t: grip.closest('.tile'), id: ev.pointerId };
+    drag.t.classList.add('dragging');
+    grid.setPointerCapture(ev.pointerId);
+  });
+  grid.addEventListener('pointermove', ev => {
+    if (!drag || ev.pointerId !== drag.id) return;
+    const over = [...grid.children].find(o => { const r = o.getBoundingClientRect(); return o !== drag.t && ev.clientX >= r.left && ev.clientX <= r.right && ev.clientY >= r.top && ev.clientY <= r.bottom; });
+    if (!over) return;
+    const all = [...grid.children];
+    over[all.indexOf(drag.t) < all.indexOf(over) ? 'after' : 'before'](drag.t);
+  });
+  const drop = ev => {
+    if (!drag || ev.pointerId !== drag.id) return;
+    drag.t.classList.remove('dragging'); drag = null;
+    e.order = keys();
+  };
+  grid.addEventListener('pointerup', drop); grid.addEventListener('pointercancel', drop);
+
+  const finish = async vista => {
+    try {
+      await F.setDoc(ref('usuarios', nube.user.uid), { vista }, { merge: true });
+      nube.vista = vista; homeEdit = null; render(); toast('Listo: así se verá solo en tu cuenta');
+    } catch (ex) { toast(errMsg(ex)); }
+  };
+  const v = myView() || {};
+  const done = () => {
+    const shown = keys(), order = [...shown, ...(e.order || []).filter(k => !shown.includes(k)), ...HOME_TILES.map(x => x[0]).filter(k => !shown.includes(k) && !(e.order || []).includes(k))];
+    finish({ ...v, inicio: order, inicioOcultas: [...e.hidden], sinAsignacion: !e.mine });
+  };
+  const mine = h('label', { class: 'switch-row' }, h('input', { type: 'checkbox', checked: e.mine || null, onchange: ev => { e.mine = ev.target.checked; } }),
+    h('span', null, 'Mostrar “Tu próxima asignación” arriba'));
+  return h('div', null,
+    hero,
+    h('div', { class: 'edit-bar card' },
+      h('div', null, h('strong', null, 'Editando Inicio'),
+        h('div', { class: 'muted small-text' }, 'Arrastra ⠿ para cambiar el orden y toca el ojo para ocultar o mostrar. Solo cambia en tu cuenta.')),
+      h('div', { class: 'row' },
+        h('button', { class: 'btn small', onclick: () => { homeEdit = null; render(); } }, 'Cancelar'),
+        h('button', { class: 'btn small primary', onclick: done }, 'Listo'))),
+    mine,
+    h('div', { class: 'tiles-hint muted small-text' }, 'Algunas tarjetas solo aparecen cuando hay algo que mostrar (por ejemplo, cuentas nuevas por aprobar).'),
+    grid,
+    h('div', { class: 'row', style: { justifyContent: 'center', marginTop: '16px' } },
+      h('button', { class: 'btn small', onclick: openViewDialog }, '☰ Ordenar las pestañas'),
+      h('button', { class: 'btn small', onclick: () => confirm('¿Volver al orden de siempre en Inicio?') && finish({ ...v, inicio: [], inicioOcultas: [], sinAsignacion: false }) }, '↺ Como venía')));
 }
 
 // ---------- ausencias ----------

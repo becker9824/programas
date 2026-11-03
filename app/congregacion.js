@@ -243,9 +243,25 @@ function mecField(p, mtg, key, onDone) {
   return wrap;
 }
 // Orador: si el nombre es de un hermano de la congregación se guarda también su id
+// Al tocarlo sale la lista de varones de aquí (nombrados primero, con los filtros de nombrados);
+// un orador de otra congregación se escribe a mano.
 function speakerInput(obj) {
-  return h('input', { type: 'text', list: 'profiles-list', value: obj.orador || '', placeholder: 'Nombre del orador',
+  const inp = h('input', { type: 'text', autocomplete: 'off', value: obj.orador || '', placeholder: 'Nombre del orador', style: { width: '100%' },
     onchange: e => { obj.orador = squash(e.target.value); const pr = profByName(obj.orador); obj.oradorId = pr ? pr.id : null; save(); } });
+  attachPicker(inp, speakerCandidates, pid => { const pr = profById(pid); obj.orador = pr.name; obj.oradorId = pid; save(); });
+  return h('div', { style: { position: 'relative' } }, inp);
+}
+// Última vez que dio el discurso público (aquí o en otra congregación)
+function speakerCandidates() {
+  const last = new Map(), today = todayISO();
+  for (const p of state.programs) {
+    const f = p.fin || {}, d = mecDate(p, 'fin');
+    if (d > today) continue;
+    for (const id of [f.oradorId, ...(f.salen || []).map(s => s.oradorId)]) if (id && (!last.has(id) || last.get(id) < d)) last.set(id, d);
+  }
+  return state.profiles.filter(pr => pr.sex === 'M')
+    .map(pr => ({ pr, days: last.has(pr.id) ? daysBetween(last.get(pr.id), today) : Infinity, pref: !!pr.nombramiento }))
+    .sort((a, b) => b.pref - a.pref || b.days - a.days || a.pr.name.localeCompare(b.pr.name, 'es'));
 }
 function talkInputs(obj) {
   const tema = h('input', { type: 'text', value: obj.tema || '', placeholder: 'Tema del discurso', style: { flex: 1, minWidth: '200px' },

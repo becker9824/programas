@@ -146,10 +146,13 @@ function openMoreSheet(items) {
 function render() {
   if (FB_CONFIG && !(nube.acceso && nube.listo)) return; // las pantallas de acceso se dibujan aparte
   stopViewSubs();
+  if (view.name !== 'inicio') homeEdit = null; // salir de Inicio cancela su modo de edición
   const items = navItems();
   if (!navItems(true).some(([v]) => isActiveView(v))) view = { name: items[0][0] };
   buildNav(items);
   const app = document.getElementById('app');
+  // Entrada suave solo al cambiar de sección (no cada vez que llegan cambios de otros)
+  if (render.last !== view.name) { render.last = view.name; app.classList.remove('page-in'); void app.offsetWidth; app.classList.add('page-in'); }
   const program = !FB_CONFIG || can('programa');
   if (view.name === 'inicio') return app.replaceChildren(renderHome());
   if (view.name === 'report') return app.replaceChildren(renderReport());
@@ -411,6 +414,7 @@ function renderEditor(p) {
     Object.assign(pick.el.style, { width: width + 'px', right: 'auto', left: (over > 0 ? -over : 0) + 'px' });
     inp.parentNode.append(pick.el);
     fillPick();
+    roomForPick(inp);
   }
   // Busca por el inicio de cada palabra del nombre: "ana" encuentra "Ana María", no "Hermana"
   const nameMatch = (name, typed) => (' ' + norm(name)).includes(' ' + typed);

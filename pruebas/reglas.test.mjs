@@ -120,15 +120,20 @@ test('si la congregación elige "solo encargados", el publicador ya no envía in
   await assertSucceeds(deleteDoc(cdoc(db('pub'), 'informes', 'p1_2026-10')));
 });
 
-test('anuncios: los publica cualquier anciano (cualquier función) y los leen todos', async () => {
-  const anuncio = autor => ({ titulo: 'Asamblea', texto: 'Recuerden…', fijado: false, vence: null, autor, autorNombre: 'X', fecha: 1 });
-  await assertSucceeds(setDoc(cdoc(db('prog'), 'anuncios', 'a1'), anuncio('prog')));
-  await assertSucceeds(setDoc(cdoc(db('secre'), 'anuncios', 'a2'), anuncio('secre')));
+test('anuncios: los publica cualquier anciano; los publicadores solo ven los compartidos', async () => {
+  const anuncio = (autor, extra) => ({ titulo: 'Asamblea', texto: 'Recuerden…', fijado: false, vence: null, autor, autorNombre: 'X', fecha: 1, ...extra });
+  await assertSucceeds(setDoc(cdoc(db('prog'), 'anuncios', 'a1'), anuncio('prog', { publico: true, tipo: 'asamblea', cuando: '2026-12-05' })));
+  await assertSucceeds(setDoc(cdoc(db('secre'), 'anuncios', 'a2'), anuncio('secre', { publico: false })));
   await assertFails(setDoc(cdoc(db('pub'), 'anuncios', 'a3'), anuncio('pub')));
   await assertFails(setDoc(cdoc(db('prog'), 'anuncios', 'a4'), { ...anuncio('prog'), titulo: '' }));
   await assertFails(setDoc(cdoc(db('prog'), 'anuncios', 'a4'), { ...anuncio('prog'), vence: 'mañana' }));
+  await assertFails(setDoc(cdoc(db('prog'), 'anuncios', 'a4'), anuncio('prog', { tipo: 'chisme' })));
+  await assertFails(setDoc(cdoc(db('prog'), 'anuncios', 'a4'), anuncio('prog', { cuando: 'pronto' })));
   await assertSucceeds(getDoc(cdoc(db('pub'), 'anuncios', 'a1')));
-  await assertSucceeds(getDocs(collection(db('pub'), 'congregaciones', C, 'anuncios')));
+  await assertFails(getDoc(cdoc(db('pub'), 'anuncios', 'a2')));                  // solo para ancianos
+  await assertSucceeds(getDoc(cdoc(db('prog'), 'anuncios', 'a2')));
+  await assertFails(getDocs(collection(db('pub'), 'congregaciones', C, 'anuncios')));
+  await assertSucceeds(getDocs(query(collection(db('pub'), 'congregaciones', C, 'anuncios'), where('publico', '==', true))));
   await assertFails(getDoc(cdoc(db('otro'), 'anuncios', 'a1')));
   await assertFails(deleteDoc(cdoc(db('pub'), 'anuncios', 'a1')));
   await assertSucceeds(deleteDoc(cdoc(db('secre'), 'anuncios', 'a1')));

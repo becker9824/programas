@@ -26,7 +26,7 @@ function attachPicker(inp, getList, onChoose) {
     const box = inp.parentNode.getBoundingClientRect(), width = Math.min(Math.max(box.width, 260), innerWidth - 16);
     const over = box.left + width - (innerWidth - 8);
     Object.assign(el.style, { top: (inp.offsetTop + inp.offsetHeight + 4) + 'px', width: width + 'px', right: 'auto', left: (over > 0 ? -over : 0) + 'px' });
-    inp.parentNode.append(el); fill();
+    inp.parentNode.append(el); fill(); roomForPick(inp);
   };
   const choose = pr => { close(); inp.value = pr.name; onChoose(pr.id); inp.blur(); };
   inp.addEventListener('focus', () => { inp.select(); open(); });
@@ -263,11 +263,15 @@ function renderHome() {
       `${count('asignado', 'asignado')} · ${count('terminado', 'completado')}`, () => go({ name: 'territorios' })));
   }
 
-  return h('div', null,
-    h('div', { class: 'card hello' },
+  const hero = h('div', { class: 'card hello' },
+    h('div', { class: 'hello-text' },
+      h('span', { class: 'hello-date' }, capFirst(new Date().toLocaleDateString('es', { weekday: 'long', day: 'numeric', month: 'long' }))),
       h('h1', null, `${hello}${firstName ? ', ' + firstName : ''}`),
       h('p', null, congName() || 'Programas y asignaciones')),
+    isAdmin() && !homeEdit ? h('button', { class: 'hello-edit', title: 'Ordenar u ocultar las tarjetas de Inicio', onclick: startHomeEdit }, icon('edit', 16), 'Editar') : null);
+  if (homeEdit && isAdmin()) return homeEditor(hero, tiles, weeks);
+  return h('div', null,
+    hero,
     (myView() || {}).sinAsignacion ? null : nextAssignmentCard(weeks),
-    h('div', { class: 'tiles' }, customTiles(tiles)),
-    isAdmin() ? h('div', { style: { textAlign: 'center', marginTop: '14px' } }, h('button', { class: 'linkbtn', onclick: openViewDialog }, '✏️ Ordenar esta pantalla y las pestañas')) : null);
+    h('div', { class: 'tiles' }, customTiles(tiles)));
 }

@@ -122,6 +122,10 @@ const ICONS = {
   mas: '<circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/>',
   chev: '<path d="M9 6l6 6-6 6"/>',
   person: '<circle cx="12" cy="8" r="4"/><path d="M5 21v-1a7 7 0 0114 0v1"/><path d="M16 4l2-2"/>',
+  edit: '<path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/>',
+  grip: '<circle cx="9" cy="6" r="1.3"/><circle cx="15" cy="6" r="1.3"/><circle cx="9" cy="12" r="1.3"/><circle cx="15" cy="12" r="1.3"/><circle cx="9" cy="18" r="1.3"/><circle cx="15" cy="18" r="1.3"/>',
+  eye: '<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>',
+  eyeoff: '<path d="M3 3l18 18"/><path d="M10.6 5.1A10 10 0 0112 5c6.5 0 10 7 10 7a17 17 0 01-3.2 4.2M6.6 6.6C3.8 8.4 2 12 2 12s3.5 7 10 7a9.6 9.6 0 005.4-1.6"/><path d="M9.9 9.9a3 3 0 004.2 4.2"/>',
 };
 function icon(name, size = 20) {
   const el = document.createElement('span');
@@ -258,7 +262,18 @@ const prefersMe = (pr, priv) => !!nomPref(priv) && nomIs(pr, nomPref(priv));
 const nomChips = onChange => h('div', { class: 'chips nom-chips' }, NOM_FILTERS.map(([k, t]) =>
   h('button', { type: 'button', class: nomFilter === k ? 'on' : '', onmousedown: e => e.preventDefault(),
     onclick: () => { nomFilter = k; onChange(); } }, t)));
-const privLabel = k => (PRIVS.find(([key]) => key === k) || [k, k])[1];
+// En el celular la lista para elegir quedaba tapada por la barra de abajo (o el teclado) y no se veían
+// los filtros ni los nombres: si abajo no hay lugar, se sube la página para que el campo quede arriba.
+function roomForPick(inp) {
+  const fit = () => {
+    const r = inp.getBoundingClientRect(), bar = document.querySelector('.tabbar');
+    const bottom = (window.visualViewport ? visualViewport.height : innerHeight) - (bar ? bar.offsetHeight : 0);
+    const head = (document.querySelector('header') || {}).offsetHeight || 0;
+    if (bottom - r.bottom < Math.min(320, bottom * .55)) window.scrollBy({ top: r.top - head - 10, behavior: 'smooth' });
+  };
+  fit(); setTimeout(fit, 400); // otra vez cuando ya salió el teclado
+}
+const privLabel = k =>(PRIVS.find(([key]) => key === k) || [k, k])[1];
 function privFor(row, slot) {
   slot = baseSlot(slot);
   if (row.kind === 'prayer') return 'oracion';

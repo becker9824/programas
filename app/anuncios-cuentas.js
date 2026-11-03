@@ -1,7 +1,17 @@
 // Programas · Anuncios, directorio y cuentas de la congregación.
 // Se carga en orden desde index.html (scripts normales: comparten variables y funciones).
 
-// ---------- anuncios (los leen todos; los publican los ancianos) ----------
+// ---------- anuncios (los publican los ancianos; solo ellos los ven, salvo los compartidos) ----------
+// anuncios/{id} = { titulo, texto, fijado, vence, publico, tipo, cuando, autor, autorNombre, fecha, editado }.
+// publico: true = lo ve toda la congregación (asambleas, eventos…); si no, solo los ancianos.
+const ANN_TYPES = {
+  aviso: { label: 'Aviso', emoji: '📢', color: '#2f6fd6' },
+  asamblea: { label: 'Asamblea', emoji: '🏛️', color: '#7b2cbf' },
+  evento: { label: 'Evento', emoji: '📅', color: '#1b9e4b' },
+  recordatorio: { label: 'Recordatorio', emoji: '⏰', color: '#b7791f' },
+  urgente: { label: 'Urgente', emoji: '⚠️', color: '#d32f2f' },
+};
+const annType = a => ANN_TYPES[a.tipo] || ANN_TYPES.aviso;
 const stampMs = t => t && t.toMillis ? t.toMillis() : Date.now(); // recién creado: la hora del servidor aún no llega
 const seenKey = () => 'anuncios-vistos-' + (nube.user ? nube.user.uid : '');
 const seenAt = () => { try { return +localStorage.getItem(seenKey()) || 0; } catch (e) { return 0; } };
@@ -25,63 +35,104 @@ function richText(text) {
   return out;
 }
 
+// Botones de una sola opción: [valor, texto, explicación]; get() dice cuál está elegido
+function segmented(options, value) {
+  let cur = value;
+  const el = h('div', { class: 'seg' });
+  const draw = () => el.replaceChildren(...options.map(([v, t, sub]) => h('button', { type: 'button', class: v === cur ? 'on' : '',
+    onclick: () => { cur = v; draw(); } }, h('strong', null, t), sub ? h('small', null, sub) : null)));
+  draw();
+  return { el, get: () => cur };
+}
+
 function openAnnouncementDialog(a) {
   const title = h('input', { type: 'text', maxlength: 150, value: a ? a.titulo : '', placeholder: 'Ej.: Asamblea de circuito' });
-  const text = h('textarea', { rows: 8, maxlength: 5000, placeholder: 'Escribe el anuncio. Puedes pegar enlaces.' }, a ? a.texto : '');
+  const text = h('textarea', { rows: 7, maxlength: 5000, placeholder: 'Escribe el anuncio. Puedes pegar enlaces.' }, a ? a.texto : '');
   const pin = h('input', { type: 'checkbox', checked: a ? a.fijado : false });
   const until = h('input', { type: 'date', value: a && a.vence ? a.vence : '' });
+  // Con fecha, un anuncio nuevo se puede poner también en el Calendario
+  const cal = h('input', { type: 'checkbox', checked: true });
+  const calRow = h('label', { class: 'row', style: { gap: '6px', color: 'var(--text)', fontSize: '14px' }, hidden: true }, cal, 'Agregarlo también al Calendario');
+  const when = h('input', { type: 'date', value: a && a.cuando ? a.cuando : '', onchange: () => { calRow.hidden = !when.value || !!a; } });
+  const kind = segmented(Object.entries(ANN_TYPES).map(([k, t]) => [k, `${t.emoji} ${t.label}`]), a ? a.tipo || 'aviso' : 'aviso');
+  kind.el.classList.add('seg-wrap');
+  const who = segmented([['ancianos', '🔒 Solo ancianos', 'Lo ven los ancianos'], ['todos', '👥 Toda la congregación', 'Lo ven todos los hermanos']],
+    a && a.publico ? 'todos' : 'ancianos');
   const err = h('div', { class: 'err' });
   const dlg = h('dialog', { class: 'dlg' },
     h('div', { class: 'dlg-body' }, h('h3', null, a ? 'Editar anuncio' : 'Nuevo anuncio'),
+      h('div', { class: 'field' }, '¿Quién lo ve?', who.el),
+      h('div', { class: 'field' }, 'Tipo', kind.el),
       h('label', { class: 'field' }, 'Título', title),
       h('label', { class: 'field' }, 'Texto', text),
-      h('div', { class: 'row', style: { gap: '20px', alignItems: 'flex-end' } },
-        h('label', { class: 'row', style: { gap: '6px', color: 'var(--text)' } }, pin, '📌 Fijar arriba'),
+      h('div', { class: 'row', style: { gap: '12px', alignItems: 'flex-end' } },
+        h('label', { class: 'field' }, 'Fecha del evento (opcional)', when),
         h('label', { class: 'field' }, 'Mostrar hasta (opcional)', until)),
+      calRow,
+      h('label', { class: 'row', style: { gap: '6px', color: 'var(--text)' } }, pin, '📌 Fijar arriba'),
       err),
     h('div', { class: 'dlg-foot' },
       h('button', { class: 'btn', onclick: () => dlg.close() }, 'Cancelar'),
       h('button', { class: 'btn primary', onclick: async e => {
         if (!squash(title.value)) return err.textContent = 'Escribe un título.';
-        const data = { titulo: squash(title.value), texto: text.value.trim(), fijado: pin.checked, vence: until.value || null };
+        const data = { titulo: squash(title.value), texto: text.value.trim(), fijado: pin.checked, vence: until.value || null,
+          publico: who.get() === 'todos', tipo: kind.get(), cuando: when.value || null };
         e.target.disabled = true;
         try {
           if (a) await F.updateDoc(congRef('anuncios', a.id), { ...data, editado: F.serverTimestamp() });
           else await F.addDoc(F.collection(F.db, 'congregaciones', nube.cong, 'anuncios'),
             { ...data, autor: nube.user.uid, autorNombre: nube.me.nombre, fecha: F.serverTimestamp() });
-          toast(a ? 'Anuncio actualizado' : 'Anuncio publicado'); dlg.close(); dlg.remove();
+          if (!a && data.cuando && cal.checked) await F.addDoc(F.collection(F.db, 'congregaciones', nube.cong, 'eventos'),
+            { tipo: data.tipo === 'asamblea' ? 'asamblea' : 'otro', titulo: data.titulo.slice(0, 120), desde: data.cuando, hasta: data.cuando, notas: data.texto.slice(0, 1000) }).catch(() => {});
+          toast(a ? 'Anuncio actualizado' : data.publico ? 'Anuncio publicado para toda la congregación' : 'Anuncio publicado para los ancianos');
+          dlg.close();
         } catch (ex) { err.textContent = errMsg(ex); e.target.disabled = false; }
       } }, a ? 'Guardar' : 'Publicar')));
   dlg.addEventListener('close', () => dlg.remove());
   document.body.append(dlg); dlg.showModal(); title.focus();
 }
 
+// Ancianos: todos, solo para ancianos o compartidos con la congregación
+let annFilter = 'all';
+const annIn = (a, k) => k === 'all' || (k === 'todos') === !!a.publico;
 function renderAnnouncements() {
-  const seen = seenAt(), today = todayISO(), list = visibleAnnouncements();
+  const seen = seenAt(), today = todayISO(), all = visibleAnnouncements(), elder = isElder();
   try { localStorage.setItem(seenKey(), String(Date.now())); } catch (e) {}
+  const list = all.filter(a => annIn(a, elder ? annFilter : 'all'));
   const card = a => {
-    const isNew = a.autor !== nube.user.uid && stampMs(a.fecha) > seen, expired = a.vence && a.vence < today;
-    return h('div', { class: 'card', style: { padding: '16px', marginBottom: '12px', borderLeft: a.fijado ? '4px solid var(--accent)' : null, opacity: expired ? '.6' : null } },
-      h('div', { class: 'row spread', style: { alignItems: 'flex-start' } },
-        h('div', null,
-          h('strong', { style: { fontSize: '17px' } }, a.fijado ? '📌 ' : '', a.titulo),
-          isNew ? h('span', { class: 'badge s-stale', style: { marginLeft: '8px' } }, 'Nuevo') : null,
-          h('div', { class: 'muted small-text' }, [a.autorNombre, a.fecha ? fmtStamp(a.fecha) : 'ahora',
-            a.vence ? (expired ? `vencido el ${fmtShort(a.vence)}` : `hasta el ${fmtShort(a.vence)}`) : null].filter(Boolean).join(' · '))),
-        isElder() ? h('div', { class: 'row' },
-          h('button', { class: 'btn small', onclick: () => openAnnouncementDialog(a) }, 'Editar'),
-          h('button', { class: 'btn small danger', onclick: async () => {
-            if (!confirm(`¿Borrar el anuncio “${a.titulo}”?`)) return;
-            try { await F.deleteDoc(congRef('anuncios', a.id)); toast('Anuncio borrado'); } catch (e) { toast(errMsg(e)); }
-          } }, 'Borrar')) : null),
-      a.texto ? h('div', { style: { marginTop: '10px', whiteSpace: 'normal', overflowWrap: 'anywhere' } }, richText(a.texto)) : null);
+    const isNew = a.autor !== nube.user.uid && stampMs(a.fecha) > seen, expired = a.vence && a.vence < today, t = annType(a);
+    const d = a.cuando ? toDate(a.cuando) : null, part = o => d.toLocaleDateString('es', o).replace('.', '');
+    return h('article', { class: 'card ann' + (a.fijado ? ' pinned' : '') + (expired ? ' expired' : ''), style: { '--ev': t.color } },
+      d ? h('div', { class: 'ann-date' }, h('small', null, part({ month: 'short' })), h('strong', null, d.getDate()), h('small', null, part({ weekday: 'short' })))
+        : h('div', { class: 'ann-ic' }, t.emoji),
+      h('div', { class: 'ann-main' },
+        h('div', { class: 'ann-tags' },
+          h('span', { class: 'ev-chip' }, t.label),
+          elder ? h('span', { class: 'ann-aud' + (a.publico ? ' all' : '') }, a.publico ? '👥 Congregación' : '🔒 Solo ancianos') : null,
+          a.fijado ? h('span', { class: 'ann-aud' }, '📌 Fijado') : null,
+          isNew ? h('span', { class: 'badge s-stale' }, 'Nuevo') : null),
+        h('h3', { class: 'ann-t' }, a.titulo),
+        a.texto ? h('div', { class: 'ann-text' }, richText(a.texto)) : null,
+        h('div', { class: 'ann-foot' },
+          h('span', { class: 'muted small-text' }, [a.autorNombre, a.fecha ? fmtStamp(a.fecha) : 'ahora',
+            a.vence ? (expired ? `vencido el ${fmtShort(a.vence)}` : `hasta el ${fmtShort(a.vence)}`) : null].filter(Boolean).join(' · ')),
+          elder ? h('span', { class: 'row' },
+            h('button', { class: 'btn small', onclick: () => openAnnouncementDialog(a) }, 'Editar'),
+            h('button', { class: 'btn small danger', onclick: async () => {
+              if (!confirm(`¿Borrar el anuncio “${a.titulo}”?`)) return;
+              try { await F.deleteDoc(congRef('anuncios', a.id)); toast('Anuncio borrado'); } catch (e) { toast(errMsg(e)); }
+            } }, 'Borrar')) : null)));
   };
   return h('div', null,
-    h('div', { class: 'row spread', style: { marginBottom: '14px' } },
+    h('div', { class: 'page-head' },
       h('div', null, h('h1', null, 'Anuncios'),
-        h('p', { class: 'sub', style: { margin: 0 } }, isElder() ? 'Los ven todos los hermanos de la congregación.' : 'Avisos de los ancianos de la congregación.')),
-      isElder() ? h('button', { class: 'btn primary', onclick: () => openAnnouncementDialog(null) }, '+ Nuevo anuncio') : null),
-    list.length ? list.map(card) : h('div', { class: 'card empty' }, 'No hay anuncios por ahora.'));
+        h('p', { class: 'sub', style: { margin: 0 } }, elder ? 'Son solo para los ancianos, salvo los que compartas con toda la congregación.' : 'Avisos de los ancianos para la congregación.')),
+      elder ? h('button', { class: 'btn primary', onclick: () => openAnnouncementDialog(null) }, '+ Nuevo anuncio') : null),
+    elder ? h('div', { class: 'tabs', style: { maxWidth: '560px', marginBottom: '14px' } },
+      [['all', 'Todos'], ['ancianos', '🔒 Ancianos'], ['todos', '👥 Compartidos']].map(([k, t]) =>
+        h('button', { class: annFilter === k ? 'on' : '', onclick: () => { annFilter = k; render(); } }, `${t} (${all.filter(a => annIn(a, k)).length})`))) : null,
+    h('div', { class: 'ann-list' }, list.length ? list.map(card) : h('div', { class: 'card empty' },
+      h('div', { class: 'empty-ic' }, '📭'), all.length ? 'No hay anuncios en esta lista.' : 'No hay anuncios por ahora.')));
 }
 
 // ---------- directorio (solo ancianos) ----------

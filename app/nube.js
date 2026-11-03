@@ -116,7 +116,7 @@ const fmtStamp = t => t && t.toDate ? t.toDate().toLocaleString('es', { day: 'nu
 // Las casillas y opciones no cuentan: no se pierde nada al redibujar.
 const busy = () => {
   const a = document.activeElement || {};
-  return !!document.querySelector('dialog[open]') || a.tagName === 'TEXTAREA' || a.tagName === 'SELECT'
+  return !!document.querySelector('dialog[open], .tile.dragging') || a.tagName === 'TEXTAREA' || a.tagName === 'SELECT'
     || (a.tagName === 'INPUT' && !['checkbox', 'radio', 'button'].includes(a.type));
 };
 
@@ -318,11 +318,13 @@ function enterCongregation() {
     return ['grupos', 'people'].includes(view.name);
   });
   for (const [col, key, perms] of COLLS) if (perms.some(can)) listen(col, F.collection(F.db, 'congregaciones', nube.cong, col), s => receiveDocs(col, key, s));
-  listen('anuncios', F.collection(F.db, 'congregaciones', nube.cong, 'anuncios'), s => {
+  // Anuncios: los ancianos ven todos; los demás, solo los compartidos con la congregación
+  const annCol = F.collection(F.db, 'congregaciones', nube.cong, 'anuncios');
+  listen('anuncios', isElder() ? annCol : F.query(annCol, F.where('publico', '==', true)), s => {
     nube.anuncios = s.docs.map(d => ({ id: d.id, ...d.data() }));
     if (nube.listo && view.name !== 'anuncios') buildNav();
     return ['anuncios', 'list', 'inicio'].includes(view.name);
-  });
+  }, true); // si falla (por ejemplo, reglas más nuevas), la app sigue sin anuncios
   if (isElder()) listen('contactos', F.collection(F.db, 'congregaciones', nube.cong, 'contactos'), s => {
     nube.contactos = new Map(s.docs.map(d => [d.id, d.data()]));
     return view.name === 'people';
@@ -413,6 +415,9 @@ async function firstLoad() {
   setTimeout(publishPioneers, 2000);
   setTimeout(scheduleReminders, 1500);
   if (isAdmin()) setTimeout(autoBackup, 6000);
+  // Antes de la 1.33 todos los anuncios eran para todos: se marcan como compartidos para que se sigan viendo
+  if (isElder()) setTimeout(() => nube.anuncios.filter(a => !('publico' in a))
+    .forEach(a => F.updateDoc(congRef('anuncios', a.id), { publico: true }).catch(() => {})), 3000);
 }
 
 function saveCloud() {
