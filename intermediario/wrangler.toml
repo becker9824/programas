@@ -4,6 +4,7 @@ name = "programas-jw"
 main = "worker.js"
 compatibility_date = "2026-10-01"
 
-# Recordatorio del informe: cada 10 minutos de 16:00 a 18:59 UTC (10 a 12 en México) los días 1 y 5
+# Recordatorios: del informe, cada 10 min de 16:00 a 18:59 UTC los días 1 y 5;
+# de las asignaciones de mañana, cada 10 min de 01:00 a 01:59 UTC (18:00 en La Paz) todos los días
 [triggers]
-crons = ["*/10 16-18 1,5 * *"]
+crons = ["*/10 16-18 1,5 * *", "*/10 1 * * *"]

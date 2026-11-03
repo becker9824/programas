@@ -119,7 +119,7 @@ async function screenTest(win) {
     addEventListener('unhandledrejection', e => errors.push(String(e.reason && e.reason.message || e.reason)));
     for (let i = 0; i < 150 && !nube.listo; i++) await wait(100);
     if (!nube.listo) return { error: 'No entró a la congregación' };
-    const closeAll = () => document.querySelectorAll('dialog').forEach(d => { d.close(); d.remove(); });
+    const closeAll = () => { document.querySelectorAll('dialog').forEach(d => { d.close(); d.remove(); }); document.querySelectorAll('.kiosk').forEach(k => k.remove()); };
     await wait(800); closeAll();
     const mk = (name, sex, nom) => ({ id: uid(), name, sex, age: 40, nombramiento: nom || '', bautizado: true });
     state.profiles.push(mk('Ana Prueba', 'F'), mk('Beto Anciano', 'M', 'anciano'), mk('Carlos Siervo', 'M', 'sm'), mk('Dario Prueba', 'M'));
@@ -131,7 +131,7 @@ async function screenTest(win) {
       catch (e) { views[v] = 'error: ' + e.message; }
     }
     const tryDlg = async (name, fn) => { const before = errors.length; try { go({ name: 'inicio' }); await wait(300); await fn(); await wait(300);
-      dialogs[name] = document.querySelector('dialog[open]') || document.querySelector('.tiles.editing') ? (errors.length > before ? 'error' : 'ok') : 'no abrió'; }
+      dialogs[name] = document.querySelector('dialog[open], .tiles.editing, .kiosk') ? (errors.length > before ? 'error' : 'ok') : 'no abrió'; }
       catch (e) { dialogs[name] = 'error: ' + e.message; } closeAll(); };
     await tryDlg('guia', () => openGuide());
     await tryDlg('busqueda', () => openSearch());
@@ -141,6 +141,8 @@ async function screenTest(win) {
     await tryDlg('hermano', () => openProfileDialog(state.profiles[1]));
     await tryDlg('ausencia', () => openAbsenceDialog(state.profiles[0].id, 'Ana', () => {}));
     await tryDlg('editarInicio', () => startHomeEdit());
+    await tryDlg('pantallaSalon', () => openKiosk());
+    await tryDlg('cargarExcel', () => openImportDialog());
     homeEdit = null;
     const bad = [...Object.entries(views), ...Object.entries(dialogs)].filter(([, s]) => s !== 'ok').map(([k, s]) => k + ': ' + s);
     return { secciones: Object.keys(views).length, ventanas: Object.keys(dialogs).length, fallas: bad, errores: errors.slice(0, 10) };

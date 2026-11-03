@@ -178,7 +178,8 @@ async function scheduleReminders() {
       if (perm.display !== 'granted') return;
       const now = Date.now(), notifications = [];
       list.slice(0, 20).forEach((x, i) => {
-        for (const [days, hour, pre] of [[3, 10, 'En 3 días'], [1, 18, 'Mañana']]) {
+        // Con los avisos al celular activados, el de “mañana” lo manda el intermediario (con el botón para confirmar)
+        for (const [days, hour, pre] of pushOn() ? [[3, 10, 'En 3 días']] : [[3, 10, 'En 3 días'], [1, 18, 'Mañana']]) {
           const at = toDate(addDays(x.day, -days)); at.setHours(hour, 0, 0, 0);
           if (at.getTime() > now) notifications.push({ id: 1000 + i * 2 + (days === 1 ? 1 : 0), title: `${pre}: ${x.title}`,
             body: x.when + (x.with ? ` · con ${x.with}` : ''), schedule: { at, allowWhileIdle: true } });
@@ -302,6 +303,7 @@ function accountExtras() {
   return h('div', null,
     nube.me.perfil ? remindersToggle() : null,
     pushCard(false),
+    textSizeRow(),
     h('div', { class: 'row', style: { marginTop: '8px' } },
       h('button', { class: 'btn', onclick: () => openSessionsDialog(false) }, '📱 Mis sesiones abiertas'),
       isAdmin() ? h('button', { class: 'btn', onclick: () => openSessionsDialog(true) }, '👥 Sesiones de todos') : null,

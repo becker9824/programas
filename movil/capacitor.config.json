@@ -5,5 +5,11 @@
   "android": {
     "backgroundColor": "#f4f5f7",
     "adjustMarginsForEdgeToEdge": "auto"
+  },
+  "plugins": {
+    "LocalNotifications": {
+      "smallIcon": "ic_stat_aviso",
+      "iconColor": "#2563eb"
+    }
   }
 }

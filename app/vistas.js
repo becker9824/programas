@@ -72,6 +72,7 @@ function navItems(all = false) {
   if (isElder()) items.push(['people', 'Hermanos', isAdmin() ? nube.miembros.filter(m => m.estado !== 'activo').length : 0]);
   if (can('programa')) items.push(['families', 'Familias']);
   if (isElder()) items.push(['grupos', 'Grupos'], ['pastoreo', 'Pastoreo'], ['asistencia', 'Asistencia'], ['estadisticas', 'Estadísticas'], ['historial', 'Historial']);
+  if (isElder()) items.push(['pantalla', 'Pantalla del Salón']);
   if (can('secretario')) items.push(['report', 'Informes']);
   else if (reportsByMembers()) items.push(['report', 'Informe']);
   items.push(['anuncios', 'Anuncios', unreadAnnouncements()], ['calendario', 'Calendario'], ['arreglos', 'Arreglos']);
@@ -187,6 +188,7 @@ function render() {
   if (view.name === 'arreglos') return app.replaceChildren(renderArrangements());
   if (view.name === 'pastoreo') return app.replaceChildren(renderShepherding());
   if (view.name === 'estadisticas') return app.replaceChildren(renderStats());
+  if (view.name === 'pantalla') return app.replaceChildren(renderKioskPage());
   if (view.name === 'historial') return app.replaceChildren(renderHistory());
   if (view.name === 'finsemana') return app.replaceChildren(renderWeekend());
   if (view.name === 'anuncios') { app.replaceChildren(renderAnnouncements()); return buildNav(); }
@@ -753,7 +755,8 @@ function renderPeople() {
       h('div', null, h('h1', null, 'Hermanos'),
         h('p', { class: 'sub', style: { margin: 0 } }, prog ? `Datos, nombramiento, asignaciones que puede recibir${elder ? ', teléfono y dirección (solo los ancianos los ven)' : ''} y, si tiene, su cuenta de la app. Toca a un hermano para editarlo.`
           : 'Teléfono, dirección y contacto de emergencia de cada hermano. Solo los ancianos ven esta información. Toca a un hermano para ver o cambiar sus datos de contacto.')),
-      prog ? h('button', { class: 'btn primary', onclick: () => openProfileDialog(null) }, '+ Nuevo hermano') : null),
+      prog ? h('div', { class: 'row' }, h('button', { class: 'btn', onclick: openImportDialog }, '⬆ Cargar de Excel'),
+        h('button', { class: 'btn primary', onclick: () => openProfileDialog(null) }, '+ Nuevo hermano')) : null),
     FB_CONFIG && isAdmin() ? accountsPanel() : null,
     h('div', { class: 'card', style: { padding: '14px' } },
       chips,

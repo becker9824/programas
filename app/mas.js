@@ -432,6 +432,7 @@ async function enablePush(ask = true) {
   const ref = congRef('avisos', nube.user.uid), cur = await F.getDoc(ref).then(s => s.exists() ? s.data().tokens || [] : [], () => []);
   await F.setDoc(ref, { perfil: nube.me.perfil || null, tokens: [...cur.filter(t => t !== token), token].slice(-3), actualizado: F.serverTimestamp() });
   try { localStorage.setItem(pushKey(), token); } catch (e) {}
+  if (NATIVE) scheduleReminders(); // ya no hace falta el recordatorio local de “mañana”
   return token;
 }
 async function disablePush() {
@@ -440,7 +441,7 @@ async function disablePush() {
   if (!token) return;
   const ref = congRef('avisos', nube.user.uid), cur = await F.getDoc(ref).then(s => s.exists() ? s.data().tokens || [] : [], () => []);
   await F.setDoc(ref, { perfil: nube.me.perfil || null, tokens: cur.filter(t => t !== token), actualizado: F.serverTimestamp() }).catch(() => {});
-  if (NATIVE) PushN.unregister().catch(() => {});
+  if (NATIVE) { PushN.unregister().catch(() => {}); scheduleReminders(); }
 }
 // Pide al intermediario que mande; va por tandas hasta terminar. Devuelve { enviados, sinCelular }.
 async function sendPush(payload) {
@@ -459,13 +460,33 @@ async function sendPush(payload) {
 function startPush() {
   if (!FB_CONFIG || EMU) return;
   if (NATIVE) {
-    PushN.addListener('pushNotificationActionPerformed', a => { const v = a.notification && a.notification.data && a.notification.data.vista; if (v && navItems(true).some(i => i[0] === v)) go({ name: v }); });
+    PushN.addListener('pushNotificationActionPerformed', a => {
+      const d = (a.notification && a.notification.data) || {};
+      if (d.vista && navItems(true).some(i => i[0] === d.vista)) go({ name: d.vista });
+      if (d.confirmar) askConfirm(d.confirmar);
+    });
     // Con la app abierta Android no muestra el aviso: se muestra como recordatorio del celular
     PushN.addListener('pushNotificationReceived', n => LN.schedule({ notifications: [{ id: Math.floor(Math.random() * 2e9), title: n.title || 'Programas', body: n.body || '' }] }).catch(() => {}));
   }
   if (pushOn()) enablePush(false).catch(() => {});
-  const ir = new URLSearchParams(location.search).get('ir');
-  if (ir && navItems(true).some(i => i[0] === ir)) { go({ name: ir }); history.replaceState(null, '', location.pathname); }
+  const q = new URLSearchParams(location.search), ir = q.get('ir'), conf = q.get('confirmar');
+  if (ir && navItems(true).some(i => i[0] === ir)) go({ name: ir });
+  if (conf) askConfirm(conf);
+  if (ir || conf) history.replaceState(null, '', location.pathname);
+}
+// Al tocar el recordatorio de una asignación: “¿La recibiste?” con un solo botón
+function askConfirm(key) {
+  const x = myAssignments(myWeeks()).find(y => y.key === key);
+  if (!x) return;
+  if (confirmedOn(nube.me.perfil, key)) return toast('Ya habías confirmado esta asignación. ¡Gracias!');
+  const close = () => { dlg.close(); dlg.remove(); };
+  const dlg = h('dialog', { class: 'dlg' },
+    h('div', { class: 'dlg-body' }, h('h3', null, '📋 ' + x.title), h('p', { style: { margin: 0 } }, x.when),
+      x.role ? h('p', { class: 'muted', style: { margin: 0 } }, x.role + (x.with ? ` · con ${x.with}` : '')) : null,
+      h('p', { class: 'muted small-text', style: { margin: 0 } }, 'Avísale al encargado que ya la viste.')),
+    h('div', { class: 'dlg-foot' }, h('button', { class: 'btn', onclick: close }, 'Después'),
+      h('button', { class: 'btn primary', onclick: () => { close(); confirmAssignment(key); } }, '✔ Recibido')));
+  document.body.append(dlg); dlg.showModal();
 }
 // Tarjeta para activar o apagar los avisos (Ajustes y, mientras no estén activos, Inicio)
 function pushCard(compact) {
@@ -491,4 +512,229 @@ function pushCard(compact) {
   };
   paint();
   return box;
+}
+
+// ---------- pantalla del Salón del Reino ----------
+// Pantalla completa para una tele o monitor: programa de la semana, fin de semana, mecánicas y avisos.
+// Cambia sola cada 20 segundos (o con las flechas), toma los datos de nuevo en cada cambio. Solo muestra
+// anuncios compartidos con la congregación (nunca los de solo ancianos). Esc o “Salir” la cierra.
+function openKiosk() {
+  if (document.querySelector('.kiosk')) return;
+  let at = 0, timer = null;
+  const stage = h('div', { class: 'kiosk-stage' }), dots = h('div', { class: 'kiosk-dots' }), clock = h('div', { class: 'kiosk-clock' });
+  const today = () => todayISO();
+  const slides = () => {
+    const weeks = myWeeks(), t = today();
+    const lastDay = w => [w.day || addDays(w.date, 6), w.fin && w.fin.day, ...(w.mec || []).map(m => m.day)].filter(Boolean).sort().pop();
+    const w = weeks.find(x => lastDay(x) >= t), out = [];
+    if (w) {
+      const names = r => ['a', 'b', 'xa', 'xb'].filter(k => r[k]).map(k => (r.labels[k] ? r.labels[k] + ': ' : '') + r[k].n).join(' · ');
+      out.push(h('div', { class: 'k-slide' }, h('div', { class: 'k-kicker' }, 'Reunión de entre semana'), h('h2', null, w.meeting),
+        h('div', { class: 'k-rows' }, w.rows.filter(r => r.kind !== 'song' || names(r)).slice(0, 14).map(r => h('div', { class: 'k-row' },
+          h('span', { class: 'k-time' }, r.time), h('span', { class: 'k-t' }, r.t), h('span', { class: 'k-n' }, names(r)))))));
+      const fin = (w.mec || []).find(m => m.mtg === 'fin');
+      if (w.fin || fin) out.push(h('div', { class: 'k-slide' }, h('div', { class: 'k-kicker' }, 'Reunión del fin de semana'),
+        h('h2', null, capFirst(toDate((w.fin && w.fin.day) || (fin && fin.day)).toLocaleDateString('es', { weekday: 'long', day: 'numeric', month: 'long' }))),
+        w.fin ? h('div', { class: 'k-big' }, h('small', null, 'Discurso público' + (w.fin.bosquejo ? ` · núm. ${w.fin.bosquejo}` : '')), h('strong', null, w.fin.tema || '—'),
+          h('span', null, w.fin.orador ? `${w.fin.orador}${w.fin.cong ? ' · ' + w.fin.cong : ''}` : '')) : null,
+        fin ? h('div', { class: 'k-grid' }, fin.items.filter(i => ['presidente', 'lector'].includes(i.k)).map(i => h('div', null, h('small', null, i.l), h('strong', null, i.n)))) : null));
+      if ((w.mec || []).length) out.push(h('div', { class: 'k-slide' }, h('div', { class: 'k-kicker' }, 'Asignaciones mecánicas'), h('h2', null, w.title),
+        h('div', { class: 'k-cols' }, w.mec.map(m => h('div', null, h('h3', null, m.label),
+          m.items.map(i => h('div', { class: 'k-pair' }, h('small', null, i.l), h('strong', null, i.n))))))));
+    }
+    const ann = FB_CONFIG ? nube.anuncios.filter(a => a.publico && (!a.vence || a.vence >= t)).sort((a, b) => b.fijado - a.fijado || stampMs(b.fecha) - stampMs(a.fecha)).slice(0, 4) : [];
+    const evs = FB_CONFIG ? nube.eventos.filter(e => (e.hasta || e.desde) >= t).sort((a, b) => a.desde.localeCompare(b.desde)).slice(0, 4) : [];
+    const clean = FB_CONFIG ? cleaningOf(mondayOf(t)) : '';
+    if (ann.length || evs.length || clean) out.push(h('div', { class: 'k-slide' }, h('div', { class: 'k-kicker' }, 'Avisos'), h('h2', null, congName() || 'Congregación'),
+      h('div', { class: 'k-cols' },
+        ann.length ? h('div', null, h('h3', null, '📢 Anuncios'), ann.map(a => h('div', { class: 'k-pair' }, h('strong', null, annType(a).emoji + ' ' + a.titulo),
+          a.cuando ? h('small', null, fmtShort(a.cuando)) : null))) : null,
+        evs.length || clean ? h('div', null,
+          evs.length ? [h('h3', null, '📅 Próximos eventos'), evs.map(e => h('div', { class: 'k-pair' }, h('strong', null, evTitle(e)), h('small', null, fmtRange(e))))] : null,
+          clean ? [h('h3', null, '🧹 Limpieza esta semana'), h('div', { class: 'k-pair' }, h('strong', null, clean))] : null) : null)));
+    return out.length ? out : [h('div', { class: 'k-slide' }, h('h2', null, congName() || 'Programas'), h('p', null, 'Todavía no hay programa publicado para esta semana.'))];
+  };
+  const show = () => {
+    const list = slides(); at = (at + list.length) % list.length;
+    stage.replaceChildren(list[at]);
+    dots.replaceChildren(...list.map((_, i) => h('span', { class: i === at ? 'on' : '' })));
+  };
+  const step = d => { at += d; show(); clearInterval(timer); timer = setInterval(() => step(1), 20000); };
+  const tick = () => { clock.textContent = new Date().toLocaleTimeString('es', { hour: 'numeric', minute: '2-digit' }); };
+  const close = () => { clearInterval(timer); clearInterval(clock.t); removeEventListener('keydown', keys); if (document.fullscreenElement) document.exitFullscreen().catch(() => {}); el.remove(); };
+  const keys = e => { if (e.key === 'Escape') close(); else if (e.key === 'ArrowRight') step(1); else if (e.key === 'ArrowLeft') step(-1); };
+  const el = h('div', { class: 'kiosk' },
+    h('div', { class: 'kiosk-top' }, h('div', { class: 'kiosk-brand' }, h('span', { class: 'logo' }), congName() || 'Programas'), clock,
+      h('div', { class: 'kiosk-ctl' },
+        h('button', { onclick: () => (document.fullscreenElement ? document.exitFullscreen() : el.requestFullscreen()).catch(() => {}) }, '⛶'),
+        h('button', { onclick: close }, 'Salir'))),
+    stage, dots);
+  el.querySelector('.logo').replaceWith(logo(30));
+  addEventListener('keydown', keys);
+  el.addEventListener('click', e => { if (!e.target.closest('button')) step(1); });
+  document.body.append(el);
+  tick(); clock.t = setInterval(tick, 15000);
+  show(); timer = setInterval(() => step(1), 20000);
+  el.requestFullscreen && el.requestFullscreen().catch(() => {});
+}
+function renderKioskPage() {
+  return h('div', null,
+    h('div', { class: 'page-head' }, h('div', null, h('h1', null, 'Pantalla del Salón'),
+      h('p', { class: 'sub', style: { margin: 0 } }, 'Para una tele o monitor en el Salón del Reino: muestra el programa de la semana, el fin de semana, las mecánicas y los avisos, y cambia sola cada 20 segundos.'))),
+    h('div', { class: 'card kiosk-intro' },
+      h('div', { class: 'kiosk-preview' }, icon('pantalla', 54)),
+      h('div', null,
+        h('ul', null,
+          h('li', null, 'Se actualiza sola cuando cambia el programa.'),
+          h('li', null, 'Solo salen los anuncios compartidos con la congregación (nunca los de solo ancianos).'),
+          h('li', null, 'Flechas ← → para cambiar; Esc o “Salir” para cerrar. Tocar la pantalla pasa a la siguiente.'),
+          h('li', null, 'Consejo: en la computadora del Salón, abre la web, entra con una cuenta y deja esta pantalla abierta.')),
+        h('button', { class: 'btn primary', style: { marginTop: '8px' }, onclick: openKiosk }, '📺 Abrir pantalla completa'))));
+}
+
+// ---------- lista para configurar una congregación nueva (coordinador, en Inicio) ----------
+// Se marca sola según lo que ya existe; se oculta al terminar o con “Ocultar”.
+function setupChecklist() {
+  if (!FB_CONFIG || !isAdmin()) return null;
+  const hideKey = 'config-oculta-' + nube.cong;
+  try { if (localStorage.getItem(hideKey)) return null; } catch (e) {}
+  const steps = [
+    ['Agrega a los hermanos', 'Uno por uno o con una lista de Excel.', state.profiles.length >= 3, () => go({ name: 'people' })],
+    ['Invita a los hermanos a la app', 'Comparte el código de la congregación (en Hermanos).', nube.miembros.length > 1, () => go({ name: 'people' })],
+    ['Une tu cuenta con tu nombre', 'En Hermanos → Cuentas, elige tu nombre.', !!nube.me.perfil, () => go({ name: 'people' })],
+    ['Carga el programa de las reuniones', 'En Semanas, las guías de jw.org se bajan solas.', state.programs.some(p => p.date >= mondayOf(todayISO())), () => go({ name: 'list' })],
+    ['Arma los grupos de servicio', 'Para informes, limpieza y predicación.', nube.grupos.length > 0, () => go({ name: 'grupos' })],
+    ['Activa los avisos en tu celular', 'Para recibir anuncios y recordatorios.', pushOn(), () => go({ name: 'settings' })],
+  ];
+  const done = steps.filter(s => s[2]).length;
+  if (done === steps.length) return null;
+  const box = h('div', { class: 'card setup' },
+    h('div', { class: 'row spread' }, h('div', null, h('strong', null, '🚀 Configura tu congregación'),
+      h('div', { class: 'muted small-text' }, `${done} de ${steps.length} pasos listos`)),
+      h('button', { class: 'linkbtn', onclick: () => { try { localStorage.setItem(hideKey, '1'); } catch (e) {} box.remove(); } }, 'Ocultar')),
+    h('div', { class: 'setup-bar' }, h('span', { style: { width: (done / steps.length * 100) + '%' } })),
+    steps.map(([t, s, ok, fn]) => h('button', { class: 'setup-step' + (ok ? ' ok' : ''), onclick: fn },
+      h('span', { class: 'setup-check' }, ok ? '✓' : ''), h('span', { class: 'setup-txt' }, h('strong', null, t), h('small', null, s)), ok ? null : icon('chev', 16))));
+  return box;
+}
+
+// ---------- cargar hermanos desde una lista de Excel o CSV (Programa VyM) ----------
+// Columnas que reconoce (en cualquier orden, la primera fila son los títulos): Nombre, Sexo, Edad o Nacimiento,
+// Nombramiento, Bautizado, Teléfono, Dirección. Los que ya existen (mismo nombre) se saltan.
+const IMPORT_COLS = { name: ['nombre', 'nombre completo', 'hermano', 'hermana', 'publicador'], sex: ['sexo', 'genero'], age: ['edad'],
+  born: ['nacimiento', 'fecha de nacimiento'], nom: ['nombramiento', 'privilegio'], bapt: ['bautizado', 'bautizada', 'bautismo'],
+  tel: ['telefono', 'celular', 'tel', 'whatsapp'], dir: ['direccion', 'domicilio'] };
+function parseCSV(text) {
+  const first = text.split('\n')[0], sep = (first.match(/;/g) || []).length > (first.match(/,/g) || []).length ? ';' : ',';
+  const rows = [];
+  let row = [], cell = '', q = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (q) { if (c === '"' && text[i + 1] === '"') { cell += '"'; i++; } else if (c === '"') q = false; else cell += c; }
+    else if (c === '"') q = true;
+    else if (c === sep) { row.push(cell); cell = ''; }
+    else if (c === '\n' || c === '\r') { if (c === '\r' && text[i + 1] === '\n') i++; row.push(cell); rows.push(row); row = []; cell = ''; }
+    else cell += c;
+  }
+  if (cell || row.length) { row.push(cell); rows.push(row); }
+  return rows.filter(r => r.some(x => String(x).trim()));
+}
+async function readTable(file) {
+  if (/\.(csv|txt)$/i.test(file.name)) return parseCSV((await file.text()).replace(/^﻿/, ''));
+  const X = await loadExcel(), wb = new X.Workbook();
+  await wb.xlsx.load(await file.arrayBuffer());
+  const ws = wb.worksheets[0], rows = [];
+  const plain = v => v && typeof v === 'object' && !(v instanceof Date) ? (v.text || v.result || (v.richText || []).map(t => t.text).join('')) : v;
+  ws.eachRow(r => rows.push(r.values.slice(1).map(plain)));
+  return rows;
+}
+function rowsToPeople(rows) {
+  const head = (rows[0] || []).map(x => norm(String(x || '')).trim());
+  const idx = Object.fromEntries(Object.keys(IMPORT_COLS).map(k => [k, head.findIndex(x => IMPORT_COLS[k].includes(x))]));
+  if (idx.name < 0) throw new Error('No encontré la columna “Nombre” en la primera fila.');
+  const get = (r, k) => idx[k] < 0 ? '' : (r[idx[k]] ?? '');
+  // Sexo: H/M (hombre/mujer) o M/F (masculino/femenino), según lo que traiga la lista
+  const hScheme = rows.slice(1).some(r => { const v = norm(String(get(r, 'sex'))).trim(); return v === 'h' || v.startsWith('hom'); });
+  const sexOf = v => {
+    v = norm(String(v)).trim();
+    if (!v) return null;
+    if (v.startsWith('hom') || v.startsWith('var') || v.startsWith('masc') || v === 'h' || (v === 'm' && !hScheme)) return 'M';
+    if (v.startsWith('muj') || v.startsWith('fem') || v === 'f' || (v === 'm' && hScheme)) return 'F';
+    return null;
+  };
+  const dateOf = v => {
+    if (v instanceof Date) return v.toISOString().slice(0, 10);
+    v = String(v).trim();
+    let m = v.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+    if (m) return `${m[1]}-${m[2].padStart(2, '0')}-${m[3].padStart(2, '0')}`;
+    m = v.match(/^(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})$/);
+    return m ? `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}` : null;
+  };
+  const ageFrom = iso => { const b = toDate(iso), n = new Date(); return n.getFullYear() - b.getFullYear() - (n < new Date(n.getFullYear(), b.getMonth(), b.getDate()) ? 1 : 0); };
+  return rows.slice(1).map(r => {
+    const name = squash(String(get(r, 'name'))), sex = sexOf(get(r, 'sex')), born = dateOf(get(r, 'born'));
+    const nomV = norm(String(get(r, 'nom'))).trim();
+    const nombramiento = sex === 'M' ? (nomV.includes('anc') ? 'anciano' : /siervo|ministerial|^sm$/.test(nomV) ? 'sm' : '') : '';
+    const ageV = parseInt(get(r, 'age'), 10);
+    return { name, sex, nombramiento, born, age: born ? ageFrom(born) : Number.isFinite(ageV) ? ageV : null,
+      bautizado: /^(si|sí|x|1|true|yes|s)$/i.test(String(get(r, 'bapt')).trim()) || !!nombramiento,
+      tel: squash(String(get(r, 'tel'))), dir: squash(String(get(r, 'dir'))), dup: !!profByName(name) };
+  }).filter(p => p.name);
+}
+function openImportDialog() {
+  const fileI = h('input', { type: 'file', accept: '.xlsx,.csv,.txt' });
+  const box = h('div'), err = h('div', { class: 'err' });
+  let people = [];
+  const close = () => { dlg.close(); dlg.remove(); };
+  const addBtn = h('button', { class: 'btn primary', disabled: true, onclick: () => {
+    const add = people.filter(p => !p.dup && p.sex);
+    for (const p of add) {
+      // Ancianos y siervos ministeriales: con los privilegios de su nombramiento; los demás, sin marcar (salen para todo)
+      const preset = PRIV_PRESETS.find(x => x[2] && x[2] === p.nombramiento);
+      const prof = { id: uid(), name: p.name, sex: p.sex, age: p.age, notes: '', familyId: null, tipo: 'pub', auxMeses: [], nombramiento: p.nombramiento,
+        situacion: '', bautizado: p.bautizado, capitan: false, nacimiento: p.born, bautismoFecha: null, esperanza: '' };
+      if (preset) prof.puede = [...preset[1]];
+      state.profiles.push(prof);
+      if (FB_CONFIG && (p.tel || p.dir) && isElder()) F.setDoc(congRef('contactos', prof.id), { tel: p.tel, dir: p.dir, emergencia: '', emergenciaTel: '' }).catch(() => {});
+    }
+    save(); refreshDatalist();
+    if (FB_CONFIG) logChange(`Cargó ${add.length} hermanos desde una lista`);
+    close(); render(); toast(`Se agregaron ${add.length} hermano${add.length === 1 ? '' : 's'}`);
+  } }, 'Agregar');
+  fileI.addEventListener('change', async () => {
+    err.textContent = ''; box.replaceChildren(h('p', { class: 'muted' }, 'Leyendo…'));
+    try {
+      people = rowsToPeople(await readTable(fileI.files[0]));
+      const ok = people.filter(p => !p.dup && p.sex), dups = people.filter(p => p.dup).length, nosex = people.filter(p => !p.sex).length;
+      box.replaceChildren(h('p', { class: 'small-text' }, `${people.length} en la lista · `, h('strong', null, `${ok.length} nuevos`),
+        dups ? ` · ${dups} ya existen (se saltan)` : '', nosex ? ` · ${nosex} sin sexo (se saltan)` : ''),
+        h('div', { class: 'tablewrap', style: { maxHeight: '45vh' } }, h('table', { class: 'stats' },
+          h('thead', null, h('tr', null, ['Nombre', 'Sexo', 'Edad', 'Nombramiento', ''].map(t => h('th', null, t)))),
+          h('tbody', null, people.map(p => h('tr', { class: p.dup || !p.sex ? 'muted' : null },
+            h('td', null, p.name), h('td', null, p.sex === 'M' ? 'Hombre' : p.sex === 'F' ? 'Mujer' : '¿?'), h('td', null, p.age ?? '—'),
+            h('td', null, nomLabel(p.nombramiento) === 'Ninguno' ? '—' : nomLabel(p.nombramiento)), h('td', { class: 'small-text' }, p.dup ? 'Ya existe' : !p.sex ? 'Falta el sexo' : '✓')))))));
+      addBtn.disabled = !ok.length; addBtn.textContent = `Agregar ${ok.length} hermano${ok.length === 1 ? '' : 's'}`;
+    } catch (e) { box.replaceChildren(); err.textContent = e.message || 'No se pudo leer el archivo.'; }
+  });
+  const template = () => saveBlob(new Blob(['﻿Nombre,Sexo,Edad,Nombramiento,Bautizado,Teléfono,Dirección\nJuan Pérez,Hombre,45,Anciano,Sí,,\nMaría López,Mujer,32,,Sí,,\n'], { type: 'text/csv' }), 'plantilla-hermanos.csv');
+  const dlg = h('dialog', { class: 'dlg wide' },
+    h('div', { class: 'dlg-body' }, h('h3', null, 'Cargar hermanos desde Excel'),
+      h('p', { class: 'muted small-text', style: { margin: 0 } }, 'La primera fila lleva los títulos: Nombre, Sexo (Hombre/Mujer), Edad o Nacimiento, Nombramiento (Anciano/Siervo ministerial), Bautizado (Sí), Teléfono y Dirección. Solo “Nombre” y “Sexo” son necesarios.'),
+      h('div', { class: 'row' }, fileI, h('button', { class: 'btn small', onclick: template }, '⬇ Plantilla de ejemplo')),
+      box, err),
+    h('div', { class: 'dlg-foot' }, h('button', { class: 'btn', onclick: close }, 'Cancelar'), addBtn));
+  document.body.append(dlg); dlg.showModal();
+}
+
+// ---------- tamaño de letra (en cada equipo; para quien ve mejor con letra grande) ----------
+const TEXT_SIZES = [['1', 'Normal'], ['1.12', 'Grande'], ['1.25', 'Muy grande']];
+const textSize = () => { try { return localStorage.getItem('letra') || '1'; } catch (e) { return '1'; } };
+function applyTextSize() { document.documentElement.style.zoom = textSize() === '1' ? '' : textSize(); }
+applyTextSize();
+function textSizeRow() {
+  const box = h('div', { class: 'chips wide', style: { margin: '6px 0 0' } });
+  const paint = () => box.replaceChildren(...TEXT_SIZES.map(([v, t], i) => h('button', { class: textSize() === v ? 'on' : '', style: { fontSize: (13 + i * 2) + 'px' },
+    onclick: () => { try { localStorage.setItem('letra', v); } catch (e) {} applyTextSize(); paint(); } }, t)));
+  paint();
+  return h('div', { style: { margin: '10px 0' } }, h('strong', { class: 'small-text' }, '🔠 Tamaño de letra (en este equipo)'), box);
 }

@@ -5,7 +5,7 @@
 //   /jw/semana?y=2026&w=43        → HTML de la Guía de actividades de esa semana ISO
 //   /jw/titulo?path=/es/wol/d/…   → título de un documento (nombres de las canciones)
 // Solo responde a la app (ORIGENES) y guarda las respuestas unas horas para no cargar a jw.org.
-import { sendRequest, reportReminder, health } from './avisos.js';
+import { sendRequest, reportReminder, assignmentReminder, health } from './avisos.js';
 const ORIGENES = ['https://programas-congregacion.web.app', 'https://programas-congregacion.firebaseapp.com', 'https://becker9824.github.io', 'app://programas', 'http://localhost:8765', 'https://localhost', 'capacitor://localhost']; // las dos últimas: la app de Android
 const HORAS = 6;
 
@@ -69,6 +69,10 @@ export default {
     Object.entries(cors).forEach(([k, v]) => res.headers.set(k, v));
     return res;
   },
-  // Recordatorio del informe del mes pasado (los días 1 y 5; ver avisos.js y [triggers] en wrangler.toml)
-  async scheduled(event, env, ctx) { ctx.waitUntil(reportReminder(env, new Date(event.scheduledTime))); },
+  // Programado (ver avisos.js y [triggers] en wrangler.toml): a la 1 UTC, recordatorio de las asignaciones de mañana;
+  // los días 1 y 5 de 16 a 18 UTC, el del informe del mes pasado
+  async scheduled(event, env, ctx) {
+    const now = new Date(event.scheduledTime);
+    ctx.waitUntil(now.getUTCHours() === 1 ? assignmentReminder(env, now) : reportReminder(env, now));
+  },
 };

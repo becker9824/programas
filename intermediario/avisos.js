@@ -92,12 +92,12 @@ async function deliver(tok, cong, avisos, desde = 0) {
   const part = all.slice(desde, desde + LOTE), stale = new Map();
   let enviados = 0;
   await Promise.all(part.map(async a => {
-    const link = WEB + '?ir=' + encodeURIComponent(a.vista || 'inicio');
+    const link = WEB + '?ir=' + encodeURIComponent(a.vista || 'inicio') + (a.confirmar ? '&confirmar=' + encodeURIComponent(a.confirmar) : '');
     const r = await fetch(`https://fcm.googleapis.com/v1/projects/${PROYECTO}/messages:send`, {
       method: 'POST', headers: { Authorization: 'Bearer ' + tok, 'Content-Type': 'application/json' },
       body: JSON.stringify({ message: { token: a.t,
         notification: { title: a.title.slice(0, 120), body: (a.body || '').slice(0, 300) },
-        data: { vista: a.vista || 'inicio', link },
+        data: { vista: a.vista || 'inicio', link, confirmar: a.confirmar || '' },
         android: { priority: 'high', notification: { color: '#2563eb', sound: 'default' } },
         webpush: { fcm_options: { link }, notification: { icon: WEB + 'icon.png', badge: WEB + 'icon.png' } } } }) });
     if (r.ok) enviados++;
@@ -171,6 +171,52 @@ export async function reportReminder(env, now = new Date()) {
     await fetch(`${FS}/${statePath}`, { method: 'PATCH', headers: { Authorization: 'Bearer ' + tok, 'Content-Type': 'application/json' },
       body: JSON.stringify({ fields: { avisados: { arrayValue: { values: avisados.map(u => ({ stringValue: u })) } } } }) });
     return; // una congregación por vuelta: así no se pasa del límite de conexiones
+  }
+}
+
+// ---------- recordatorio de cada asignación, un día antes (cron) ----------
+// Corre cada 10 minutos de 01:00 a 01:59 UTC (18:00 a 18:59 en La Paz, BCS). Lee el programa publicado
+// (publico/programa, el mismo que ven los hermanos) y avisa a quien tiene asignación mañana; 10 por vuelta.
+// Cada aviso lleva la clave de la asignación para confirmarla al tocarlo (“✔ Recibido”).
+const ZONA = 'America/Mazatlan';
+const localDay = (date, plus = 0) => new Date(date.getTime() + plus * 864e5).toLocaleDateString('en-CA', { timeZone: ZONA }); // AAAA-MM-DD
+const longDay = iso => new Date(iso + 'T12:00:00Z').toLocaleDateString('es', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' });
+// Lo mismo que myAssignments (app/publicadores.js), pero para todos y solo de ese día
+export function assignmentsOn(weeks, day) {
+  const out = [];
+  for (const w of weeks) {
+    if ((w.day || w.date) === day) for (const r of w.rows || []) for (const k of ['a', 'b', 'xa', 'xb']) {
+      if (!r[k] || !r[k].id) continue;
+      const mate = r[{ a: 'b', b: 'a', xa: 'xb', xb: 'xa' }[k]];
+      out.push({ perfil: r[k].id, key: r.id && `${w.id}|${r.id}|${k}`, title: r.t, when: `${w.meeting} · ${r.time}`,
+        role: (r.labels || {})[k] || '', with: mate ? mate.n : '' });
+    }
+    if (w.fin && w.fin.oradorId && w.fin.day === day) out.push({ perfil: w.fin.oradorId, key: `${w.id}|fin|orador`,
+      title: `Discurso público${w.fin.tema ? ': ' + w.fin.tema : ''}`, when: 'Reunión del fin de semana', role: '', with: '' });
+    for (const m of w.mec || []) if (m.day === day) for (const it of m.items || []) if (it.id)
+      out.push({ perfil: it.id, key: m.mtg && it.k && `${w.id}|mec|${m.mtg}|${it.k}`, title: it.l, when: m.label, role: 'Asignación mecánica', with: '' });
+  }
+  return out;
+}
+export async function assignmentReminder(env, now = new Date()) {
+  const tok = await adminToken(env), day = localDay(now, 1);
+  for (const c of await fsList(tok, 'congregaciones')) {
+    const statePath = `congregaciones/${c.id}/avisosEstado/asignaciones-${day}`;
+    const done = new Set(((await fsGet(tok, statePath)) || {}).avisados || []);
+    const pub = await fsGet(tok, `congregaciones/${c.id}/publico/programa`);
+    let weeks = [];
+    try { weeks = JSON.parse((pub && pub.semanas) || '[]'); } catch (e) {}
+    const list = assignmentsOn(weeks, day).filter(a => !done.has(`${a.perfil}|${a.key}`));
+    if (!list.length) continue;
+    const members = active(await fsList(tok, `congregaciones/${c.id}/miembros`)).filter(m => m.perfil);
+    const batch = list.slice(0, 10);
+    const avisos = batch.flatMap(a => members.filter(m => m.perfil === a.perfil).map(m => ({ uid: m.id, vista: 'inicio', confirmar: a.key || '',
+      title: `⏰ Mañana: ${a.title}`.slice(0, 120),
+      body: [`${longDay(day)} · ${a.when}`, a.role, a.with ? 'Con ' + a.with : ''].filter(Boolean).join('\n') })));
+    if (avisos.length) await deliver(tok, c.id, avisos);
+    await fetch(`${FS}/${statePath}`, { method: 'PATCH', headers: { Authorization: 'Bearer ' + tok, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fields: { avisados: { arrayValue: { values: [...done, ...batch.map(a => `${a.perfil}|${a.key}`)].map(u => ({ stringValue: u })) } } } }) });
+    return; // una congregación por vuelta (límite de conexiones del plan gratis)
   }
 }
 
