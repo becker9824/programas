@@ -243,9 +243,10 @@ function congregationReports() {
       docs = snap.docs.map(d => d.data());
       reportsCache = { key, docs };
       // Si está escribiendo en el buscador o tiene un informe abierto, no se le mueve la pantalla
-      const typing = document.activeElement === search;
-      if (typing || document.querySelector('dialog[open]')) { if (typing) drawTable(); nube.redraw = true; return; }
+      // Si está escribiendo en el buscador, se le deja el cursor donde estaba
+      const typing = document.activeElement === search, pos = typing ? search.selectionStart : 0;
       draw();
+      if (typing) { search.focus(); search.setSelectionRange(pos, pos); }
     }, e => box.replaceChildren(h('div', { class: 'err' }, errMsg(e))));
     viewSubs.push(unsub);
   }

@@ -267,6 +267,9 @@ function enterCongregation() {
       const changed = fn(s);
       if (waiting.delete(name) && !waiting.size) return firstLoad();
       if (nube.listo && changed) {
+        // Informes e Historial no se redibujan por cambios de otras partes: se cortaba su carga (con internet
+        // lento se quedaba en “Cargando…”) y se perdía lo que se iba llenando del informe. Se actualizan solos.
+        if (['report', 'historial'].includes(view.name)) return;
         if (!busy()) render();
         else { nube.redraw = true; if (!['cong', 'anuncios', 'contactos'].includes(name)) toast('Otro hermano hizo cambios; se verán al terminar de editar.'); }
       }

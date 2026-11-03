@@ -166,6 +166,7 @@ App para organizar las asignaciones de la reunión semanal Vida y Ministerio Cri
 - `viewSubs` / `stopViewSubs()`: lo que escucha solo una pantalla; se corta en `render()` y en `stopListening()`.
 - Buscador "Buscar publicador" (sin acentos, `norm`; `reportsSearch` se recuerda). Busca también por nombramiento y por lo que fue en el mes. Columnas: Nombre, Nombramiento (`nomLabel`), Este mes fue (informe o ficha), Estado del informe (✓ Enviado / Sin informe), ¿Participó?, Horas, Cursos, Notas.
 - La ficha manda (como el nombramiento): `monthKind(perfil, mes, informe)` = `groupFor` de la ficha; solo sin ficha (perfil borrado) se usa el `grupo` del informe. Lo usan la tabla, el resumen por tipo y la hoja del mes; el S-21 marca auxiliar si la ficha o el informe lo dicen. En `reportForm(…, grupoDefault, fixed)` con `fixed` no se elige: muestra "Según su ficha en Hermanos" (secretario) o "Según tu ficha…" (publicador, con `publico/precursores`).
+- 1.32.1: en Informes e Historial los listeners de otras colecciones ya no llaman a `render()` (en `listen` de `enterCongregation`): con internet lento cada redibujo cortaba la escucha de informes y se quedaba en “Cargando…” (en la web real), y además borraba lo que se iba llenando del informe (los radios no cuentan en `busy()`). Para probar lentitud: envolver `F.onSnapshot`/`F.getDoc(s)` con un retraso de 1.5 s.
 - Historial (`histCache`) y la tarjeta "Tu informe" de Inicio (`nube.miInforme`) también muestran lo último al instante. `histCache` y `reportsCache` se borran en `watchAuth`.
 
 ## Pendiente / ideas
