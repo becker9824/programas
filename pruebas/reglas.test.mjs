@@ -159,6 +159,8 @@ test('avisos al celular: cada quien guarda solo sus tokens y nadie más los ve',
   await assertFails(setDoc(cdoc(db('pub'), 'avisos', 'prog'), { perfil: 'p1', tokens: ['t1'], actualizado: 1 }));  // la de otro
   await assertFails(setDoc(cdoc(db('pub'), 'avisos', 'pub'), { perfil: 'p9', tokens: ['t1'], actualizado: 1 }));   // otro perfil
   await assertFails(setDoc(cdoc(db('pub'), 'avisos', 'pub'), { perfil: 'p1', tokens: ['a', 'b', 'c', 'd'], actualizado: 1 }));
+  await assertSucceeds(setDoc(cdoc(db('pub'), 'avisos', 'pub'), { perfil: 'p1', tokens: [], nativos: ['n1'], actualizado: 1 }));  // app nativa
+  await assertFails(setDoc(cdoc(db('pub'), 'avisos', 'pub'), { perfil: 'p1', nativos: ['a', 'b', 'c', 'd'], actualizado: 1 }));
   await assertSucceeds(getDoc(cdoc(db('pub'), 'avisos', 'pub')));
   await assertFails(getDoc(cdoc(db('admin'), 'avisos', 'pub')));
   await assertFails(getDocs(collection(db('admin'), 'congregaciones', C, 'avisos')));

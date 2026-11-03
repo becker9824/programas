@@ -238,11 +238,13 @@ service cloud.firestore {
             || (request.resource.data.inscritos[myProfile(c)] is string && request.resource.data.inscritos[myProfile(c)].size() <= 80));
       }
       // Avisos al celular: avisos/{uid} = { perfil, tokens: [hasta 3], actualizado }. Cada quien solo la suya;
-      // los manda el intermediario de Cloudflare con su cuenta de servicio (no pasa por estas reglas).
+      // nativos: los de la app nativa de Android (carpeta ProgramasAndroid). Los manda el intermediario de Cloudflare con su
+      // cuenta de servicio (no pasa por estas reglas).
       match /avisos/{uid} {
         allow read: if isMember(c) && me() == uid;
-        allow create, update: if isMember(c) && me() == uid && only(['perfil', 'tokens', 'actualizado'])
-          && request.resource.data.tokens is list && request.resource.data.tokens.size() <= 3
+        allow create, update: if isMember(c) && me() == uid && only(['perfil', 'tokens', 'nativos', 'actualizado'])
+          && request.resource.data.get('tokens', []) is list && request.resource.data.get('tokens', []).size() <= 3
+          && request.resource.data.get('nativos', []) is list && request.resource.data.get('nativos', []).size() <= 3
           && request.resource.data.perfil == myProfile(c);
         allow delete: if isMember(c) && me() == uid;
       }

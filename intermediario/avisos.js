@@ -86,27 +86,33 @@ const active = list => list.filter(m => m.estado === 'activo');
 // vuelve a pedir con "desde" hasta que "siguiente" sea null. Cada cuenta guarda a lo más 3 celulares.
 const LOTE = 30;
 // avisos: [{ uid, title, body, vista }] → a cada celular de esa cuenta
+// Dos clases de celular por cuenta: "tokens" (web y APK de antes: aviso normal) y "nativos" (app nativa de Android,
+// E:\ProgramasAndroid: aviso solo de datos, que la app muestra con el botón “✔ Recibido”).
 async function deliver(tok, cong, avisos, desde = 0) {
-  const devices = new Map((await fsList(tok, `congregaciones/${cong}/avisos`)).map(d => [d.id, (d.tokens || []).slice(-3)]));
-  const all = avisos.flatMap(a => (devices.get(a.uid) || []).map(t => ({ ...a, t })));
+  const devices = new Map((await fsList(tok, `congregaciones/${cong}/avisos`)).map(d => [d.id,
+    [...(d.tokens || []).slice(-3).map(t => ({ t, field: 'tokens' })), ...(d.nativos || []).slice(-3).map(t => ({ t, field: 'nativos' }))]]));
+  const all = avisos.flatMap(a => (devices.get(a.uid) || []).map(dv => ({ ...a, ...dv })));
   const part = all.slice(desde, desde + LOTE), stale = new Map();
   let enviados = 0;
   await Promise.all(part.map(async a => {
     const link = WEB + '?ir=' + encodeURIComponent(a.vista || 'inicio') + (a.confirmar ? '&confirmar=' + encodeURIComponent(a.confirmar) : '');
-    const r = await fetch(`https://fcm.googleapis.com/v1/projects/${PROYECTO}/messages:send`, {
-      method: 'POST', headers: { Authorization: 'Bearer ' + tok, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message: { token: a.t,
+    const data = { vista: a.vista || 'inicio', link, confirmar: a.confirmar || '' };
+    const message = a.field === 'nativos'
+      ? { token: a.t, data: { ...data, title: a.title.slice(0, 120), body: (a.body || '').slice(0, 300) }, android: { priority: 'high' } }
+      : { token: a.t, data,
         notification: { title: a.title.slice(0, 120), body: (a.body || '').slice(0, 300) },
-        data: { vista: a.vista || 'inicio', link, confirmar: a.confirmar || '' },
         android: { priority: 'high', notification: { color: '#2563eb', sound: 'default' } },
-        webpush: { fcm_options: { link }, notification: { icon: WEB + 'icon.png', badge: WEB + 'icon.png' } } } }) });
+        webpush: { fcm_options: { link }, notification: { icon: WEB + 'icon.png', badge: WEB + 'icon.png' } } };
+    const r = await fetch(`https://fcm.googleapis.com/v1/projects/${PROYECTO}/messages:send`, {
+      method: 'POST', headers: { Authorization: 'Bearer ' + tok, 'Content-Type': 'application/json' }, body: JSON.stringify({ message }) });
     if (r.ok) enviados++;
     else if (r.status === 404 || r.status === 400) stale.set(a.uid, [...(stale.get(a.uid) || []), a.t]);
   }));
   // Celulares que ya no existen (app borrada, avisos apagados): se quitan para no intentar otra vez (pocos por tanda)
-  await Promise.all([...stale].slice(0, 5).map(([uid, gone]) => fetch(`${FS}/congregaciones/${cong}/avisos/${uid}?updateMask.fieldPaths=tokens`, {
+  const keep = (uid, field, gone) => (devices.get(uid) || []).filter(d => d.field === field && !gone.includes(d.t)).map(d => ({ stringValue: d.t }));
+  await Promise.all([...stale].slice(0, 5).map(([uid, gone]) => fetch(`${FS}/congregaciones/${cong}/avisos/${uid}?updateMask.fieldPaths=tokens&updateMask.fieldPaths=nativos`, {
     method: 'PATCH', headers: { Authorization: 'Bearer ' + tok, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ fields: { tokens: { arrayValue: { values: (devices.get(uid) || []).filter(t => !gone.includes(t)).map(t => ({ stringValue: t })) } } } }) })));
+    body: JSON.stringify({ fields: { tokens: { arrayValue: { values: keep(uid, 'tokens', gone) } }, nativos: { arrayValue: { values: keep(uid, 'nativos', gone) } } } }) })));
   const sinCelular = desde ? 0 : new Set(avisos.filter(a => !(devices.get(a.uid) || []).length).map(a => a.uid)).size;
   return { enviados, sinCelular, siguiente: desde + LOTE < all.length ? desde + LOTE : null };
 }
