@@ -19,24 +19,50 @@ function guideSteps() {
   steps.push({ icon: 'report', title: 'Tu parte', text: 'En Inicio ves tu próxima asignación. ' + (reportsByMembers() ? 'Cada mes mandas tu informe desde Informe. ' : '') + 'Si vas a faltar un tiempo, activa tu Ausencia en Inicio y no te tomarán en cuenta para asignaciones. Si se va el internet, la app sigue funcionando y guarda los cambios para subirlos después.' });
   return steps;
 }
+// Color de cada paso (según su ícono) y la sección donde está, para la etiqueta “Lo encuentras en…”
+const GUIDE_LOOK = {
+  inicio: ['#2563eb', '#60a5fa'], people: ['#7c3aed', '#a78bfa'], list: ['#0f766e', '#2dd4bf'], mecanicas: ['#c2410c', '#fb923c'],
+  report: ['#15803d', '#4ade80'], territorios: ['#047857', '#34d399'], calendario: ['#be185d', '#f472b6'],
+};
+const GUIDE_WHERE = { people: 'Hermanos', list: 'Semanas', mecanicas: 'Mecánicas', territorios: 'Territorios', calendario: 'Calendario' };
 function openGuide() {
   const steps = guideSteps();
-  let i = 0;
-  const body = h('div', { class: 'guide-body' }), dots = h('div', { class: 'guide-dots' }), foot = h('div', { class: 'dlg-foot' });
+  let i = 0, dir = 1;
+  const hero = h('div', { class: 'gd-hero' }), text = h('div', { class: 'gd-text' }), bars = h('div', { class: 'gd-bars' });
+  const count = h('span', { class: 'gd-count' }), back = h('button', { class: 'btn', onclick: () => go(-1) }, 'Anterior');
+  const next = h('button', { class: 'btn primary gd-next' });
   const close = () => { try { localStorage.setItem('guia-' + (nube.user ? nube.user.uid : 'local'), '1'); } catch (e) {} dlg.close(); dlg.remove(); };
+  const go = d => { const n = i + d; if (n < 0 || n >= steps.length) return; dir = d; i = n; paint(); };
   const paint = () => {
-    const st = steps[i];
-    body.replaceChildren(h('div', { class: 'guide-icon' }, icon(st.icon, 34)), h('h3', null, st.title), h('p', null, st.text));
-    dots.replaceChildren(...steps.map((_, k) => h('span', { class: k === i ? 'on' : '' })));
-    foot.replaceChildren(...[
-      h('button', { class: 'btn', style: { marginRight: 'auto' }, onclick: close }, 'Saltar'),
-      i ? h('button', { class: 'btn', onclick: () => { i--; paint(); } }, 'Anterior') : null,
-      i < steps.length - 1 ? h('button', { class: 'btn primary', onclick: () => { i++; paint(); } }, 'Siguiente') : h('button', { class: 'btn primary', onclick: close }, 'Empezar')].filter(Boolean));
+    const st = steps[i], [c1, c2] = GUIDE_LOOK[st.icon] || GUIDE_LOOK.inicio, last = i === steps.length - 1;
+    dlg.style.setProperty('--g1', c1); dlg.style.setProperty('--g2', c2);
+    // Ícono con anillos y destellos; en el último paso, una palomita que se dibuja sola
+    hero.replaceChildren(h('span', { class: 'gd-orb o1' }), h('span', { class: 'gd-orb o2' }), h('span', { class: 'gd-orb o3' }),
+      h('div', { class: 'gd-ring r1' }), h('div', { class: 'gd-ring r2' }),
+      h('div', { class: 'gd-icon' + (last ? ' done' : '') }, last ? h('span', { class: 'ic' }) : icon(st.icon, 40)));
+    if (last) hero.querySelector('.gd-icon .ic').innerHTML = '<svg viewBox="0 0 24 24" width="44" height="44" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path class="gd-check" d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
+    text.replaceChildren(h('div', { class: 'gd-slide ' + (dir > 0 ? 'from-r' : 'from-l') },
+      GUIDE_WHERE[st.icon] ? h('span', { class: 'gd-where' }, icon(st.icon, 14), 'En ', GUIDE_WHERE[st.icon]) : null,
+      h('h3', null, st.title), h('p', null, st.text)));
+    bars.replaceChildren(...steps.map((_, k) => h('button', { type: 'button', class: k < i ? 'done' : k === i ? 'on' : '', 'aria-label': `Paso ${k + 1}`,
+      onclick: () => { if (k !== i) { dir = k > i ? 1 : -1; i = k; paint(); } } }, h('span'))));
+    count.textContent = `${i + 1} de ${steps.length}`;
+    back.style.visibility = i ? 'visible' : 'hidden';
+    next.replaceChildren(...(last ? ['¡Empezar!'] : ['Siguiente', icon('chev', 16)]));
+    next.onclick = last ? close : () => go(1);
   };
-  const dlg = h('dialog', { class: 'dlg guide' }, h('div', { class: 'dlg-body' }, body, dots), foot);
-  dlg.addEventListener('cancel', close);
+  const dlg = h('dialog', { class: 'dlg guide' },
+    h('div', { class: 'gd-top' }, bars, h('button', { class: 'gd-skip', onclick: close }, 'Saltar')),
+    hero, text,
+    h('div', { class: 'gd-foot' }, back, count, next));
+  dlg.addEventListener('cancel', e => { e.preventDefault(); close(); });
+  dlg.addEventListener('keydown', e => { if (e.key === 'ArrowRight') go(1); else if (e.key === 'ArrowLeft') go(-1); });
+  // Deslizar con el dedo para cambiar de paso
+  let sx = null;
+  dlg.addEventListener('pointerdown', e => { sx = e.clientX; });
+  dlg.addEventListener('pointerup', e => { if (sx != null && Math.abs(e.clientX - sx) > 50 && !e.target.closest('button')) go(e.clientX < sx ? 1 : -1); sx = null; });
   paint();
-  document.body.append(dlg); dlg.showModal();
+  document.body.append(dlg); dlg.showModal(); next.focus();
 }
 function maybeShowGuide() {
   let seen = true;
