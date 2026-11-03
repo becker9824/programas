@@ -132,6 +132,13 @@ App para organizar las asignaciones de la reunión semanal Vida y Ministerio Cri
 - Guardar no se traba: en `loadFirebase`, `setDoc`/`updateDoc`/`deleteDoc`/`addDoc` esperan al servidor máximo 8 s (0.3 s sin internet); después siguen (queda guardado en el equipo y se sube solo) y si el servidor lo rechaza más tarde sale un aviso. `addDoc` se hace con `doc()` + `setDoc` para tener el id al instante.
 - Informe propio sin conexión: si no se puede leer el anterior, se muestra el formulario igual.
 
+## Entrar con enlace al correo (1.27.0)
+- Pestaña Entrar: por defecto "Enviarme el enlace para entrar" (`sendLoginLink`, `sendSignInLinkToEmail`, correo guardado en localStorage `correo-enlace`); "Entrar con mi contraseña" y "¿Olvidaste tu contraseña?" siguen de respaldo. El enlace entra a la misma cuenta (mismo uid) que la contraseña. Crear cuenta / Nueva congregación siguen con contraseña.
+- **Plan gratis (Spark): solo 5 correos de enlace al día para todo el proyecto** (`auth/quota-exceeded` → aviso de usar la contraseña). Con Blaze: 25,000/día. En Firebase Console hay que activar Authentication → Email/Password → "Vínculo de correo electrónico (acceso sin contraseña)", y `becker9824.github.io` debe estar en Dominios autorizados.
+- Web: `startCloud` atiende el enlace (`isSignInWithEmailLink`) antes de `watchAuth()` (antes el `onAuthStateChanged` estaba dentro de `startCloud`). Sin correo guardado (otro equipo) → `renderLinkEmail`.
+- App de PC y APK (`LINK_APP`): el enlace vuelve a `WEB_URL?para-app=1`; esa página (`renderLinkForApp`) ofrece "Abrir en Programas" (`programas://entrar?l=<enlace>`) o copiar. main.js registra el protocolo `programas` (solo instalado) y pasa el enlace con `receiveLink` (argv al abrir y `second-instance`); el APK tiene el intent-filter `programas://entrar` y usa el plugin App (`appUrlOpen`, `getLaunchUrl`). En `renderLinkSent` también se puede pegar el enlace.
+- Emulador: los enlaces se leen en `http://127.0.0.1:9099/emulator/v1/projects/demo-programas/oobCodes`.
+
 ## Pendiente / ideas
 - Pulir detalles mínimos del diseño que el usuario vaya encontrando.
 - Ajustar Cuentas si el usuario manda sus hojas S-26/S-30.

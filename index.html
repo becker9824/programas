@@ -400,7 +400,7 @@
 
 <script>
 const KEY = 'programas-app-v2';
-const APP_VERSION = '1.26.0'; // igual que "version" en package.json (publicar.ps1 lo revisa)
+const APP_VERSION = '1.27.0'; // igual que "version" en package.json (publicar.ps1 lo revisa)
 // Con FIREBASE_CONFIG (firebase-config.js) los datos viven en la nube de la congregación;
 // sin él, la app funciona como antes, solo en esta PC. "?emu" usa el Firebase local de prueba.
 const EMU = /[?&]emu\b/.test(location.search);
@@ -1854,6 +1854,7 @@ async function loadFirebase() {
   // Los datos se guardan también en el equipo: sin internet se ven y los cambios se suben al volver la conexión
   F = { ...auth, ...fs, auth: auth.getAuth(a), db: fs.initializeFirestore(a, { ignoreUndefinedProperties: true,
     localCache: fs.persistentLocalCache({ tabManager: fs.persistentMultipleTabManager() }) }) };
+  F.auth.languageCode = 'es'; // los correos (enlace para entrar, cambiar contraseña) llegan en español
   // Al guardar no se espera para siempre a que el servidor conteste: con internet lento o bloqueado la app se
   // quedaba "pensando" y el botón trabado. Lo guardado ya queda en el equipo y se sube solo; si el servidor
   // lo rechaza después, se avisa.
@@ -1905,6 +1906,13 @@ function errMsg(e) {
     'auth/weak-password': 'La contraseña debe tener al menos 6 caracteres.',
     'auth/too-many-requests': 'Demasiados intentos. Espera unos minutos y vuelve a intentar.',
     'auth/network-request-failed': 'No hay conexión a internet.',
+    'auth/missing-email': 'Escribe tu correo.',
+    'auth/invalid-action-code': 'Ese enlace ya se usó o ya venció. Pide uno nuevo.',
+    'auth/expired-action-code': 'Ese enlace ya venció. Pide uno nuevo.',
+    'auth/quota-exceeded': 'Por hoy ya no se pueden mandar más enlaces. Entra con tu contraseña o intenta mañana.',
+    'auth/operation-not-allowed': 'Entrar con enlace todavía no está activado en Firebase. Entra con tu contraseña.',
+    'auth/unauthorized-continue-uri': 'Entrar con enlace todavía no está activado en Firebase. Entra con tu contraseña.',
+    'enlace-malo': 'Eso no es un enlace para entrar. Copia el enlace del botón del correo.',
     'permission-denied': 'No tienes permiso para hacer esto.',
     'unavailable': 'No hay conexión con el servidor. Revisa tu internet.',
     'codigo': 'Ese código de congregación no existe. Pídeselo de nuevo a un administrador.',
@@ -1966,6 +1974,21 @@ async function startCloud() {
   screen(h('div', { class: 'card auth-card' }, h('p', { class: 'muted' }, 'Conectando…')));
   try { await loadFirebase(); }
   catch (e) { return screenMessage('No se pudo conectar. Revisa tu internet y vuelve a abrir la app.'); }
+  // Enlace que llegó a la app de PC o al APK antes de cargar Firebase, o la página web abierta desde el correo
+  const fromApp = nube.enlace; nube.enlace = null;
+  const href = fromApp || location.href;
+  if (F.isSignInWithEmailLink(F.auth, href)) {
+    const forApp = !fromApp && /[?&]para-app=1/.test(location.search);
+    if (!fromApp) history.replaceState(null, '', location.pathname + (EMU ? '?emu' : ''));
+    if (forApp && !LINK_APP) return renderLinkForApp(href);
+    if (!linkEmail()) return renderLinkEmail(href);
+    await completeLink(href, linkEmail()).catch(e => toast(errMsg(e)));
+  }
+  watchAuth();
+}
+function watchAuth() {
+  if (nube.watching) { if (!nube.user) renderAuth(); return; }
+  nube.watching = true;
   F.onAuthStateChanged(F.auth, async user => {
     stopListening(); if (nube.unsubMe) { nube.unsubMe(); nube.unsubMe = null; }
     Object.assign(nube, { user, cong: null, congData: null, me: null, acceso: '', listo: false, miembros: [], anuncios: [],
@@ -2230,9 +2253,10 @@ function screenMessage(msg) {
     h('div', { class: 'row' }, h('button', { class: 'btn', onclick: () => location.reload() }, 'Reintentar'), nube.user ? signOutBtn() : null)));
 }
 
-function renderAuth(tab = 'entrar', msg = '') {
+function renderAuth(tab = 'entrar', msg = '', withPass = false, em0 = '') {
+  const linkMode = tab === 'entrar' && !withPass;
   const field = (label, el) => h('label', { class: 'field' }, label, el);
-  const email = h('input', { type: 'email', autocomplete: 'email', placeholder: 'tu@correo.com' });
+  const email = h('input', { type: 'email', autocomplete: 'email', placeholder: 'tu@correo.com', value: em0 || linkEmail() || '' });
   const pass = h('input', { type: 'password', autocomplete: tab === 'entrar' ? 'current-password' : 'new-password',
     placeholder: tab === 'entrar' ? '' : 'Al menos 6 caracteres' });
   const code = h('input', { type: 'text', autocomplete: 'off', placeholder: 'Ej.: K7M3QX', style: { textTransform: 'uppercase' } });
@@ -2240,7 +2264,7 @@ function renderAuth(tab = 'entrar', msg = '') {
   const congI = h('input', { type: 'text', placeholder: 'Ej.: Congregación Centro' });
   const err = h('div', { class: 'err' }, msg);
   const btn = h('button', { class: 'btn primary', onclick: submit },
-    tab === 'entrar' ? 'Entrar' : tab === 'unirse' ? 'Crear mi cuenta' : 'Crear congregación');
+    linkMode ? '📧 Enviarme el enlace para entrar' : tab === 'entrar' ? 'Entrar' : tab === 'unirse' ? 'Crear mi cuenta' : 'Crear congregación');
 
   async function submit() {
     err.textContent = '';
@@ -2252,6 +2276,11 @@ function renderAuth(tab = 'entrar', msg = '') {
     }
     btn.disabled = true;
     try {
+      if (linkMode) {
+        if (!em) throw { code: 'auth/missing-email' };
+        await sendLoginLink(em);
+        return renderLinkSent(em);
+      }
       if (tab === 'entrar') await F.signInWithEmailAndPassword(F.auth, em, pw);
       else {
         nube.registro = tab === 'unirse' ? { tipo: 'unirse', codigo: code.value, nombre: name.value } : { tipo: 'crear', cong: congI.value, nombre: name.value };
@@ -2274,17 +2303,97 @@ function renderAuth(tab = 'entrar', msg = '') {
   const card = h('div', { class: 'card auth-card' },
     h('div', { class: 'tabs' }, [['entrar', 'Entrar'], ['unirse', 'Crear cuenta'], ['crear', 'Nueva congregación']].map(([k, t]) =>
       h('button', { class: k === tab ? 'on' : null, onclick: () => renderAuth(k) }, t))),
+    linkMode ? h('p', { class: 'muted small-text' }, 'Te llega un correo con un botón para entrar. Así nadie puede entrar a tu cuenta sin tener tu correo.') : null,
     tab === 'unirse' ? h('p', { class: 'muted small-text' }, 'Pide el código a un administrador de tu congregación. Tu cuenta quedará en espera hasta que te aprueben.') : null,
     tab === 'crear' ? h('p', { class: 'muted small-text' }, 'Solo para el primer administrador. Después compartirás el código para que los demás creen su cuenta.') : null,
     tab === 'unirse' ? field('Código de la congregación', code) : null,
     tab === 'crear' ? field('Nombre de la congregación', congI) : null,
     tab !== 'entrar' ? field('Tu nombre', name) : null,
-    field('Correo', email), field('Contraseña', pass),
+    field('Correo', email), linkMode ? null : field('Contraseña', pass),
     err, btn,
+    tab === 'entrar' ? h('button', { class: 'linkbtn', onclick: () => renderAuth('entrar', '', !withPass, email.value.trim()) },
+      withPass ? '📧 Mejor entrar con un enlace a mi correo' : '🔑 Entrar con mi contraseña') : null,
     tab === 'entrar' ? h('button', { class: 'linkbtn', onclick: forgot }, '¿Olvidaste tu contraseña?') : null);
   card.addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.tagName === 'INPUT') submit(); });
   screen(h('div', { class: 'auth-hero' }, logo(64), h('h2', null, 'Programas'),
     h('p', null, 'La reunión, las asignaciones y la congregación, en un solo lugar.')), card);
+}
+
+// ---------- entrar con un enlace al correo ----------
+// La contraseña queda de respaldo. Plan gratis de Firebase: 5 correos de enlace al día para todo el proyecto
+// (por eso se ofrece siempre la contraseña). La app de PC (app://) y el APK no reciben el enlace directo:
+// el correo lo abre en la web, que lo pasa a la app con programas://entrar?l=… o se copia y se pega.
+const LINK_APP = location.protocol === 'app:' || NATIVE;
+const linkEmail = () => { try { return localStorage.getItem('correo-enlace') || ''; } catch (e) { return ''; } };
+function linkReturnUrl() {
+  const web = EMU ? 'http://localhost:8765/?emu' : LINK_APP ? WEB_URL : location.origin + location.pathname;
+  return LINK_APP ? web + (web.includes('?') ? '&' : '?') + 'para-app=1' : web;
+}
+async function sendLoginLink(em) {
+  await F.sendSignInLinkToEmail(F.auth, em, { url: linkReturnUrl(), handleCodeInApp: true });
+  try { localStorage.setItem('correo-enlace', em); } catch (e) {}
+}
+async function completeLink(href, em) {
+  await F.signInWithEmailLink(F.auth, em, href);
+  try { localStorage.removeItem('correo-enlace'); } catch (e) {}
+}
+// Enlace pegado o recibido (programas://entrar?l=… o el del correo tal cual)
+function receiveLink(url) {
+  let href = String(url || '').trim();
+  try { const u = new URL(href); if (u.protocol === 'programas:') href = u.searchParams.get('l') || ''; } catch (e) {}
+  if (!F) { nube.enlace = href; return true; }
+  if (!F.isSignInWithEmailLink(F.auth, href)) return false;
+  if (!linkEmail()) renderLinkEmail(href);
+  else completeLink(href, linkEmail()).then(watchAuth, e => { toast(errMsg(e)); watchAuth(); });
+  return true;
+}
+function renderLinkSent(em) {
+  const paste = h('input', { type: 'text', autocomplete: 'off', placeholder: 'Pega aquí el enlace' });
+  const err = h('div', { class: 'err' });
+  const resend = h('button', { class: 'btn', onclick: async () => {
+    resend.disabled = true;
+    try { await sendLoginLink(em); toast('Te mandamos otro enlace.'); } catch (e) { err.textContent = errMsg(e); }
+    resend.disabled = false;
+  } }, 'Mandar otro');
+  screen(h('div', { class: 'card auth-card' },
+    h('h2', null, '📧 Revisa tu correo'),
+    h('p', null, 'Te mandamos un enlace a ', h('b', null, em), '. Abre el correo y pulsa el botón para entrar.'),
+    h('p', { class: 'muted small-text' }, 'Puede tardar un minuto. Si no aparece, revisa la carpeta de Spam o Correo no deseado.'),
+    LINK_APP ? [
+      h('p', { class: 'muted small-text' }, 'Al abrir el enlace, el navegador te ofrece volver a Programas. Si no, copia el enlace (en el correo, mantén pulsado o clic derecho sobre el botón → Copiar enlace) y pégalo aquí:'),
+      h('label', { class: 'field' }, 'Enlace del correo', paste),
+      h('button', { class: 'btn primary', onclick: () => { err.textContent = receiveLink(paste.value) ? '' : errMsg({ code: 'enlace-malo' }); } }, 'Entrar')] : null,
+    err,
+    h('div', { class: 'row' }, resend, h('button', { class: 'btn', onclick: () => renderAuth('entrar', '', true, em) }, '🔑 Usar mi contraseña'),
+      h('button', { class: 'linkbtn', onclick: () => renderAuth() }, 'Volver'))));
+}
+// Se abrió el enlace en otro equipo o navegador: se confirma el correo
+function renderLinkEmail(href) {
+  const email = h('input', { type: 'email', autocomplete: 'email', placeholder: 'tu@correo.com' });
+  const err = h('div', { class: 'err' });
+  const btn = h('button', { class: 'btn primary', onclick: async () => {
+    btn.disabled = true; err.textContent = '';
+    try { await completeLink(href, email.value.trim()); watchAuth(); }
+    catch (e) { err.textContent = e.code === 'auth/invalid-email' ? 'Ese no es el correo al que llegó el enlace.' : errMsg(e); btn.disabled = false; }
+  } }, 'Entrar');
+  email.addEventListener('keydown', e => { if (e.key === 'Enter') btn.click(); });
+  screen(h('div', { class: 'card auth-card' },
+    h('h2', null, 'Confirma tu correo'),
+    h('p', { class: 'muted' }, 'Para terminar de entrar, escribe el correo al que te llegó el enlace.'),
+    h('label', { class: 'field' }, 'Correo', email), err,
+    h('div', { class: 'row' }, btn, h('button', { class: 'linkbtn', onclick: watchAuth }, 'Cancelar'))));
+}
+// Página web abierta desde un enlace que se pidió en la app de PC o en el APK
+function renderLinkForApp(href) {
+  const copy = () => navigator.clipboard.writeText(href).then(() => toast('Enlace copiado. Vuelve a Programas y pégalo.'), () => toast('No se pudo copiar'));
+  screen(h('div', { class: 'card auth-card' },
+    h('h2', null, '📧 Enlace para entrar'),
+    h('p', null, 'Pediste este enlace desde la app de Programas (en la PC o en el celular).'),
+    h('div', { class: 'row' }, h('a', { class: 'btn primary', style: { textDecoration: 'none' }, href: 'programas://entrar?l=' + encodeURIComponent(href) }, 'Abrir en Programas'),
+      h('button', { class: 'btn', onclick: copy }, 'Copiar enlace')),
+    h('p', { class: 'muted small-text' }, 'Si no se abre, pulsa “Copiar enlace”, vuelve a la app y pégalo donde dice “Pega aquí el enlace”.'),
+    h('button', { class: 'linkbtn', onclick: () => linkEmail() ? completeLink(href, linkEmail()).then(watchAuth, e => { toast(errMsg(e)); watchAuth(); }) : renderLinkEmail(href) },
+      'Mejor entrar aquí, en el navegador')));
 }
 
 // Con sesión iniciada pero sin congregación (o la quitaron)
@@ -6333,6 +6442,11 @@ const offlineBar = h('div', { class: 'offline-bar', hidden: navigator.onLine ? t
 document.querySelector('header').after(offlineBar);
 addEventListener('online', () => { offlineBar.hidden = true; toast('Volvió la conexión'); });
 addEventListener('offline', () => { offlineBar.hidden = false; });
+if (NATIVE) {
+  const AppP = capacitorExports.registerPlugin('App');
+  AppP.addListener('appUrlOpen', e => receiveLink(e.url));
+  AppP.getLaunchUrl().then(r => r && r.url && receiveLink(r.url)).catch(() => {});
+}
 if (/^#ver&/.test(location.hash)) renderSharedTerritory(); // QR de una tarjeta de territorio
 else if (FB_CONFIG) startCloud();
 else { render(); startJw(); }

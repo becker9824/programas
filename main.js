@@ -120,6 +120,10 @@ function checkUpdates(win) {
   autoUpdater.checkForUpdates().catch(() => {});
 }
 
+// Entrar con enlace al correo: la página web abre programas://entrar?l=… y Windows se lo pasa al programa
+const isLink = a => /^programas:/i.test(a);
+const sendLink = (win, url) => win.webContents.executeJavaScript(`receiveLink(${JSON.stringify(url)})`).catch(() => {});
+
 function createWindow() {
   const win = new BrowserWindow({
     width: 1280, height: 860, minWidth: 420, minHeight: 500,
@@ -133,6 +137,8 @@ function createWindow() {
     if (/^https?:/i.test(url)) shell.openExternal(url);
     return { action: 'deny' };
   });
+  const link = process.argv.find(isLink);
+  if (link) win.webContents.once('did-finish-load', () => sendLink(win, link));
   if (process.argv.includes('--prueba')) win.webContents.once('did-finish-load', () => selfTest(win).catch(e => { console.log('PRUEBA ERROR ' + e.message); app.quit(); }));
   return win;
 }
@@ -140,9 +146,12 @@ function createWindow() {
 if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
-  app.on('second-instance', () => {
+  if (app.isPackaged) app.setAsDefaultProtocolClient('programas');
+  app.on('second-instance', (e, argv) => {
     const [win] = BrowserWindow.getAllWindows();
     if (win) { if (win.isMinimized()) win.restore(); win.focus(); }
+    const link = argv.find(isLink);
+    if (win && link) sendLink(win, link);
   });
   app.whenReady().then(() => {
     Menu.setApplicationMenu(null);
