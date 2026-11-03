@@ -83,12 +83,12 @@ function describeChanges(col, before, after) {
   return out.length ? out.slice(0, 12) : [`Editó la semana ${after.title}`];
 }
 
-let histFilter = '';
+let histFilter = '', histCache = null; // lo último leído: se ve al instante mientras se actualiza
 function renderHistory() {
   const box = h('div', { class: 'card', style: { padding: '4px 14px' } }, h('div', { class: 'empty' }, 'Cargando…'));
   const search = h('input', { type: 'search', placeholder: 'Buscar: un nombre, una semana…', value: histFilter, style: { width: '100%', maxWidth: '380px' },
     oninput: () => { histFilter = search.value; fill(); } });
-  let items = [];
+  let items = histCache || [];
   function fill() {
     const f = norm(histFilter);
     const list = items.filter(x => !f || norm([x.porNombre, ...(x.cambios || [])].join(' ')).includes(f));
@@ -101,8 +101,9 @@ function renderHistory() {
         h('div', null, h('strong', null, x.porNombre || 'Alguien'), h('ul', null, (x.cambios || []).map(c => h('li', null, c)))))];
     }).filter(Boolean) : [h('div', { class: 'empty' }, items.length ? 'Nada coincide con la búsqueda.' : 'Todavía no hay cambios registrados.')]));
   }
+  if (histCache) fill();
   F.getDocs(F.query(F.collection(F.db, 'congregaciones', nube.cong, 'historial'), F.orderBy('fecha', 'desc'), F.limit(300)))
-    .then(s => { items = s.docs.map(d => d.data()); fill(); })
+    .then(s => { items = histCache = s.docs.map(d => d.data()); fill(); })
     .catch(e => box.replaceChildren(h('div', { class: 'empty' }, errMsg(e))));
   return h('div', null,
     h('h1', null, 'Historial de cambios'),

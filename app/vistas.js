@@ -143,6 +143,7 @@ function openMoreSheet(items) {
 
 function render() {
   if (FB_CONFIG && !(nube.acceso && nube.listo)) return; // las pantallas de acceso se dibujan aparte
+  stopViewSubs();
   const items = navItems();
   if (!navItems(true).some(([v]) => isActiveView(v))) view = { name: items[0][0] };
   buildNav(items);

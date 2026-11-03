@@ -540,7 +540,7 @@ async function publisherCardsPDF(year, people) {
       if (r) {
         if (r.participo) doc.text('Sí', xs[1] + 3, y + rowH - 4);
         if (r.cursos) doc.text(String(r.cursos), xs[2] + 3, y + rowH - 4);
-        if (r.grupo === 'aux') doc.text('Sí', xs[3] + 3, y + rowH - 4);
+        if (groupFor(pr, m) === 'aux' || r.grupo === 'aux') doc.text('Sí', xs[3] + 3, y + rowH - 4);
         if (r.horas != null) { doc.text(String(r.horas), xs[4] + 3, y + rowH - 4); horas += r.horas; }
         if (r.notas) doc.text(doc.splitTextToSize(r.notas, ws[5] - 6)[0], xs[5] + 3, y + rowH - 4);
       }

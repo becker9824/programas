@@ -22,6 +22,8 @@ const isPublisher = pr => pr.tipo !== 'no';
 // Precursor auxiliar: tipo 'aux' con auxMeses vacío = todos los meses (continuo); con meses = solo en esos (fuera de ellos, publicador).
 const auxIn = (pr, month) => !!pr && pr.tipo === 'aux' && (!(pr.auxMeses || []).length || pr.auxMeses.includes(month));
 const groupFor = (pr, month) => pr && pr.tipo === 'reg' ? 'reg' : auxIn(pr, month) ? 'aux' : 'pub';
+// Lo que fue en un mes: manda su ficha en Hermanos; sin ficha (perfil borrado), lo que dice su informe
+const monthKind = (pid, month, r) => profById(pid) ? groupFor(profById(pid), month) : (r && r.grupo) || 'pub';
 const shortMonth = m => new Date(m + '-15T12:00:00').toLocaleDateString('es', { month: 'short' }).replace('.', '');
 // Etiqueta para Hermanos y Grupos
 function pioneerTag(pr) {
@@ -51,10 +53,10 @@ function monthsBefore(m, n) {
 }
 
 // Formulario de un informe (el propio, o el de otro si lo captura el secretario).
-// grupoDefault: el que se propone si todavía no hay informe de ese mes.
-function reportForm(perfil, nombre, month, prev, onSaved, own, grupoDefault) {
+// grupoDefault: el que se propone si todavía no hay informe de ese mes. fixed: viene de la ficha y no se elige aquí.
+function reportForm(perfil, nombre, month, prev, onSaved, own, grupoDefault, fixed) {
   const id = `${perfil}_${month}`;
-  let part = prev ? prev.participo : null, grupo = (prev && prev.grupo) || grupoDefault || 'pub';
+  let part = prev ? prev.participo : null, grupo = fixed ? grupoDefault : (prev && prev.grupo) || grupoDefault || 'pub';
   const yes = h('input', { type: 'radio', name: 'participo-' + id, checked: part === true, onchange: () => { part = true; } });
   const no = h('input', { type: 'radio', name: 'participo-' + id, checked: part === false, onchange: () => { part = false; } });
   const hours = h('input', { type: 'number', min: 0, max: 744, step: 'any', style: { width: '140px' },
@@ -93,7 +95,9 @@ function reportForm(perfil, nombre, month, prev, onSaved, own, grupoDefault) {
   } }, '↺ Restablecer (borrar informe)') : null;
   return h('div', { class: 'settings' },
     h('div', { class: 'field' }, h('span', null, own ? 'Este mes fuiste' : 'Este mes fue'),
-      h('div', { class: 'radios', style: { flexWrap: 'wrap', gap: '6px 16px' } }, grupos)),
+      fixed ? [h('strong', { style: { color: 'var(--text)', fontSize: '15px' } }, grupoLabel(grupo)),
+        h('span', { class: 'small-text muted' }, own ? 'Según tu ficha de la congregación. Si no es así, avísale al secretario.' : 'Según su ficha en Hermanos. Para cambiarlo, edita su ficha.')]
+        : h('div', { class: 'radios', style: { flexWrap: 'wrap', gap: '6px 16px' } }, grupos)),
     h('div', { class: 'field' }, h('span', null, own ? '¿Participaste en alguna forma de la predicación este mes?' : '¿Participó en alguna forma de la predicación este mes?'),
       h('div', { class: 'radios' }, h('label', null, yes, 'Sí'), h('label', null, no, 'No'))),
     h('div', { class: 'row', style: { gap: '20px', alignItems: 'flex-end' } }, hoursField,
@@ -128,7 +132,7 @@ function renderReport() {
     box.replaceChildren(h('div', { class: 'card' },
       reportForm(perfil, name, month, prev, () => { load(); if (secre) secre.reload(); }, true,
         pio ? groupFor({ tipo: (pio.reg || []).includes(perfil) ? 'reg' : pio.aux && pio.aux[perfil] ? 'aux' : 'pub', auxMeses: pio.aux && pio.aux[perfil] }, month)
-          : last && last.grupo)));
+          : last && last.grupo, !!pio)));
   }
   load();
   return h('div', null,
@@ -143,22 +147,50 @@ function renderReport() {
 
 // Secretario (o coordinador): resumen del mes por grupo y los informes de cada publicador.
 // Tocar una fila abre el informe para capturarlo o corregirlo.
+// Lo que se escucha solo mientras se ve una pantalla (se corta al dibujar otra: render y stopListening)
+let viewSubs = [];
+const stopViewSubs = () => { viewSubs.splice(0).forEach(f => f()); };
+// Último resultado por meses: al volver a la pantalla se ve al instante, sin "Cargando…"
+let reportsCache = { key: '', docs: [] }, reportsSearch = '';
 function congregationReports() {
   let month = nube.mesInformes || defaultMonth();
-  const box = h('div');
-  async function reload() {
-    box.replaceChildren(h('div', { class: 'muted' }, 'Cargando…'));
-    // Este mes y los 5 anteriores: los "publicadores activos" informaron en los últimos 6 meses
+  const box = h('div'), tableBox = h('div');
+  let docs = [], people = [], lastGroup = new Map();
+  const search = h('input', { type: 'search', placeholder: '🔍 Buscar: nombre, anciano, auxiliar…', value: reportsSearch, style: { flex: '1', minWidth: '180px', maxWidth: '320px' },
+    oninput: () => { reportsSearch = search.value; drawTable(); } });
+  // Lo que es este mes: lo que dice su informe o, si no ha informado, su ficha
+  const kindOf = p => monthKind(p.id, month, p.r);
+  const open = p => {
+    const dlg = h('dialog', { class: 'dlg' },
+      h('div', { class: 'dlg-body' }, h('h3', null, `${p.nombre} · ${fmtMonth(month)}`),
+        reportForm(p.id, p.nombre, month, p.r || null, () => dlg.close(), false,
+          profById(p.id) ? groupFor(profById(p.id), month) : lastGroup.get(p.id), !!profById(p.id))),
+      h('div', { class: 'dlg-foot' }, h('button', { class: 'btn', onclick: () => dlg.close() }, 'Cerrar')));
+    dlg.addEventListener('close', () => dlg.remove());
+    document.body.append(dlg); dlg.showModal();
+  };
+  function drawTable() {
+    const f = norm(reportsSearch.trim());
+    // Busca por nombre, nombramiento (anciano, siervo ministerial) o lo que fue este mes (auxiliar, regular…)
+    const text = p => norm([p.nombre, nomLabel((profById(p.id) || {}).nombramiento), grupoLabel(kindOf(p))].join(' '));
+    const list = f ? people.filter(p => text(p).includes(f)) : people;
+    tableBox.replaceChildren(h('div', { class: 'tablewrap' }, h('table', { class: 'stats' },
+      h('thead', null, h('tr', null, ['Nombre', 'Nombramiento', 'Este mes fue', 'Estado del informe', '¿Participó?', 'Horas', 'Cursos', 'Notas'].map(t => h('th', null, t)))),
+      h('tbody', null, list.length ? list.map(p => h('tr', { onclick: () => open(p), title: 'Tocar para capturar o corregir' },
+        h('td', null, h('strong', null, p.nombre)),
+        h('td', { class: 'small-text' }, (profById(p.id) || {}).nombramiento ? nomLabel(profById(p.id).nombramiento) : h('span', { class: 'muted' }, '—')),
+        h('td', { class: 'small-text' }, grupoLabel(kindOf(p))),
+        h('td', null, p.r ? h('span', { class: 'badge s-never' }, '✓ Enviado') : h('span', { class: 'badge s-warn' }, 'Sin informe')),
+        p.r ? [h('td', null, p.r.participo ? 'Sí' : 'No'), h('td', null, p.r.horas ?? '—'), h('td', null, p.r.cursos || 0), h('td', { class: 'small-text' }, p.r.notas || '')]
+          : [h('td', { class: 'muted' }, '—'), h('td', { class: 'muted' }, '—'), h('td', { class: 'muted' }, '—'), h('td')]))
+        : h('tr', null, h('td', { colspan: 8, class: 'empty' }, people.length ? 'Nadie coincide con la búsqueda.' : 'Todavía no hay publicadores. Se agregan en Hermanos.'))))));
+  }
+  function draw() {
     const months = monthsBefore(month, 6);
-    let docs;
-    try {
-      const q = F.query(F.collection(F.db, 'congregaciones', nube.cong, 'informes'), F.where('mes', 'in', months));
-      docs = (await F.getDocs(q)).docs.map(d => d.data());
-    } catch (e) { return box.replaceChildren(h('div', { class: 'err' }, errMsg(e))); }
     const cur = docs.filter(d => d.mes === month);
     const byProfile = new Map(cur.map(d => [d.perfil, d]));
-    const lastGroup = new Map(docs.filter(d => d.mes === months[1]).map(d => [d.perfil, d.grupo]));
-    const people = state.profiles.filter(isPublisher).map(p => ({ id: p.id, nombre: p.name, tipo: p.tipo, r: byProfile.get(p.id) }));
+    lastGroup = new Map(docs.filter(d => d.mes === months[1]).map(d => [d.perfil, d.grupo]));
+    people = state.profiles.filter(isPublisher).map(p => ({ id: p.id, nombre: p.name, tipo: p.tipo, r: byProfile.get(p.id) }));
     for (const d of cur) if (!people.some(p => p.r === d)) {
       const pr = profById(d.perfil);
       people.push({ id: d.perfil, nombre: pr ? pr.name : d.nombre + ' (perfil eliminado)', tipo: pr && pr.tipo, r: d });
@@ -166,7 +198,7 @@ function congregationReports() {
     people.sort(byNombre);
     const active = new Set(docs.filter(d => d.participo).map(d => d.perfil)).size;
     const groups = GRUPOS.map(([k, , label]) => {
-      const rs = cur.filter(d => d.participo && (d.grupo || 'pub') === k);
+      const rs = cur.filter(d => d.participo && monthKind(d.perfil, month, d) === k);
       return { k, label, n: rs.length, hours: Math.round(rs.reduce((a, d) => a + (d.horas || 0), 0) * 100) / 100,
         studies: rs.reduce((a, d) => a + (d.cursos || 0), 0) };
     });
@@ -181,21 +213,12 @@ function congregationReports() {
     const xlsMonth = h('button', { class: 'btn small' }, '⬇ Excel del mes'), xlsYear = h('button', { class: 'btn small' }, '⬇ Excel del año de servicio');
     xlsMonth.onclick = busy(xlsMonth, () => reportsExcel([sheet()], `Informes ${fmtMonth(month)}`));
     xlsYear.onclick = busy(xlsYear, () => reportsYearExcel(month));
-    const open = p => {
-      const dlg = h('dialog', { class: 'dlg' },
-        h('div', { class: 'dlg-body' }, h('h3', null, `${p.nombre} · ${fmtMonth(month)}`),
-          reportForm(p.id, p.nombre, month, p.r || null, () => { dlg.close(); reload(); }, false,
-            profById(p.id) ? groupFor(profById(p.id), month) : lastGroup.get(p.id))),
-        h('div', { class: 'dlg-foot' }, h('button', { class: 'btn', onclick: () => dlg.close() }, 'Cerrar')));
-      dlg.addEventListener('close', () => dlg.remove());
-      document.body.append(dlg); dlg.showModal();
-    };
     box.replaceChildren(
       h('div', { class: 'totals' },
         h('span', null, h('strong', null, `${people.length - missing.length} de ${people.length}`), ' con informe'),
         h('span', null, h('strong', null, active), ' publicadores activos')),
       h('div', { class: 'tablewrap', style: { marginBottom: '12px' } }, h('table', { class: 'stats' },
-        h('thead', null, h('tr', null, ['Grupo', 'Informaron', 'Horas', 'Cursos bíblicos'].map(t => h('th', null, t)))),
+        h('thead', null, h('tr', null, ['Publicadores y precursores', 'Informaron', 'Horas', 'Cursos bíblicos'].map(t => h('th', null, t)))),
         h('tbody', null, groups.map(g => h('tr', { style: { cursor: 'default' } },
           h('td', null, h('strong', null, g.label)), h('td', null, g.n), h('td', null, g.k === 'pub' ? '—' : g.hours), h('td', null, g.studies)))))),
       h('div', { class: 'row', style: { marginBottom: '14px' } },
@@ -204,24 +227,35 @@ function congregationReports() {
       h('div', { class: 'row', style: { marginBottom: '14px', gap: '8px' } },
         h('span', { class: 'small-text muted' }, 'Hoja de informes del mes:'),
         designSel, h('button', { class: 'btn small primary', onclick: () => reportsPDF(sheet(), designSel.value) }, '⬇ PDF'), xlsMonth, xlsYear),
-      h('div', { class: 'tablewrap' }, h('table', { class: 'stats' },
-        h('thead', null, h('tr', null, ['Nombre', 'Grupo', '¿Participó?', 'Horas', 'Cursos', 'Notas'].map(t => h('th', null, t)))),
-        h('tbody', null, people.length ? people.map(p => h('tr', { onclick: () => open(p), title: 'Tocar para capturar o corregir' },
-          h('td', null, h('strong', null, p.nombre)),
-          p.r ? [h('td', { class: 'small-text' }, grupoLabel(p.r.grupo)), h('td', null, p.r.participo ? 'Sí' : 'No'),
-            h('td', null, p.r.horas ?? '—'), h('td', null, p.r.cursos || 0), h('td', { class: 'small-text' }, p.r.notas || '')]
-            : h('td', { colspan: 5 }, h('span', { class: 'badge s-warn' }, 'Sin informe'),
-              groupFor(profById(p.id), month) !== 'pub' ? h('span', { class: 'small-text muted' }, ' · ' + grupoLabel(groupFor(profById(p.id), month))) : null)))
-          : h('tr', null, h('td', { colspan: 6, class: 'empty' }, 'Todavía no hay publicadores. Se agregan en Hermanos.'))))));
+      h('div', { class: 'row', style: { marginBottom: '10px' } }, search),
+      tableBox);
+    drawTable();
+  }
+  // En vivo: un informe nuevo (de un publicador o de otro encargado) aparece solo, sin volver a cargar
+  let unsub = null;
+  function reload() {
+    if (unsub) { unsub(); viewSubs = viewSubs.filter(f => f !== unsub); }
+    const months = monthsBefore(month, 6), key = nube.cong + '|' + months.join();
+    if (reportsCache.key === key) { docs = reportsCache.docs; draw(); }
+    else box.replaceChildren(h('div', { class: 'muted' }, 'Cargando…'));
+    const q = F.query(F.collection(F.db, 'congregaciones', nube.cong, 'informes'), F.where('mes', 'in', months));
+    unsub = F.onSnapshot(q, snap => {
+      docs = snap.docs.map(d => d.data());
+      reportsCache = { key, docs };
+      // Si está escribiendo en el buscador o tiene un informe abierto, no se le mueve la pantalla
+      const typing = document.activeElement === search;
+      if (typing || document.querySelector('dialog[open]')) { if (typing) drawTable(); nube.redraw = true; return; }
+      draw();
+    }, e => box.replaceChildren(h('div', { class: 'err' }, errMsg(e))));
+    viewSubs.push(unsub);
   }
   reload();
   const el = h('div', { style: { marginTop: '28px' } },
     h('h2', { style: { fontSize: '18px', margin: '0 0 4px' } }, 'Informes de la congregación'),
-    h('p', { class: 'sub' }, 'Solo el secretario y el coordinador ven esta parte. Toca un nombre para capturar o corregir su informe.'),
+    h('p', { class: 'sub' }, 'Solo el secretario y el coordinador ven esta parte. Se actualiza sola cuando alguien envía su informe. Toca un nombre para capturar o corregir su informe.'),
     h('div', { class: 'card', style: { padding: '14px' } },
       h('div', { class: 'row', style: { marginBottom: '10px' } },
-        monthSelect(recentMonths(12), month, m => { month = nube.mesInformes = m; reload(); }),
-        h('button', { class: 'btn small', onclick: () => reload() }, '↻ Actualizar')),
+        monthSelect(recentMonths(12), month, m => { month = nube.mesInformes = m; reload(); })),
       box));
   return { el, reload };
 }
@@ -253,7 +287,7 @@ function reportSheet(month, cur) {
   const byProfile = new Map(cur.map(d => [d.perfil, d]));
   const people = state.profiles.filter(isPublisher).map(p => ({ id: p.id, nombre: p.name, tipo: p.tipo, r: byProfile.get(p.id) }));
   for (const d of cur) if (!people.some(p => p.r === d)) people.push({ id: d.perfil, nombre: d.nombre || '(sin nombre)', tipo: null, r: d });
-  const kindOf = p => p.r ? (p.r.grupo || 'pub') : groupFor(profById(p.id), month);
+  const kindOf = p => monthKind(p.id, month, p.r);
   let n = 0;
   const sections = REPORT_SECTIONS.map(s => {
     const rows = people.filter(p => kindOf(p) === s.k).map(p => ({ ...p, g: byPid.get(p.id) || null }))

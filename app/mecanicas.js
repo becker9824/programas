@@ -208,10 +208,15 @@ function renderHome() {
   // Informe del mes: se revisa si ya lo envió
   if (reportsByMembers() && nube.me.perfil) {
     const month = defaultMonth();
-    const t = tile('report', `Tu informe de ${fmtMonth(month).toLowerCase()}`, 'Revisando…', null, () => go({ name: 'report' }));
-    F.getDoc(congRef('informes', `${nube.me.perfil}_${month}`)).then(s => {
-      t.replaceWith(s.exists() ? tile('report', `Tu informe de ${fmtMonth(month).toLowerCase()}`, '✓ Enviado', 'Puedes corregirlo si hace falta', () => go({ name: 'report' }), 'ok')
-        : tile('report', `Tu informe de ${fmtMonth(month).toLowerCase()}`, 'Pendiente', 'Toca para enviarlo', () => go({ name: 'report' }), 'warn'));
+    // Se recuerda lo último que se supo (sin “Revisando…” cada vez que se dibuja Inicio)
+    const key = `${nube.me.perfil}_${month}`, known = nube.miInforme && nube.miInforme.key === key ? nube.miInforme.sent : null;
+    const paint = sent => sent ? tile('report', `Tu informe de ${fmtMonth(month).toLowerCase()}`, '✓ Enviado', 'Puedes corregirlo si hace falta', () => go({ name: 'report' }), 'ok')
+      : tile('report', `Tu informe de ${fmtMonth(month).toLowerCase()}`, 'Pendiente', 'Toca para enviarlo', () => go({ name: 'report' }), 'warn');
+    const t = known == null ? tile('report', `Tu informe de ${fmtMonth(month).toLowerCase()}`, 'Revisando…', null, () => go({ name: 'report' })) : paint(known);
+    F.getDoc(congRef('informes', key)).then(s => {
+      nube.miInforme = { key, sent: s.exists() };
+      if (s.exists() === known) return;
+      t.replaceWith(paint(s.exists()));
     }).catch(() => {});
     tiles.push(t);
   }

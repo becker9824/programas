@@ -159,6 +159,13 @@ App para organizar las asignaciones de la reunión semanal Vida y Ministerio Cri
 - Estudiante varón = también lectura de la Biblia: en la ficha (`syncReading`: al marcar "Seamos mejores maestros", el botón Estudiante o cambiar a varón; a una hermana se le quita) y una sola vez por congregación en `firstLoad` (`settings.lecturaAuto`).
 - Sin zoom (que se sienta app): viewport con `maximum-scale=1, user-scalable=no`, `html { touch-action: pan-x pan-y }` y `gesturestart` bloqueado en iPhone (fuera de `.leaflet-container`). El mapa hace su propio zoom.
 
+## Informes en vivo y buscador (1.30.0)
+- Informes de la congregación (`congregationReports`): escucha con `onSnapshot` los informes de los 6 meses (antes un `getDocs` por cada dibujo: un informe nuevo no aparecía hasta que algo más redibujaba, y salía "Cargando…" cada vez). `reportsCache` muestra lo último al instante. Si hay un diálogo abierto o se escribe en el buscador, no se redibuja todo (`nube.redraw`).
+- `viewSubs` / `stopViewSubs()`: lo que escucha solo una pantalla; se corta en `render()` y en `stopListening()`.
+- Buscador "Buscar publicador" (sin acentos, `norm`; `reportsSearch` se recuerda). Busca también por nombramiento y por lo que fue en el mes. Columnas: Nombre, Nombramiento (`nomLabel`), Este mes fue (informe o ficha), Estado del informe (✓ Enviado / Sin informe), ¿Participó?, Horas, Cursos, Notas.
+- La ficha manda (como el nombramiento): `monthKind(perfil, mes, informe)` = `groupFor` de la ficha; solo sin ficha (perfil borrado) se usa el `grupo` del informe. Lo usan la tabla, el resumen por tipo y la hoja del mes; el S-21 marca auxiliar si la ficha o el informe lo dicen. En `reportForm(…, grupoDefault, fixed)` con `fixed` no se elige: muestra "Según su ficha en Hermanos" (secretario) o "Según tu ficha…" (publicador, con `publico/precursores`).
+- Historial (`histCache`) y la tarjeta "Tu informe" de Inicio (`nube.miInforme`) también muestran lo último al instante. `histCache` y `reportsCache` se borran en `watchAuth`.
+
 ## Pendiente / ideas
 - Pulir detalles mínimos del diseño que el usuario vaya encontrando.
 - Ajustar Cuentas si el usuario manda sus hojas S-26/S-30.

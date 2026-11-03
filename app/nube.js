@@ -217,6 +217,7 @@ function watchAuth() {
   nube.watching = true;
   F.onAuthStateChanged(F.auth, async user => {
     stopListening(); if (nube.unsubMe) { nube.unsubMe(); nube.unsubMe = null; }
+    histCache = null; reportsCache = { key: '', docs: [] }; // lo leído con la cuenta anterior no se queda
     Object.assign(nube, { user, mesInforme: null, mesInformes: null, cong: null, congData: null, me: null, acceso: '', listo: false, miembros: [], anuncios: [],
       contactos: new Map(), cuentas: [], cuentasIni: null, territorios: [], grupos: [], capitanes: [], capitanesHermanos: [], trabajos: [], asistencia: new Map(), eventos: [], salidas: [], limpieza: null, ausencias: new Map(), confirmaciones: new Map(), vista: null, publico: null, sent: {}, ultimoPub: '' });
     if (!user) return renderAuth();
@@ -249,7 +250,7 @@ function watchAuth() {
   });
 }
 
-function stopListening() { nube.unsubDatos.forEach(f => f()); nube.unsubDatos = []; }
+function stopListening() { nube.unsubDatos.forEach(f => f()); nube.unsubDatos = []; stopViewSubs(); }
 
 // Escucha lo que esta cuenta puede ver según sus funciones. Los cambios de otros llegan solos.
 function enterCongregation() {
