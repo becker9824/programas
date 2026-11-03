@@ -5,7 +5,7 @@
 //   /jw/semana?y=2026&w=43        → HTML de la Guía de actividades de esa semana ISO
 //   /jw/titulo?path=/es/wol/d/…   → título de un documento (nombres de las canciones)
 // Solo responde a la app (ORIGENES) y guarda las respuestas unas horas para no cargar a jw.org.
-const ORIGENES = ['https://becker9824.github.io', 'app://programas', 'http://localhost:8765'];
+const ORIGENES = ['https://programas-congregacion.web.app', 'https://programas-congregacion.firebaseapp.com', 'https://becker9824.github.io', 'app://programas', 'http://localhost:8765'];
 const HORAS = 6;
 
 const decodeHtml = s => s

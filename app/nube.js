@@ -69,7 +69,7 @@ function setGroupMember(pid, from, to) {
   return Promise.all(w).catch(e => toast(errMsg(e)));
 }
 // Colecciones que se guardan por documento: [colección, parte de state, permisos para leer]
-const COLLS = [['perfiles', 'profiles', ['programa', 'secretario', 'ancianos']], ['familias', 'families', ['programa']], ['semanas', 'programs', ['programa']]];
+const COLLS = [['perfiles', 'profiles', ['programa', 'secretario', 'ancianos']], ['familias', 'families', ['programa']], ['semanas', 'programs', ['programa', 'secretario', 'ancianos']]];
 let F = null; // funciones de Firebase, cargadas al abrir
 
 async function loadFirebase() {
@@ -338,7 +338,9 @@ function enterCongregation() {
     listen('cuentasIni', congRef('cuentasConfig', 'inicial'), s => { nube.cuentasIni = s.exists() ? s.data() : null; return view.name === 'cuentas'; });
   }
   if (can('programa')) listen('config', congRef('config', 'ajustes'), receiveConfig);
-  else listen('publico', congRef('publico', 'programa'), s => { nube.publico = s.exists() ? s.data() : null; if (nube.listo) scheduleReminders(); return true; });
+  // Los demás ancianos leen los ajustes (día y hora del fin de semana, temas de bosquejos) para ver Fin de semana
+  if (!can('programa') && isElder()) listen('config', congRef('config', 'ajustes'), receiveConfig, true);
+  if (!can('programa')) listen('publico', congRef('publico', 'programa'), s => { nube.publico = s.exists() ? s.data() : null; if (nube.listo) scheduleReminders(); return true; });
 }
 
 // Cambios de otros en una colección (los propios ya están en state)

@@ -256,6 +256,7 @@ function talkInputs(obj) {
 }
 
 function renderWeekend() {
+  const ro = FB_CONFIG && !can('programa'); // los demás ancianos solo lo ven
   const thisMonday = mondayOf(todayISO());
   const weeks = [...state.programs].filter(p => p.date >= addDays(thisMonday, -7)).sort((a, b) => a.date.localeCompare(b.date));
   refreshDatalist();
@@ -267,14 +268,14 @@ function renderWeekend() {
       h('div', { class: 'row', style: { gap: '8px', alignItems: 'flex-end' } },
         field('Orador', speakerInput(s)), field('Va a la congregación', text(s, 'cong', 'Congregación')),
         field('Fecha', h('input', { type: 'date', value: s.fecha || mecDate(p, 'fin'), onchange: e => { s.fecha = e.target.value; save(); } })),
-        h('button', { class: 'btn small danger', onclick: () => { f.salen.splice(i, 1); save(); fillSalen(); } }, 'Quitar')),
+        ro ? null : h('button', { class: 'btn small danger', onclick: () => { f.salen.splice(i, 1); save(); fillSalen(); } }, 'Quitar')),
       field('Discurso', talkInputs(s)))));
     fillSalen();
-    return h('div', { class: 'card', style: { padding: '14px', marginBottom: '12px' } },
+    const el = h('div', { class: 'card', style: { padding: '14px', marginBottom: '12px' } },
       h('div', { class: 'row spread', style: { marginBottom: '8px' } },
         h('strong', { style: { fontSize: '16px' } }, fmtDate(mecDate(p, 'fin'), 'larga')),
         h('span', { class: 'row' }, h('span', { class: 'muted small-text' }, `${mecTime('fin')} · semana ${p.title}`),
-          h('button', { class: 'btn small', onclick: () => openWhatsAppDialog(p) }, '💬 WhatsApp'))),
+          ro ? null : h('button', { class: 'btn small', onclick: () => openWhatsAppDialog(p) }, '💬 WhatsApp'))),
       h('div', { class: 'fin-grid' },
         field('Presidente', mecField(p, 'fin', 'presidente', render)),
         field('Lector de La Atalaya', mecField(p, 'fin', 'lector', render))),
@@ -287,13 +288,16 @@ function renderWeekend() {
       h('details', { class: 'fin-out', open: (f.salen || []).length ? true : null },
         h('summary', null, `Oradores de aquí que salen esta semana (${(f.salen || []).length})`),
         salenBox,
-        h('button', { class: 'btn small', style: { marginTop: '8px' }, onclick: () => { (f.salen = f.salen || []).push({}); save(); fillSalen(); } }, '+ Agregar orador que sale')));
+        ro ? null : h('button', { class: 'btn small', style: { marginTop: '8px' }, onclick: () => { (f.salen = f.salen || []).push({}); save(); fillSalen(); } }, '+ Agregar orador que sale')));
+    if (ro) el.querySelectorAll('input, textarea, select').forEach(x => { x.disabled = true; if (x.placeholder) x.placeholder = '—'; });
+    return el;
   };
   return h('div', null,
     h('div', { class: 'row spread', style: { alignItems: 'flex-start' } },
       h('h1', null, 'Reunión del fin de semana'),
       h('div', { class: 'row' }, monthDownload(state.programs, weekendPDF), weeks.length ? h('button', { class: 'btn primary', onclick: () => weekendPDF(weeks.slice(0, 8)) }, '⬇ PDF de las próximas') : null)),
-    h('p', { class: 'sub' }, 'Discurso público, orador, presidente, lector de La Atalaya y hospitalidad. El presidente y el lector son los mismos de Mecánicas. Al escribir el número de un bosquejo que ya usaste, el tema sale solo.'),
+    h('p', { class: 'sub' }, ro ? 'Discurso público, orador, presidente, lector de La Atalaya y hospitalidad. Aquí solo se ve: lo cambia el encargado de Programa VyM.'
+      : 'Discurso público, orador, presidente, lector de La Atalaya y hospitalidad. El presidente y el lector son los mismos de Mecánicas. Al escribir el número de un bosquejo que ya usaste, el tema sale solo.'),
     weeks.length ? weeks.map(card) : h('div', { class: 'card empty' }, 'No hay semanas próximas. Agrégalas en Semanas.'));
 }
 

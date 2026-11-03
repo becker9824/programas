@@ -30,4 +30,8 @@ for ($i = 1; $i -le 3 -and -not $listo; $i++) {
   if (-not $listo -and $i -lt 3) { Write-Host "Falló la subida, reintentando ($i)..."; Start-Sleep 10 }
 }
 if (-not $listo) { throw 'No se pudo publicar en GitHub' }
+
+# Versión web: https://programas-congregacion.web.app (Firebase Hosting; copia solo lo de la app, ver copiar-web.js)
+npx.cmd firebase deploy --only hosting --project programas-congregacion
+if ($LASTEXITCODE) { throw 'No se pudo publicar la versión web' }
 Write-Host "Listo: version $version publicada."

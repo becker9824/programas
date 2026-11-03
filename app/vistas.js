@@ -65,7 +65,9 @@ function navItems(all = false) {
   if (!nube.acceso) return [];
   const items = [['inicio', 'Inicio'], ['list', 'Semanas']];
   // Hermanos: perfiles y, para el coordinador, cuentas por aprobar y funciones (antes "Usuarios")
-  if (can('programa')) items.push(['mecanicas', 'Mecánicas'], ['finsemana', 'Fin de semana']);
+  if (can('programa')) items.push(['mecanicas', 'Mecánicas']);
+  // Fin de semana: lo ven todos los ancianos; lo cambia Programa VyM
+  if (isElder()) items.push(['finsemana', 'Fin de semana']);
   // Hermanos incluye el directorio: lo ven todos los ancianos (cualquier función)
   if (isElder()) items.push(['people', 'Hermanos', isAdmin() ? nube.miembros.filter(m => m.estado !== 'activo').length : 0]);
   if (can('programa')) items.push(['families', 'Familias']);

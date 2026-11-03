@@ -275,11 +275,14 @@ service cloud.firestore {
       match /familias/{id} {
         allow read, write: if can(c, 'programa');
       }
+      // Todos los ancianos ven las semanas y los ajustes (reunión del fin de semana); solo Programa VyM los cambia
       match /semanas/{id} {
-        allow read, write: if can(c, 'programa');
+        allow read: if isElder(c);
+        allow write: if can(c, 'programa');
       }
       match /config/{doc} {
-        allow read, write: if can(c, 'programa');
+        allow read: if isElder(c);
+        allow write: if can(c, 'programa');
       }
 
       // Copia de los datos de la versión 1.2 (antes de separarlos). Solo el coordinador.

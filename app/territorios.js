@@ -12,7 +12,8 @@
 // Vueltas: un territorio está "completado" si lleva más veces que el que menos lleva; cuando todos
 // llevan las mismas, todos vuelven solos a disponible (empieza otra vuelta).
 // Cada salida registrada va en trabajos/{id} (territorio, fecha, completo, calles, avance, notas, por).
-const WEB_URL = 'https://becker9824.github.io/programas/';
+// Versión web (Firebase Hosting desde la 1.32.0; antes https://becker9824.github.io/programas/, que ahora redirige aquí)
+const WEB_URL = 'https://programas-congregacion.web.app/';
 const TERR = {
   disponible: { label: 'Disponible', color: '#1b9e4b' },
   asignado: { label: 'Asignado', color: '#e08a00' },

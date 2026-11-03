@@ -100,7 +100,11 @@ test('secretario: ve y captura los informes de todos, lee perfiles pero no los c
   await assertSucceeds(setDoc(cdoc(s, 'informes', 'p1_2026-10'), informe('p1', 'secre', { horas: 10 })));
   await assertSucceeds(getDocs(collection(s, 'congregaciones', C, 'perfiles')));
   await assertFails(setDoc(cdoc(s, 'perfiles', 'p1'), { name: 'Cambiado' }));
-  await assertFails(getDocs(collection(s, 'congregaciones', C, 'semanas')));
+  // Ve las semanas y los ajustes (reunión del fin de semana), pero no los cambia
+  await assertSucceeds(getDocs(collection(s, 'congregaciones', C, 'semanas')));
+  await assertSucceeds(getDoc(cdoc(s, 'config', 'ajustes')));
+  await assertFails(setDoc(cdoc(s, 'semanas', 's1'), { title: 'Cambiada' }));
+  await assertFails(setDoc(cdoc(s, 'config', 'ajustes'), { meetingDay: 3 }));
   await assertSucceeds(deleteDoc(cdoc(s, 'informes', 'p3_2026-10')));
 });
 

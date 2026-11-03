@@ -9,6 +9,10 @@
 <link rel="apple-touch-icon" href="icon.png">
 <meta name="theme-color" content="#1d5fd0">
 <meta name="apple-mobile-web-app-capable" content="yes">
+<script>
+// La web se mudó a programas-congregacion.web.app: la dirección vieja (y los QR y enlaces que la usan) llevan a la nueva
+if (location.hostname === 'becker9824.github.io') location.replace('https://programas-congregacion.web.app/' + location.search + location.hash);
+</script>
 <script src="vendor/jspdf.umd.min.js"></script>
 <script src="firebase-config.js"></script>
 <link rel="stylesheet" href="app/estilos.css">
@@ -27,7 +31,7 @@
 
 <script>
 const KEY = 'programas-app-v2';
-const APP_VERSION = '1.31.0'; // igual que "version" en package.json (publicar.ps1 lo revisa)
+const APP_VERSION = '1.32.0'; // igual que "version" en package.json (publicar.ps1 lo revisa)
 </script>
 <script src="app/base.js"></script>
 <script src="app/jw.js"></script>
