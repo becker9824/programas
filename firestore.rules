@@ -69,6 +69,10 @@ service cloud.firestore {
       match /perfiles/{id} {
         allow read: if isElder(c);
         allow write: if can(c, 'programa');
+        // El secretario marca a los precursores (regular o auxiliar y sus meses)
+        allow update: if can(c, 'secretario') && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['tipo', 'auxMeses'])
+          && request.resource.data.get('tipo', 'pub') in ['pub', 'aux', 'reg', 'no']
+          && request.resource.data.get('auxMeses', []) is list && request.resource.data.get('auxMeses', []).size() <= 24;
       }
       // Directorio: teléfono, dirección y contacto de emergencia de cada perfil. Solo ancianos (cualquier función).
       match /contactos/{id} {
@@ -286,7 +290,7 @@ service cloud.firestore {
       // Programa de las semanas, ya con nombres: lo ve cualquier miembro activo.
       match /publico/{doc} {
         allow read: if isActive(c);
-        allow write: if can(c, 'programa');
+        allow write: if can(c, 'programa') || (doc == 'precursores' && can(c, 'secretario'));
       }
 
       // Informe mensual: id = perfil_AAAA-MM. Cada quien el suyo (si la congregación
@@ -308,7 +312,7 @@ service cloud.firestore {
         allow list: if can(c, 'secretario') || (isActive(c) && resource.data.perfil == myProfile(c));
         allow create, update: if validReport()
           && (can(c, 'secretario') || (own() && cong(c).get('modo', 'todos') == 'todos'));
-        allow delete: if can(c, 'secretario');
+        allow delete: if can(c, 'secretario') || (own() && cong(c).get('modo', 'todos') == 'todos');
       }
     }
   }

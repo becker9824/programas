@@ -107,9 +107,13 @@ test('secretario: ve y captura los informes de todos, lee perfiles pero no los c
 test('si la congregación elige "solo encargados", el publicador ya no envía informes', async () => {
   await assertSucceeds(updateDoc(cdoc(db('admin')), { modo: 'encargados' }));
   await assertFails(setDoc(cdoc(db('pub'), 'informes', 'p1_2026-11'), informe('p1', 'pub', { mes: '2026-11' })));
+  await assertFails(deleteDoc(cdoc(db('pub'), 'informes', 'p1_2026-10')));          // tampoco lo borra
   await assertSucceeds(setDoc(cdoc(db('secre'), 'informes', 'p1_2026-11'), informe('p1', 'secre', { mes: '2026-11' })));
   await assertFails(updateDoc(cdoc(db('admin')), { modo: 'cualquiera' }));
   await assertSucceeds(updateDoc(cdoc(db('admin')), { modo: 'todos' }));
+  // Restablecer: cada quien borra el suyo, no el de otro
+  await assertFails(deleteDoc(cdoc(db('pub'), 'informes', 'p2_2026-10')));
+  await assertSucceeds(deleteDoc(cdoc(db('pub'), 'informes', 'p1_2026-10')));
 });
 
 test('anuncios: los publica cualquier anciano (cualquier función) y los leen todos', async () => {
@@ -275,6 +279,18 @@ test('ausencias: cada quien la suya; programa y secretario las de todos', async 
   await assertFails(getDoc(cdoc(db('otro'), 'ausencias', 'p1')));
   await assertSucceeds(deleteDoc(cdoc(db('pub'), 'ausencias', 'p1')));
   await assertSucceeds(deleteDoc(cdoc(db('secre'), 'ausencias', 'p3')));
+});
+
+test('precursores: el secretario marca regular o auxiliar y sus meses, nada más', async () => {
+  await assertSucceeds(updateDoc(cdoc(db('secre'), 'perfiles', 'p1'), { tipo: 'aux', auxMeses: ['2026-11', '2026-12'] }));
+  await assertSucceeds(updateDoc(cdoc(db('secre'), 'perfiles', 'p1'), { tipo: 'reg', auxMeses: [] }));
+  await assertFails(updateDoc(cdoc(db('secre'), 'perfiles', 'p1'), { name: 'Otro' }));
+  await assertFails(updateDoc(cdoc(db('secre'), 'perfiles', 'p1'), { tipo: 'inventado' }));
+  await assertFails(updateDoc(cdoc(db('pub'), 'perfiles', 'p1'), { tipo: 'aux' }));
+  await assertSucceeds(setDoc(cdoc(db('secre'), 'publico', 'precursores'), { reg: ['p1'], aux: {} }));
+  await assertFails(setDoc(cdoc(db('secre'), 'publico', 'programa'), { semanas: '[]' }));
+  await assertSucceeds(getDoc(cdoc(db('pub'), 'publico', 'precursores')));
+  await assertFails(setDoc(cdoc(db('pub'), 'publico', 'precursores'), { reg: [], aux: {} }));
 });
 
 test('confirmaciones: cada quien las suyas; Programa VyM las ve', async () => {

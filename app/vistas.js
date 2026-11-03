@@ -690,7 +690,7 @@ function renderPeople() {
           x.pr.nombramiento ? h('span', { class: 'tag-fam', style: { color: 'var(--accent)' } }, nomLabel(x.pr.nombramiento)) : null,
           x.pr.capitan ? h('span', { class: 'tag-fam' }, 'Capitán') : null,
           awayTag(x.pr),
-          x.pr.tipo === 'reg' || x.pr.tipo === 'no' ? h('span', { class: 'tag-fam' }, x.pr.tipo === 'reg' ? 'Precursor regular' : 'No publicador') : null,
+          pioneerTag(x.pr) ? h('span', { class: 'tag-fam' }, pioneerTag(x.pr)) : null,
           grp ? h('span', { class: 'tag-fam' }, grp.nombre) : null,
           acc ? h('div', { class: 'muted small-text', title: 'Tiene cuenta en la app' }, '🔑 ', acc.email,
             acc.admin ? ' · Coordinador' : (acc.permisos || []).length ? ' · ' + acc.permisos.map(k => (PERMS.find(p => p[0] === k) || [k, k])[1]).join(', ') : '') : null,
@@ -951,6 +951,8 @@ const offlineBar = h('div', { class: 'offline-bar', hidden: navigator.onLine ? t
 document.querySelector('header').after(offlineBar);
 addEventListener('online', () => { offlineBar.hidden = true; toast('Volvió la conexión'); });
 addEventListener('offline', () => { offlineBar.hidden = false; });
+// iPhone: Safari no respeta user-scalable=no; así se evita el zoom con dos dedos fuera del mapa
+document.addEventListener('gesturestart', e => { if (!e.target.closest || !e.target.closest('.leaflet-container')) e.preventDefault(); });
 if (NATIVE) {
   const AppP = capacitorExports.registerPlugin('App');
   AppP.addListener('appUrlOpen', e => receiveLink(e.url));

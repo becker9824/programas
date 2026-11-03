@@ -5,7 +5,7 @@
 // Los ven los ancianos; los arman el secretario y el coordinador. Cada hermano está en un solo grupo.
 function groupStats(people) {
   const n = f => people.filter(f).length;
-  return [['Hermanos', people.length], ['Publicadores', n(p => p.tipo !== 'no')], ['Precursores regulares', n(p => p.tipo === 'reg')],
+  return [['Hermanos', people.length], ['Publicadores', n(p => p.tipo !== 'no')], ['Precursores regulares', n(p => p.tipo === 'reg')], ['Precursores auxiliares este mes', n(p => auxIn(p, todayISO().slice(0, 7)))],
     ['Ancianos', n(p => p.nombramiento === 'anciano')], ['Siervos ministeriales', n(p => p.nombramiento === 'sm')], ['Bautizados', n(p => p.bautizado)]];
 }
 const statsRow = people => h('div', { class: 'totals' }, groupStats(people).map(([label, v]) => h('span', null, h('strong', null, v), ' ', label.toLowerCase())));
@@ -82,7 +82,7 @@ function renderGroups() {
   const name = id => { const p = id && profById(id); return p ? p.name : '—'; };
   const free = state.profiles.filter(p => !grupoOf(p.id)).sort((a, b) => a.name.localeCompare(b.name, 'es'));
   const tags = p => [p.nombramiento ? h('span', { class: 'tag-fam', style: { color: 'var(--accent)' } }, nomLabel(p.nombramiento)) : null,
-    p.tipo === 'reg' ? h('span', { class: 'tag-fam' }, 'Precursor regular') : p.tipo === 'no' ? h('span', { class: 'tag-fam' }, 'No publicador') : null];
+    pioneerTag(p) ? h('span', { class: 'tag-fam' }, pioneerTag(p)) : null];
   const card = g => {
     const people = (g.miembros || []).map(profById).filter(Boolean).sort((a, b) => a.name.localeCompare(b.name, 'es'));
     return h('div', { class: 'card', style: { padding: '14px', marginBottom: '12px' } },

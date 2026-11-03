@@ -14,11 +14,36 @@ const monthSelect = (months, value, onchange) => h('select', { onchange: e => on
   months.map(m => h('option', { value: m, selected: m === value ? true : null }, fmtMonth(m))));
 
 // Grupo del informe de cada mes (el precursor auxiliar puede cambiar de un mes a otro).
-// En el perfil, tipo: 'pub' (o sin poner) publicador, 'reg' precursor regular, 'no' no es publicador.
+// En el perfil, tipo: 'pub' (o sin poner) publicador, 'aux' precursor auxiliar, 'reg' precursor regular, 'no' no es publicador.
 const GRUPOS = [['pub', 'Publicador', 'Publicadores'], ['aux', 'Precursor auxiliar', 'Precursores auxiliares'],
   ['reg', 'Precursor regular', 'Precursores regulares']];
 const grupoLabel = g => (GRUPOS.find(([k]) => k === g) || GRUPOS[0])[1];
 const isPublisher = pr => pr.tipo !== 'no';
+// Precursor auxiliar: tipo 'aux' con auxMeses vacío = todos los meses (continuo); con meses = solo en esos (fuera de ellos, publicador).
+const auxIn = (pr, month) => !!pr && pr.tipo === 'aux' && (!(pr.auxMeses || []).length || pr.auxMeses.includes(month));
+const groupFor = (pr, month) => pr && pr.tipo === 'reg' ? 'reg' : auxIn(pr, month) ? 'aux' : 'pub';
+const shortMonth = m => new Date(m + '-15T12:00:00').toLocaleDateString('es', { month: 'short' }).replace('.', '');
+// Etiqueta para Hermanos y Grupos
+function pioneerTag(pr) {
+  if (pr.tipo === 'reg') return 'Precursor regular';
+  if (pr.tipo === 'no') return 'No publicador';
+  if (pr.tipo !== 'aux') return '';
+  const months = pr.auxMeses || [];
+  if (!months.length) return 'Precursor auxiliar';
+  const next = months.filter(m => m >= todayISO().slice(0, 7)).sort();
+  return next.length ? 'Prec. auxiliar: ' + next.slice(0, 3).map(shortMonth).join(', ') + (next.length > 3 ? '…' : '') : '';
+}
+// Los publicadores no leen los perfiles: para proponer su grupo en su informe se publica quién es precursor.
+// publico/precursores = { reg: [perfiles], aux: { perfil: [meses] } } (lista vacía = todos los meses).
+function publishPioneers() {
+  if (!FB_CONFIG || !nube.cong || !(can('programa') || can('secretario'))) return;
+  const data = { reg: state.profiles.filter(p => p.tipo === 'reg').map(p => p.id).sort(),
+    aux: Object.fromEntries(state.profiles.filter(p => p.tipo === 'aux').map(p => [p.id, [...(p.auxMeses || [])].sort()])) };
+  const json = stable(data);
+  if (json === publishPioneers.last) return;
+  publishPioneers.last = json;
+  F.setDoc(congRef('publico', 'precursores'), data).catch(() => { publishPioneers.last = ''; });
+}
 function monthsBefore(m, n) {
   const out = [], d = new Date(m + '-15T12:00:00');
   for (let i = 0; i < n; i++) { out.push(`${d.getFullYear()}-${pad(d.getMonth() + 1)}`); d.setMonth(d.getMonth() - 1); }
@@ -58,6 +83,14 @@ function reportForm(perfil, nombre, month, prev, onSaved, own, grupoDefault) {
       onSaved();
     } catch (e) { err.textContent = errMsg(e); btn.disabled = false; }
   } }, prev ? 'Actualizar informe' : own ? 'Enviar informe' : 'Guardar informe');
+  // Restablecer: si se envió por error, se borra y queda como si no se hubiera enviado
+  const reset = prev ? h('button', { class: 'btn danger', style: { marginLeft: 'auto' }, onclick: async () => {
+    if (!confirm(own ? `¿Borrar tu informe de ${fmtMonth(month).toLowerCase()}? Quedará como si no lo hubieras enviado y podrás enviarlo de nuevo.`
+      : `¿Borrar el informe de ${nombre} de ${fmtMonth(month).toLowerCase()}? Quedará como “Sin informe”.`)) return;
+    reset.disabled = true;
+    try { await F.deleteDoc(congRef('informes', id)); toast('Informe borrado'); logChange(`Borró el informe de ${nombre} de ${fmtMonth(month).toLowerCase()}`); onSaved(); }
+    catch (e) { err.textContent = errMsg(e); reset.disabled = false; }
+  } }, '↺ Restablecer (borrar informe)') : null;
   return h('div', { class: 'settings' },
     h('div', { class: 'field' }, h('span', null, own ? 'Este mes fuiste' : 'Este mes fue'),
       h('div', { class: 'radios', style: { flexWrap: 'wrap', gap: '6px 16px' } }, grupos)),
@@ -67,11 +100,12 @@ function reportForm(perfil, nombre, month, prev, onSaved, own, grupoDefault) {
       h('label', { class: 'field' }, 'Cursos bíblicos', studies)),
     h('label', { class: 'field' }, 'Notas', notes),
     prev ? h('div', { class: 'small-text muted' }, `Enviado ${prev.enviado ? 'el ' + fmtStamp(prev.enviado) : ''}. Se puede corregir y volver a guardar.`) : null,
-    err, h('div', { class: 'row' }, btn));
+    err, h('div', { class: 'row' }, btn, reset));
 }
 
 function renderReport() {
-  let month = defaultMonth();
+  // El mes elegido se queda mientras no se cierre sesión (al ir a otras secciones y volver)
+  let month = nube.mesInforme || defaultMonth();
   const box = h('div');
   const secre = can('secretario') ? congregationReports() : null;
   const perfil = nube.me.perfil, ownAllowed = reportsByMembers() && perfil;
@@ -85,12 +119,16 @@ function renderReport() {
     // Sin conexión (y sin copia en el equipo) se puede llenar igual: se sube al volver el internet
     const get = m => F.getDoc(congRef('informes', `${perfil}_${m}`)).then(s => s.exists() ? s.data() : null,
       e => { if (e.code === 'unavailable') return null; throw e; });
-    try { [prev, last] = await Promise.all([get(month), get(monthsBefore(month, 2)[1])]); }
+    let pio = null;
+    try { [prev, last, pio] = await Promise.all([get(month), get(monthsBefore(month, 2)[1]),
+      F.getDoc(congRef('publico', 'precursores')).then(s => s.exists() ? s.data() : null, () => null)]); }
     catch (e) { return box.replaceChildren(h('div', { class: 'card settings err' }, errMsg(e))); }
     const name = (profById(perfil) || {}).name || nube.me.nombre;
     // Si no hay informe de este mes, se propone el grupo del mes anterior
     box.replaceChildren(h('div', { class: 'card' },
-      reportForm(perfil, name, month, prev, () => { load(); if (secre) secre.reload(); }, true, last && last.grupo)));
+      reportForm(perfil, name, month, prev, () => { load(); if (secre) secre.reload(); }, true,
+        pio ? groupFor({ tipo: (pio.reg || []).includes(perfil) ? 'reg' : pio.aux && pio.aux[perfil] ? 'aux' : 'pub', auxMeses: pio.aux && pio.aux[perfil] }, month)
+          : last && last.grupo)));
   }
   load();
   return h('div', null,
@@ -98,7 +136,7 @@ function renderReport() {
     ownAllowed || !secre ? [
       h('p', { class: 'sub' }, 'Llena lo que te corresponda: los precursores también anotan sus horas.'),
       ownAllowed ? h('div', { class: 'row', style: { marginBottom: '12px' } },
-        h('label', { class: 'field' }, 'Mes de tu informe', monthSelect(recentMonths(6), month, m => { month = m; load(); }))) : null,
+        h('label', { class: 'field' }, 'Mes de tu informe', monthSelect(recentMonths(6), month, m => { month = nube.mesInforme = m; load(); }))) : null,
       box] : null,
     secre ? secre.el : null);
 }
@@ -106,7 +144,7 @@ function renderReport() {
 // Secretario (o coordinador): resumen del mes por grupo y los informes de cada publicador.
 // Tocar una fila abre el informe para capturarlo o corregirlo.
 function congregationReports() {
-  let month = defaultMonth();
+  let month = nube.mesInformes || defaultMonth();
   const box = h('div');
   async function reload() {
     box.replaceChildren(h('div', { class: 'muted' }, 'Cargando…'));
@@ -147,7 +185,7 @@ function congregationReports() {
       const dlg = h('dialog', { class: 'dlg' },
         h('div', { class: 'dlg-body' }, h('h3', null, `${p.nombre} · ${fmtMonth(month)}`),
           reportForm(p.id, p.nombre, month, p.r || null, () => { dlg.close(); reload(); }, false,
-            p.tipo === 'reg' ? 'reg' : lastGroup.get(p.id))),
+            profById(p.id) ? groupFor(profById(p.id), month) : lastGroup.get(p.id))),
         h('div', { class: 'dlg-foot' }, h('button', { class: 'btn', onclick: () => dlg.close() }, 'Cerrar')));
       dlg.addEventListener('close', () => dlg.remove());
       document.body.append(dlg); dlg.showModal();
@@ -172,7 +210,8 @@ function congregationReports() {
           h('td', null, h('strong', null, p.nombre)),
           p.r ? [h('td', { class: 'small-text' }, grupoLabel(p.r.grupo)), h('td', null, p.r.participo ? 'Sí' : 'No'),
             h('td', null, p.r.horas ?? '—'), h('td', null, p.r.cursos || 0), h('td', { class: 'small-text' }, p.r.notas || '')]
-            : h('td', { colspan: 5 }, h('span', { class: 'badge s-warn' }, 'Sin informe'))))
+            : h('td', { colspan: 5 }, h('span', { class: 'badge s-warn' }, 'Sin informe'),
+              groupFor(profById(p.id), month) !== 'pub' ? h('span', { class: 'small-text muted' }, ' · ' + grupoLabel(groupFor(profById(p.id), month))) : null)))
           : h('tr', null, h('td', { colspan: 6, class: 'empty' }, 'Todavía no hay publicadores. Se agregan en Hermanos.'))))));
   }
   reload();
@@ -181,7 +220,7 @@ function congregationReports() {
     h('p', { class: 'sub' }, 'Solo el secretario y el coordinador ven esta parte. Toca un nombre para capturar o corregir su informe.'),
     h('div', { class: 'card', style: { padding: '14px' } },
       h('div', { class: 'row', style: { marginBottom: '10px' } },
-        monthSelect(recentMonths(12), month, m => { month = m; reload(); }),
+        monthSelect(recentMonths(12), month, m => { month = nube.mesInformes = m; reload(); }),
         h('button', { class: 'btn small', onclick: () => reload() }, '↻ Actualizar')),
       box));
   return { el, reload };
@@ -214,7 +253,7 @@ function reportSheet(month, cur) {
   const byProfile = new Map(cur.map(d => [d.perfil, d]));
   const people = state.profiles.filter(isPublisher).map(p => ({ id: p.id, nombre: p.name, tipo: p.tipo, r: byProfile.get(p.id) }));
   for (const d of cur) if (!people.some(p => p.r === d)) people.push({ id: d.perfil, nombre: d.nombre || '(sin nombre)', tipo: null, r: d });
-  const kindOf = p => p.r ? (p.r.grupo || 'pub') : p.tipo === 'reg' ? 'reg' : 'pub';
+  const kindOf = p => p.r ? (p.r.grupo || 'pub') : groupFor(profById(p.id), month);
   let n = 0;
   const sections = REPORT_SECTIONS.map(s => {
     const rows = people.filter(p => kindOf(p) === s.k).map(p => ({ ...p, g: byPid.get(p.id) || null }))

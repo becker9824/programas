@@ -149,6 +149,16 @@ App para organizar las asignaciones de la reunión semanal Vida y Ministerio Cri
 - Respaldo automático (coordinador): `respaldos/{AAAA-MM-DD}` + `partes/{n}` (JSON comprimido gzip en base64, partes de 700 000). Al abrir, si el último tiene 7 días o más (`autoBackup`); quedan 8. Descarga compatible con "Cargar respaldo" (se ignora `congregacion`, que trae las demás colecciones).
 - Vista propia (solo coordinador): `usuarios/{uid}.vista` = { nav, navOcultas, inicio, inicioOcultas, sinAsignacion } (`openViewDialog`, `customNav`, `customTiles`; las tarjetas de Inicio llevan `data-k`). `navItems(true)` da todas sin ese orden (para saber si una vista está permitida). Ajustes no se puede ocultar.
 
+## Precursor auxiliar (1.29.0)
+- `perfil.tipo` ahora puede ser `aux`; `perfil.auxMeses` ([] = todos los meses / continuo; con meses = solo en esos, fuera de ellos es publicador). En la ficha: "¿En qué meses?" con botones de 2 meses atrás a 9 adelante. `auxIn(pr, mes)`, `groupFor(pr, mes)` (reg/aux/pub), `pioneerTag(pr)` (etiqueta en Hermanos y Grupos; en Grupos cuenta "Precursores auxiliares este mes").
+- Informes: el grupo propuesto sale de la ficha (secretario: `groupFor`; quien no ha informado sale "Sin informe · Precursor auxiliar"). La hoja del mes pone a quien no ha informado en la sección de su ficha. El S-21 sigue marcando "Precursor auxiliar" por el `grupo` de cada informe.
+- Los publicadores no leen perfiles: `publico/precursores` = { reg: [perfiles], aux: { perfil: [meses] } } (`publishPioneers`, al guardar una ficha y al abrir la app Programa VyM o el secretario) para proponer el grupo en su propio informe.
+- El secretario (sin Programa VyM) puede cambiar en la ficha solo "Informe mensual" y los meses (reglas: `tipo`, `auxMeses` en perfiles; `publico/precursores`).
+- El mes elegido en Informes se queda hasta cerrar sesión (`nube.mesInforme` el propio, `nube.mesInformes` el del secretario; se borran en `watchAuth`).
+- "↺ Restablecer (borrar informe)" en `reportForm` cuando ya hay informe: lo borra (cada quien el suyo si `modo` es `todos`; el secretario cualquiera).
+- Estudiante varón = también lectura de la Biblia: en la ficha (`syncReading`: al marcar "Seamos mejores maestros", el botón Estudiante o cambiar a varón; a una hermana se le quita) y una sola vez por congregación en `firstLoad` (`settings.lecturaAuto`).
+- Sin zoom (que se sienta app): viewport con `maximum-scale=1, user-scalable=no`, `html { touch-action: pan-x pan-y }` y `gesturestart` bloqueado en iPhone (fuera de `.leaflet-container`). El mapa hace su propio zoom.
+
 ## Pendiente / ideas
 - Pulir detalles mínimos del diseño que el usuario vaya encontrando.
 - Ajustar Cuentas si el usuario manda sus hojas S-26/S-30.

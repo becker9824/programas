@@ -217,7 +217,7 @@ function watchAuth() {
   nube.watching = true;
   F.onAuthStateChanged(F.auth, async user => {
     stopListening(); if (nube.unsubMe) { nube.unsubMe(); nube.unsubMe = null; }
-    Object.assign(nube, { user, cong: null, congData: null, me: null, acceso: '', listo: false, miembros: [], anuncios: [],
+    Object.assign(nube, { user, mesInforme: null, mesInformes: null, cong: null, congData: null, me: null, acceso: '', listo: false, miembros: [], anuncios: [],
       contactos: new Map(), cuentas: [], cuentasIni: null, territorios: [], grupos: [], capitanes: [], capitanesHermanos: [], trabajos: [], asistencia: new Map(), eventos: [], salidas: [], limpieza: null, ausencias: new Map(), confirmaciones: new Map(), vista: null, publico: null, sent: {}, ultimoPub: '' });
     if (!user) return renderAuth();
     screen(h('div', { class: 'card auth-card' }, h('p', { class: 'muted' }, 'Cargando tu cuenta…')));
@@ -394,9 +394,17 @@ async function firstLoad() {
     state.settings.congregation = nube.congData.nombre; save();
   }
   nube.listo = true;
+  // Una sola vez por congregación: los estudiantes varones también quedan para la lectura de la Biblia
+  if (can('programa') && !state.settings.lecturaAuto) {
+    const fix = state.profiles.filter(p => p.sex === 'M' && Array.isArray(p.puede) && p.puede.includes('estudiante') && !p.puede.includes('lectura'));
+    fix.forEach(p => p.puede.push('lectura'));
+    state.settings.lecturaAuto = true; save();
+    if (fix.length) setTimeout(() => toast(`Se activó la lectura de la Biblia a ${fix.length} estudiante${fix.length > 1 ? 's' : ''} ${fix.length > 1 ? 'varones' : 'varón'}`), 1500);
+  }
   render();
   if (can('programa')) startJw();
   setTimeout(maybeShowGuide, 700);
+  setTimeout(publishPioneers, 2000);
   setTimeout(scheduleReminders, 1500);
   if (isAdmin()) setTimeout(autoBackup, 6000);
 }

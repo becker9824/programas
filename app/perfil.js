@@ -11,8 +11,30 @@ function openProfileDialog(prof, opts = {}) {
   const sexF = h('input', { type: 'radio', name: 'sexo', value: 'F', checked: sex === 'F' });
   const notesI = h('input', { type: 'text', value: prof ? (prof.notes || '') : '', placeholder: 'Opcional' });
   const tipo = prof && prof.tipo || 'pub';
-  const tipoSel = h('select', null, [['pub', 'Publicador'], ['reg', 'Precursor regular'], ['no', 'No es publicador']].map(([v, t]) =>
+  const tipoSel = h('select', null, [['pub', 'Publicador'], ['aux', 'Precursor auxiliar'], ['reg', 'Precursor regular'], ['no', 'No es publicador']].map(([v, t]) =>
     h('option', { value: v, selected: tipo === v ? true : null }, t)));
+  // Precursor auxiliar: todos los meses (continuo) o solo en los meses marcados
+  const auxMonths = new Set(prof && prof.auxMeses || []);
+  let auxMode = auxMonths.size ? 'meses' : 'todos';
+  const thisMonth = todayISO().slice(0, 7), monthOpts = [...monthsBefore(thisMonth, 3).reverse(), ...Array.from({ length: 9 }, (_, i) => {
+    const d = new Date(thisMonth + '-15T12:00:00'); d.setMonth(d.getMonth() + i + 1); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}`; })];
+  const auxBox = h('div', { class: 'field' });
+  const paintAux = () => {
+    auxBox.style.display = tipoSel.value === 'aux' ? '' : 'none';
+    const off = tipoSel.disabled;
+    auxBox.replaceChildren(h('span', null, '¿En qué meses es precursor auxiliar?'),
+      h('div', { class: 'radios', style: { flexWrap: 'wrap', gap: '6px 16px' } },
+        [['todos', 'Todos los meses (continuo)'], ['meses', 'Solo en estos meses']].map(([k, t]) => h('label', null,
+          h('input', { type: 'radio', name: 'aux-modo', checked: auxMode === k, disabled: off || null, onchange: () => { auxMode = k; paintAux(); } }), t))),
+      auxMode === 'meses' ? h('div', { class: 'chips nom-chips', style: { marginTop: '6px' } }, monthOpts.map(m => h('button', { type: 'button',
+        class: auxMonths.has(m) ? 'on' : '', disabled: off || null, title: fmtMonth(m),
+        onclick: e => { auxMonths.has(m) ? auxMonths.delete(m) : auxMonths.add(m); e.target.classList.toggle('on', auxMonths.has(m)); } },
+        capFirst(shortMonth(m)) + (m.slice(0, 4) !== thisMonth.slice(0, 4) ? ' ' + m.slice(2, 4) : '')))) : null,
+      h('span', { class: 'small-text muted' }, 'Así sale como precursor auxiliar en su informe, en la hoja de informes del mes y en Hermanos.'));
+  };
+  tipoSel.addEventListener('change', paintAux);
+  // Meses que se guardan (los más recientes, hasta 24); vacío = todos los meses
+  const auxValue = () => tipoSel.value === 'aux' && auxMode === 'meses' ? [...auxMonths].sort().slice(-24) : [];
   const famSel = h('select', null, h('option', { value: '' }, '(Sin familia)'),
     [...state.families].sort((a, b) => a.name.localeCompare(b.name, 'es')).map(f =>
       h('option', { value: f.id, selected: prof && prof.familyId === f.id ? true : null }, f.name)));
@@ -72,6 +94,12 @@ function openProfileDialog(prof, opts = {}) {
       h('div', { class: 'priv-group' }, h('span', { class: 'priv-title' }, t),
         h('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '4px 12px' } }, list.map(p => p.el)))),
     prof && !Array.isArray(prof.puede) ? h('span', { class: 'small-text' }, 'Todavía no se marcan: mientras tanto sale en las sugerencias para todo.') : null);
+  // Varón con “Seamos mejores maestros” también hace la lectura de la Biblia (las hermanas no la tienen)
+  const boxOf = k => privBoxes.find(p => p.k === k).box;
+  const syncReading = () => { if (sexM.checked && boxOf('estudiante').checked) boxOf('lectura').checked = true; if (sexF.checked) boxOf('lectura').checked = false; };
+  boxOf('estudiante').addEventListener('change', syncReading);
+  sexM.addEventListener('change', syncReading); sexF.addEventListener('change', syncReading);
+  privField.querySelectorAll('button').forEach(b => b.addEventListener('click', syncReading));
   const err = h('div', { class: 'err' });
   // Directorio (solo los ancianos): contactos/{perfil}, aparte para que los demás no lo vean
   const showContact = FB_CONFIG && isElder(), ro = FB_CONFIG && !can('programa');
@@ -104,7 +132,7 @@ function openProfileDialog(prof, opts = {}) {
   }
   // Sin Programa VyM (secretario, función Anciano): solo ve los datos y cambia el directorio
   if (ro) {
-    [nameI, ageI, sexM, sexF, notesI, tipoSel, famSel, nomSel, sitSel, bautI, capI, birthI, baptI, hopeSel, ...privBoxes.map(p => p.box)].forEach(el => { el.disabled = true; });
+    [nameI, ageI, sexM, sexF, notesI, ...(can('secretario') ? [] : [tipoSel]), famSel, nomSel, sitSel, bautI, capI, birthI, baptI, hopeSel, ...privBoxes.map(p => p.box)].forEach(el => { el.disabled = true; });
     privField.querySelectorAll('button').forEach(b => b.remove());
   }
 
@@ -130,6 +158,7 @@ function openProfileDialog(prof, opts = {}) {
         h('label', { class: 'field' }, 'Informe mensual', tipoSel),
         h('label', { class: 'field' }, 'Situación', sitSel),
         h('label', { class: 'row', style: { gap: '6px', color: 'var(--text)', fontSize: '14px', paddingBottom: '8px' } }, bautI, 'Bautizado')),
+      auxBox,
       h('div', { class: 'row', style: { gap: '20px', alignItems: 'flex-end' } },
         h('label', { class: 'field' }, 'Fecha de nacimiento', birthI),
         h('label', { class: 'field' }, 'Fecha de bautismo', baptI),
@@ -170,6 +199,12 @@ function openProfileDialog(prof, opts = {}) {
 
   async function submit() {
     if (ro) {
+      if (can('secretario') && tipoSel.value === 'aux' && auxMode === 'meses' && !auxMonths.size) return err.textContent = 'Marca al menos un mes de precursor auxiliar.';
+      const tv = { tipo: tipoSel.value, auxMeses: auxValue() };
+      if (can('secretario') && stable(tv) !== stable({ tipo: prof.tipo || 'pub', auxMeses: prof.auxMeses || [] })) {
+        try { await F.updateDoc(congRef('perfiles', prof.id), tv); Object.assign(prof, tv); logChange(`${prof.name}: ${pioneerTag(prof) || 'Publicador'}`); publishPioneers(); }
+        catch (e) { return err.textContent = errMsg(e); }
+      }
       const ng = nube.grupos.find(g => g.id === groupSel.value) || null;
       if (!groupSel.disabled && ng !== oldGroup) setGroupMember(prof.id, oldGroup, ng);
       await saveContact(prof.id); saved = true; dlg.close(); toast('Datos guardados'); return render(); }
@@ -177,6 +212,7 @@ function openProfileDialog(prof, opts = {}) {
     const sexV = sexM.checked ? 'M' : sexF.checked ? 'F' : '';
     if (!name) return err.textContent = 'Escribe el nombre.';
     if (!sexV) return err.textContent = 'Elige el sexo.';
+    if (tipoSel.value === 'aux' && auxMode === 'meses' && !auxMonths.size) return err.textContent = 'Marca al menos un mes de precursor auxiliar.';
     const other = profByName(name);
     if (other && other !== prof) return err.textContent = 'Ya existe un hermano con ese nombre.';
     // Con fecha de nacimiento, la edad se calcula sola
@@ -184,7 +220,7 @@ function openProfileDialog(prof, opts = {}) {
     const age = born ? now.getFullYear() - born.getFullYear() - (now < new Date(now.getFullYear(), born.getMonth(), born.getDate()) ? 1 : 0)
       : ageI.value === '' ? null : Math.max(0, Math.round(+ageI.value));
     const p = prof || { id: uid() };
-    Object.assign(p, { name, sex: sexV, age, notes: squash(notesI.value), familyId: famSel.value || null, tipo: tipoSel.value,
+    Object.assign(p, { name, sex: sexV, age, notes: squash(notesI.value), familyId: famSel.value || null, tipo: tipoSel.value, auxMeses: auxValue(),
       nombramiento: sexV === 'M' ? nomSel.value : '', situacion: sitSel.value, bautizado: bautI.checked || !!baptI.value, capitan: capI.checked,
       nacimiento: birthI.value || null, bautismoFecha: baptI.value || null, esperanza: hopeSel.value });
     // Si tiene cuenta, también se le da (o quita) la función Capitán para que registre en la app
@@ -199,11 +235,12 @@ function openProfileDialog(prof, opts = {}) {
     const link = !account && nube.miembros.find(m => m.id === accountSel.value);
     if (link) memberUpdate(link, { perfil: p.id }, `${p.name} ya está unido a la cuenta ${link.email}`);
     await saveContact(p.id);
-    save(); refreshDatalist(); saved = true; dlg.close();
+    save(); publishPioneers(); refreshDatalist(); saved = true; dlg.close();
     if (opts.onSave) opts.onSave(p); else render();
   }
   dlg.addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.tagName === 'INPUT') { e.preventDefault(); submit(); } });
   dlg.addEventListener('close', () => { dlg.remove(); if (!saved && opts.onCancel) opts.onCancel(); });
+  paintAux();
   document.body.append(dlg);
   dlg.showModal();
   if (!ro) nameI.focus();
