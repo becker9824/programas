@@ -277,6 +277,45 @@ test('ausencias: cada quien la suya; programa y secretario las de todos', async 
   await assertSucceeds(deleteDoc(cdoc(db('secre'), 'ausencias', 'p3')));
 });
 
+test('confirmaciones: cada quien las suyas; Programa VyM las ve', async () => {
+  const lista = { 's1|r1|a': '2026-11-02' };
+  await assertSucceeds(setDoc(cdoc(db('pub'), 'confirmaciones', 'p1'), { lista }));
+  await assertFails(setDoc(cdoc(db('pub'), 'confirmaciones', 'p2'), { lista }));
+  await assertFails(setDoc(cdoc(db('pub'), 'confirmaciones', 'p1'), { lista, extra: 1 }));
+  await assertFails(getDocs(collection(db('pub'), 'congregaciones', C, 'confirmaciones')));
+  await assertSucceeds(getDocs(collection(db('prog'), 'congregaciones', C, 'confirmaciones')));
+  await assertFails(setDoc(cdoc(db('prog'), 'confirmaciones', 'p1'), { lista }));
+  await assertFails(getDoc(cdoc(db('secre'), 'confirmaciones', 'p1')));
+});
+
+test('sesiones: cada quien las suyas; el coordinador puede pedir cerrarlas', async () => {
+  const ses = (uid, extra = {}) => ({ uid, nombre: 'X', equipo: 'Chrome en Windows (web)', visto: 1, ...extra });
+  await assertSucceeds(setDoc(cdoc(db('pub'), 'sesiones', 'pub_abc1'), ses('pub')));
+  await assertSucceeds(setDoc(cdoc(db('pub'), 'sesiones', 'pub_xyz2'), ses('pub')));
+  await assertFails(setDoc(cdoc(db('pub'), 'sesiones', 'prog_abc1'), ses('pub')));          // id de otro
+  await assertFails(setDoc(cdoc(db('pub'), 'sesiones', 'pub_abc3'), ses('prog')));          // a nombre de otro
+  await assertFails(setDoc(cdoc(db('pub'), 'sesiones', 'pub_abc4'), ses('pub', { admin: true })));
+  await assertSucceeds(getDoc(cdoc(db('pub'), 'sesiones', 'pub_nueva')));                    // la suya aunque no exista
+  await assertSucceeds(getDocs(query(collection(db('pub'), 'congregaciones', C, 'sesiones'), where('uid', '==', 'pub'))));
+  await assertFails(getDocs(collection(db('pub'), 'congregaciones', C, 'sesiones')));
+  await assertSucceeds(updateDoc(cdoc(db('pub'), 'sesiones', 'pub_xyz2'), { cerrar: true }));  // desde otro equipo suyo
+  await assertFails(updateDoc(cdoc(db('prog'), 'sesiones', 'pub_abc1'), { cerrar: true }));
+  await assertFails(updateDoc(cdoc(db('admin'), 'sesiones', 'pub_abc1'), { nombre: 'Otro' }));
+  await assertSucceeds(updateDoc(cdoc(db('admin'), 'sesiones', 'pub_abc1'), { cerrar: true }));
+  await assertSucceeds(getDocs(collection(db('admin'), 'congregaciones', C, 'sesiones')));
+  await assertSucceeds(deleteDoc(cdoc(db('pub'), 'sesiones', 'pub_abc1')));
+});
+
+test('respaldos y vista propia: solo el coordinador y cada quien su vista', async () => {
+  await assertSucceeds(setDoc(cdoc(db('admin'), 'respaldos', '2026-11-02'), { fecha: '2026-11-02', partes: 1 }));
+  await assertSucceeds(setDoc(cdoc(db('admin'), 'respaldos', '2026-11-02', 'partes', '0'), { d: 'abc' }));
+  await assertFails(getDoc(cdoc(db('prog'), 'respaldos', '2026-11-02')));
+  await assertFails(getDoc(cdoc(db('secre'), 'respaldos', '2026-11-02', 'partes', '0')));
+  await assertSucceeds(setDoc(doc(db('admin'), 'usuarios', 'admin'), { vista: { nav: ['list', 'inicio'] } }, { merge: true }));
+  await assertFails(setDoc(doc(db('admin'), 'usuarios', 'admin'), { vista: 'mal' }, { merge: true }));
+  await assertFails(setDoc(doc(db('pub'), 'usuarios', 'admin'), { vista: {} }, { merge: true }));
+});
+
 test('el coordinador puede hacer coordinador a otro; alguien de fuera no ve nada', async () => {
   const a = db('admin'), o = db('otro');
   await assertSucceeds(updateDoc(cdoc(a, 'miembros', 'pub'), { admin: true }));

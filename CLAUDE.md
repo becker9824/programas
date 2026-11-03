@@ -15,7 +15,9 @@ App para organizar las asignaciones de la reunión semanal Vida y Ministerio Cri
 - Vista `inicio` (`renderHome`): saludo, próxima asignación y tarjetas según las funciones.
 
 ## Archivos
-- `index.html`: toda la app (HTML + CSS + JS en un solo archivo). Sin `firebase-config.js` guarda en `localStorage` (`programas-app-v2`); con él, en Firebase.
+- `index.html`: el esqueleto (HTML, `KEY` y `APP_VERSION`, que publicar.ps1 y movil/copiar.js buscan ahí) y carga, en orden, `app/estilos.css` y los scripts de `app/` (desde la 1.28.0; antes todo estaba en index.html). Son scripts normales, no módulos: comparten variables y funciones. Ojo: el código que corre al cargar un archivo no puede usar funciones de un archivo que va después (solo al llamarlas más tarde). Revisar sintaxis con `node --check app/<archivo>.js`.
+- `app/`: base (datos, utilidades, reglas de sugerencias), jw, pdf, perfil, nube (Firebase), acceso, publicadores, informes, anuncios-cuentas, territorios, congregacion (grupos, WhatsApp, fin de semana, asistencia, S-21, calendario, arreglos), extras (guía, historial, confirmar, recordatorios, sesiones, respaldos, vista propia, ausencias), mecanicas (y Inicio), vistas (menú, editor, hermanos, ajustes y arranque). Al agregar un archivo: `index.html`, `FILES` de sw.js (los demás lo toman de la carpeta).
+- Sin `firebase-config.js` guarda en `localStorage` (`programas-app-v2`); con él, en Firebase.
 - `main.js` + `package.json`: programa de escritorio con Electron. El protocolo `app://programas` sirve la carpeta y responde `/jw/ping`, `/jw/semana?y=&w=` (semana ISO) y `/jw/titulo?path=` consultando wol.jw.org con `net.fetch`.
 - `servidor.ps1` + `Programas.bat`: versión anterior para abrir en el navegador (http://localhost:8765). Hace lo mismo que `main.js` con PowerShell.
 - `vendor/jspdf.umd.min.js`: jsPDF 2.5.1 local (copiado de `node_modules/jspdf/dist`).
@@ -138,6 +140,14 @@ App para organizar las asignaciones de la reunión semanal Vida y Ministerio Cri
 - Web: `startCloud` atiende el enlace (`isSignInWithEmailLink`) antes de `watchAuth()` (antes el `onAuthStateChanged` estaba dentro de `startCloud`). Sin correo guardado (otro equipo) → `renderLinkEmail`.
 - App de PC y APK (`LINK_APP`): el enlace vuelve a `WEB_URL?para-app=1`; esa página (`renderLinkForApp`) ofrece "Abrir en Programas" (`programas://entrar?l=<enlace>`) o copiar. main.js registra el protocolo `programas` (solo instalado) y pasa el enlace con `receiveLink` (argv al abrir y `second-instance`); el APK tiene el intent-filter `programas://entrar` y usa el plugin App (`appUrlOpen`, `getLaunchUrl`). En `renderLinkSent` también se puede pegar el enlace.
 - Emulador: los enlaces se leen en `http://127.0.0.1:9099/emulator/v1/projects/demo-programas/oobCodes`.
+
+## Confirmar, recordatorios, sesiones, respaldos y vista propia (1.28.0)
+- Confirmar: `confirmaciones/{perfil}` = { lista: { clave: fecha } }; clave `semana|fila|espacio`, `semana|mec|reunión|clave` o `semana|fin|orador` (`myAssignments` da `key`; por eso `publicWeeks` lleva `id` de fila y `mtg`/`k` en mecánicas). "✔ Recibido" en "Tu próxima asignación" (`confirmButton`); el editor muestra "✔ confirmó" y cuántos confirmaron; Mecánicas, ✔ en la casilla (`confirmedOn`).
+- Recordatorios (`scheduleReminders`, localStorage `recordatorios`): APK con @capacitor/local-notifications (3 días antes 10:00 y un día antes 18:00, aunque esté cerrada); PC/web avisan al abrir (y cada hora) si hay asignación en 2 días, una vez al día (`recordatorio-{uid}`).
+- "🕓 Cambios" en el editor: lo del historial de esa semana (`openWeekHistory`).
+- Sesiones: `sesiones/{uid}_{equipo}` (equipo = localStorage `equipo-id`) = { uid, nombre, equipo, visto, cerrar }. Al entrar se anota (`trackSession`); si `cerrar` se pone en true (la persona desde otro equipo o el coordinador), ese equipo borra la suya y cierra sesión. "Cerrar sesión" borra la suya (`forgetSession`). No revoca la contraseña.
+- Respaldo automático (coordinador): `respaldos/{AAAA-MM-DD}` + `partes/{n}` (JSON comprimido gzip en base64, partes de 700 000). Al abrir, si el último tiene 7 días o más (`autoBackup`); quedan 8. Descarga compatible con "Cargar respaldo" (se ignora `congregacion`, que trae las demás colecciones).
+- Vista propia (solo coordinador): `usuarios/{uid}.vista` = { nav, navOcultas, inicio, inicioOcultas, sinAsignacion } (`openViewDialog`, `customNav`, `customTiles`; las tarjetas de Inicio llevan `data-k`). `navItems(true)` da todas sin ese orden (para saber si una vista está permitida). Ajustes no se puede ocultar.
 
 ## Pendiente / ideas
 - Pulir detalles mínimos del diseño que el usuario vaya encontrando.

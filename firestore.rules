@@ -23,7 +23,9 @@ service cloud.firestore {
     // Qué congregación usa cada cuenta (solo la propia persona)
     match /usuarios/{uid} {
       allow read, delete: if signedIn() && me() == uid;
-      allow create, update: if signedIn() && me() == uid && only(['cong']);
+      // vista: orden propio de pestañas y tarjetas de Inicio (lo usa el coordinador)
+      allow create, update: if signedIn() && me() == uid && only(['cong', 'vista'])
+        && (!('vista' in request.resource.data) || request.resource.data.vista is map);
     }
 
     // Código de la congregación -> id. Se puede consultar un código, no listarlos.
@@ -224,6 +226,40 @@ service cloud.firestore {
           && request.resource.data.hasta >= request.resource.data.desde
           && request.resource.data.nota is string && request.resource.data.nota.size() <= 200
           && request.resource.data.por == me();
+      }
+      // Confirmar asignaciones: confirmaciones/{perfil} = { lista: { clave: fecha } }. Cada quien las suyas;
+      // Programa VyM las ve todas.
+      match /confirmaciones/{perfil} {
+        function mine() { return isActive(c) && myProfile(c) == perfil; }
+        allow get: if can(c, 'programa') || mine();
+        allow list: if can(c, 'programa');
+        allow create, update: if mine() && only(['lista'])
+          && request.resource.data.lista is map && request.resource.data.lista.size() <= 80;
+        allow delete: if mine() || can(c, 'programa');
+      }
+      // Sesiones abiertas: sesiones/{uid}_{equipo}. Cada equipo anota la suya; la persona (desde otro equipo)
+      // y el coordinador pueden pedir que se cierre (cerrar = true).
+      match /sesiones/{id} {
+        function ownId() { return signedIn() && id.matches(me() + '_[A-Za-z0-9]+'); }
+        function validSession() {
+          let d = request.resource.data;
+          return only(['uid', 'nombre', 'equipo', 'visto', 'cerrar']) && d.uid == me()
+            && d.nombre is string && d.nombre.size() <= 100 && d.equipo is string && d.equipo.size() <= 80
+            && (!('cerrar' in d) || d.cerrar is bool);
+        }
+        allow get: if isAdmin(c) || ownId();
+        allow list: if isAdmin(c) || (isActive(c) && resource.data.uid == me());
+        allow create: if isActive(c) && ownId() && validSession();
+        allow update: if (isActive(c) && ownId() && validSession())
+          || (isAdmin(c) && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['cerrar']) && request.resource.data.cerrar == true);
+        allow delete: if isAdmin(c) || ownId();
+      }
+      // Respaldo automático: solo el coordinador.
+      match /respaldos/{id} {
+        allow read, write: if isAdmin(c);
+        match /partes/{n} {
+          allow read, write: if isAdmin(c);
+        }
       }
       // Historial de cambios: cada quien agrega lo suyo; lo leen los ancianos; nadie lo cambia.
       match /historial/{id} {

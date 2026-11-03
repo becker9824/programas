@@ -3,7 +3,7 @@
 const fs = require('fs'), path = require('path');
 const raiz = path.join(__dirname, '..'), www = path.join(__dirname, 'www');
 fs.rmSync(www, { recursive: true, force: true });
-for (const f of ['index.html', 'firebase-config.js', 'icon.png', 'icon.svg', 'manifest.webmanifest', 'vendor'])
+for (const f of ['index.html', 'firebase-config.js', 'icon.png', 'icon.svg', 'manifest.webmanifest', 'vendor', 'app'])
   fs.cpSync(path.join(raiz, f), path.join(www, f), { recursive: true });
 fs.copyFileSync(require.resolve('@capacitor/core/dist/capacitor.js'), path.join(www, 'capacitor.js'));
 const html = path.join(www, 'index.html'), marca = "<script>\nconst KEY = ";

@@ -1,9 +1,24 @@
 // Guarda la app en el celular para que abra rápido y funcione sin internet.
-// Sube el número de versión cada vez que cambies index.html.
-const CACHE = 'programas-v37';
+// Sube el número de versión cada vez que cambies index.html o app/.
+const CACHE = 'programas-v38';
 const FILES = [
   './',
   './index.html',
+  './app/acceso.js',
+  './app/anuncios-cuentas.js',
+  './app/base.js',
+  './app/congregacion.js',
+  './app/estilos.css',
+  './app/extras.js',
+  './app/informes.js',
+  './app/jw.js',
+  './app/mecanicas.js',
+  './app/nube.js',
+  './app/pdf.js',
+  './app/perfil.js',
+  './app/publicadores.js',
+  './app/territorios.js',
+  './app/vistas.js',
   './firebase-config.js',
   './manifest.webmanifest',
   './icon.svg',
