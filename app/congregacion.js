@@ -712,11 +712,29 @@ function adjustForVisit(p) {
 // salidas/{id} = { dia (0 lunes … 6 domingo), hora 'HH:MM', lugar, dirige, grupo, notas }: cada semana igual.
 // arreglos/limpieza = { semanas: { lunes 'AAAA-MM-DD': 'Grupo 2' } }. Los ven todos; los cambian los ancianos.
 const fmtHora = hhmm => hhmm ? fmtClock(hhmm) : '';
+const PREACH_TYPES = ['Casa en casa', 'Revisitas y cursos', 'Predicación pública', 'Negocios', 'Zona rural', 'Cartas', 'Teléfono', 'Otro'];
+// Elegir capitán: la lista de capitanes y, por si hace falta, escribir otro nombre
+function captainPicker(current) {
+  const caps = captainOptions().map(c => c.nombre), known = caps.includes(current);
+  const other = h('input', { type: 'text', maxlength: 100, list: 'profiles-list', value: known ? '' : current || '', placeholder: 'Nombre del hermano o grupo' });
+  const sel = h('select', { onchange: () => { other.hidden = !!sel.value; } }, caps.map(n => h('option', { value: n, selected: n === current ? true : null }, n)),
+    h('option', { value: '', selected: !known && (current || !caps.length) ? true : null }, 'Otro (escribir el nombre)'));
+  other.hidden = !!sel.value;
+  refreshDatalist();
+  return { el: h('div', { class: 'row', style: { gap: '8px' } }, sel, other,
+    caps.length ? null : h('span', { class: 'small-text muted' }, 'Todavía no hay capitanes. Se marcan en la ficha del hermano.')), get: () => sel.value || squash(other.value) };
+}
 function openOutingDialog(o) {
   const dia = h('select', null, WEEKDAYS.map((d, i) => h('option', { value: i, selected: (o ? o.dia : 5) === i ? true : null }, d)));
   const hora = h('input', { type: 'time', value: o ? o.hora : '09:30' });
   const lugar = h('input', { type: 'text', maxlength: 120, value: o ? o.lugar : '', placeholder: 'Ej.: Salón del Reino, casa de la familia Pérez' });
-  const dirige = h('input', { type: 'text', maxlength: 100, list: 'profiles-list', value: o ? o.dirige : '', placeholder: 'Quién la dirige' });
+  const capi = captainPicker(o ? o.dirige : '');
+  const tipo = h('select', null, PREACH_TYPES.map(t => h('option', { value: t, selected: (o && o.tipo || PREACH_TYPES[0]) === t ? true : null }, t)),
+    o && o.tipo && !PREACH_TYPES.includes(o.tipo) ? h('option', { value: o.tipo, selected: true }, o.tipo) : null);
+  const fecha = h('input', { type: 'date', value: o ? o.fecha || '' : '', onchange: () => { dia.disabled = !!fecha.value; } });
+  dia.disabled = !!fecha.value;
+  const cards = [...nube.territorios].sort(byNumero).map(terrTitle);
+  const terrI = h('input', { type: 'text', maxlength: 120, list: 'terr-list', value: o ? o.territorio || '' : '', placeholder: 'Opcional: elige o escribe' });
   const grupo = h('input', { type: 'text', maxlength: 60, value: o ? o.grupo || '' : '', placeholder: 'Opcional: Grupo 1, todos…', list: 'grupos-list' });
   const notas = h('input', { type: 'text', maxlength: 300, value: o ? o.notas || '' : '', placeholder: 'Opcional: territorio, tipo de predicación…' });
   const err = h('div', { class: 'err' });
@@ -724,8 +742,12 @@ function openOutingDialog(o) {
   const dlg = h('dialog', { class: 'dlg' },
     h('div', { class: 'dlg-body' }, h('h3', null, o ? 'Editar salida' : 'Nueva salida de predicación'),
       h('datalist', { id: 'grupos-list' }, nube.grupos.map(g => h('option', { value: g.nombre }))),
-      h('div', { class: 'row', style: { gap: '16px' } }, h('label', { class: 'field' }, 'Día', dia), h('label', { class: 'field' }, 'Hora', hora)),
-      h('label', { class: 'field' }, 'Lugar', lugar), h('label', { class: 'field' }, 'Dirige', dirige),
+      h('datalist', { id: 'terr-list' }, cards.map(t => h('option', { value: t }))),
+      h('div', { class: 'row', style: { gap: '16px' } }, h('label', { class: 'field' }, 'Día (cada semana)', dia),
+        h('label', { class: 'field' }, 'Solo esta fecha (opcional)', fecha), h('label', { class: 'field' }, 'Hora', hora)),
+      h('div', { class: 'field' }, 'Capitán', capi.el),
+      h('label', { class: 'field' }, 'Tipo de predicación', tipo),
+      h('label', { class: 'field' }, 'Lugar de la salida', lugar), h('label', { class: 'field' }, 'Territorio', terrI),
       h('label', { class: 'field' }, 'Grupo', grupo), h('label', { class: 'field' }, 'Notas', notas), err),
     h('div', { class: 'dlg-foot' },
       o ? h('button', { class: 'btn danger', style: { marginRight: 'auto' }, onclick: async () => {
@@ -734,7 +756,9 @@ function openOutingDialog(o) {
       } }, 'Borrar') : null,
       h('button', { class: 'btn', onclick: close }, 'Cancelar'),
       h('button', { class: 'btn primary', onclick: async e => {
-        const data = { dia: +dia.value, hora: hora.value || '', lugar: squash(lugar.value), dirige: squash(dirige.value), grupo: squash(grupo.value), notas: squash(notas.value) };
+        const when = fecha.value || '';
+        const data = { dia: when ? (toDate(when).getDay() + 6) % 7 : +dia.value, fecha: when, hora: hora.value || '', lugar: squash(lugar.value), dirige: capi.get(), tipo: tipo.value,
+          territorio: squash(terrI.value), grupo: squash(grupo.value), notas: squash(notas.value) };
         if (!data.lugar) return err.textContent = 'Escribe el lugar.';
         e.target.disabled = true;
         try {
@@ -756,7 +780,8 @@ async function setCleaning(changes, msg) {
 
 function renderArrangements() {
   const editor = isElder(), thisMonday = mondayOf(todayISO());
-  const outings = [...nube.salidas].sort((a, b) => a.dia - b.dia || (a.hora || '').localeCompare(b.hora || ''));
+  // Las de una sola fecha se dejan de ver cuando ya pasaron
+  const outings = nube.salidas.filter(o => !o.fecha || o.fecha >= todayISO()).sort((a, b) => a.dia - b.dia || (a.hora || '').localeCompare(b.hora || ''));
   const weeks = Array.from({ length: 12 }, (_, i) => addDays(thisMonday, i * 7));
   const groups = [...nube.grupos].sort(byGrupo).map(g => g.nombre);
   const weekLabelOf = m => `${fmtShort(m)} – ${fmtShort(addDays(m, 6))}`;
@@ -773,23 +798,25 @@ function renderArrangements() {
   return h('div', null,
     h('div', { class: 'row spread', style: { alignItems: 'flex-start' } },
       h('div', null, h('h1', null, 'Arreglos'),
-        h('p', { class: 'sub', style: { margin: 0 } }, 'Las salidas de predicación de cada semana y el grupo que limpia el Salón del Reino.')),
-      h('button', { class: 'btn', onclick: () => arrangementsPDF(outings, weeks) }, '⬇ PDF')),
+        h('p', { class: 'sub', style: { margin: 0 } }, 'El programa de predicación y el programa de aseo del Salón del Reino.'))),
     h('div', { class: 'row spread', style: { margin: '18px 0 8px' } },
-      h('h2', { class: 'group', style: { margin: 0 } }, 'Salidas de predicación'),
-      editor ? h('button', { class: 'btn small primary', onclick: () => openOutingDialog(null) }, '+ Nueva salida') : null),
+      h('h2', { class: 'group', style: { margin: 0 } }, 'Programa de predicación'),
+      h('span', { class: 'row' }, h('button', { class: 'btn small', onclick: () => preachingPDF(outings) }, '⬇ PDF o imagen'),
+        editor ? h('button', { class: 'btn small primary', onclick: () => openOutingDialog(null) }, '+ Nueva salida') : null)),
     h('div', { class: 'card', style: { padding: '4px 14px' } },
       byDay.length ? byDay.map(([d, list]) => h('div', { class: 'out-day' },
         h('div', { class: 'out-dayname' }, d),
         list.map(o => h('div', { class: 'urow', style: { cursor: editor ? 'pointer' : null }, onclick: editor ? () => openOutingDialog(o) : null },
           h('strong', { class: 'out-time' }, fmtHora(o.hora)),
-          h('div', { class: 'info' }, h('strong', null, o.lugar), h('div', { class: 'small-text muted' },
-            [o.dirige ? 'Dirige: ' + o.dirige : '', o.grupo, o.notas].filter(Boolean).join(' · ')))))))
+          h('div', { class: 'info' }, h('strong', null, o.lugar), o.tipo ? h('span', { class: 'tag-fam' }, o.tipo) : null,
+            o.fecha ? h('span', { class: 'tag-fam' }, 'Solo el ' + fmtShort(o.fecha)) : null,
+            h('div', { class: 'small-text muted' }, [o.dirige ? 'Capitán: ' + o.dirige : '', o.territorio ? 'Territorio: ' + o.territorio : '', o.grupo, o.notas].filter(Boolean).join(' · ')))))))
         : h('div', { class: 'empty' }, editor ? 'Todavía no hay salidas. Toca “+ Nueva salida”.' : 'Todavía no hay salidas.')),
     ...publicTurnsSection(),
     h('div', { class: 'row spread', style: { margin: '18px 0 8px' } },
-      h('h2', { class: 'group', style: { margin: 0 } }, 'Limpieza del Salón del Reino'),
-      editor ? h('button', { class: 'btn small', onclick: rotate }, 'Repartir entre los grupos') : null),
+      h('h2', { class: 'group', style: { margin: 0 } }, 'Programa de aseo del Salón del Reino'),
+      h('span', { class: 'row' }, h('button', { class: 'btn small', onclick: () => openCleaningPDF(weeks) }, '⬇ PDF o imagen'),
+        editor ? h('button', { class: 'btn small', onclick: rotate }, 'Repartir entre los grupos') : null)),
     h('div', { class: 'card', style: { padding: '4px 14px' } },
       weeks.map(m => h('div', { class: 'urow' },
         h('div', { class: 'info' }, h('strong', null, weekLabelOf(m)), m === thisMonday ? h('span', { class: 'progress', style: { marginLeft: '8px' } }, 'Esta semana') : null),
@@ -799,36 +826,68 @@ function renderArrangements() {
       h('datalist', { id: 'grupos-list2' }, groups.map(g => h('option', { value: g })))));
 }
 
-function arrangementsPDF(outings, weeks) {
+// PDF (o imagen) en tabla: hoja horizontal con encabezado de la app y renglones que crecen según el texto
+function tablePDF(title, cols, rows, fname) {
   const J = window.jspdf && window.jspdf.jsPDF;
   if (!J) return toast('Se necesita internet para crear el PDF.');
-  const s = state.settings, doc = new J({ unit: 'pt', format: s.paper === 'a4' ? 'a4' : 'letter' });
-  const W = doc.internal.pageSize.getWidth(), M = 40;
-  let y = 46;
-  doc.setFont('helvetica', 'bold'); doc.setFontSize(16); doc.setTextColor(0); doc.text('Arreglos para la predicación y la limpieza', M, y);
-  doc.setFontSize(10); doc.setTextColor(90); doc.text((congName() || s.congregation || '').toUpperCase(), W - M, y, { align: 'right' });
-  doc.setDrawColor(110); doc.setLineWidth(2); doc.line(M, y + 8, W - M, y + 8);
-  y += 34;
-  const head = (t, cols) => {
-    doc.setFont('helvetica', 'bold'); doc.setFontSize(12); doc.setTextColor(0); doc.text(t, M, y); y += 10;
-    doc.setFillColor(238); doc.rect(M, y, W - 2 * M, 18, 'F'); doc.setFontSize(9); doc.setTextColor(40);
-    cols.forEach(([c, x]) => doc.text(c, M + x, y + 12)); y += 30;
+  const s = state.settings, doc = new J({ orientation: 'landscape', unit: 'pt', format: s.paper === 'a4' ? 'a4' : 'letter' });
+  const W = doc.internal.pageSize.getWidth(), H = doc.internal.pageSize.getHeight(), M = 36, total = W - 2 * M;
+  const sum = cols.reduce((a, c) => a + c[1], 0), widths = cols.map(c => c[1] / sum * total);
+  const head = () => {
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(17); doc.setTextColor(0); doc.text(title, M, 44);
+    doc.setFontSize(10); doc.setTextColor(90); doc.text((congName() || s.congregation || '').toUpperCase(), W - M, 44, { align: 'right' });
+    doc.setDrawColor(110); doc.setLineWidth(2); doc.line(M, 52, W - M, 52);
+    doc.setFillColor(238); doc.rect(M, 62, total, 20, 'F'); doc.setFontSize(9); doc.setTextColor(40);
+    let x = M; cols.forEach((c, i) => { doc.text(c[0], x + 5, 76); x += widths[i]; });
+    return 96;
   };
-  head('Salidas de predicación', [['Día', 4], ['Hora', 90], ['Lugar', 150], ['Dirige', 330], ['Grupo / notas', 440]]);
-  doc.setFont('helvetica', 'normal'); doc.setFontSize(10); doc.setTextColor(20);
-  for (const o of outings) {
-    const lugar = doc.splitTextToSize(o.lugar, 170), extra = doc.splitTextToSize([o.grupo, o.notas].filter(Boolean).join(' · '), W - 2 * M - 444);
-    doc.text(WEEKDAYS[o.dia], M + 4, y); doc.text(fmtHora(o.hora), M + 90, y); doc.text(lugar, M + 150, y); doc.text(o.dirige || '', M + 330, y); doc.text(extra, M + 440, y);
-    y += Math.max(lugar.length, extra.length, 1) * 13 + 6;
-    doc.setDrawColor(220); doc.setLineWidth(0.5); doc.line(M, y - 12, W - M, y - 12);
+  let y = head();
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(10);
+  for (const row of rows) {
+    const cells = row.map((t, i) => doc.splitTextToSize(String(t || '—'), widths[i] - 10));
+    const tall = Math.max(...cells.map(c => c.length)) * 13 + 6;
+    if (y + tall > H - 30) { doc.addPage(); y = head(); doc.setFont('helvetica', 'normal'); doc.setFontSize(10); }
+    doc.setTextColor(20);
+    let x = M; cells.forEach((c, i) => { doc.text(c, x + 5, y); x += widths[i]; });
+    y += tall; doc.setDrawColor(220); doc.setLineWidth(0.5); doc.line(M, y - 11, W - M, y - 11);
   }
-  if (!outings.length) { doc.setTextColor(120); doc.text('Sin salidas registradas.', M + 4, y); y += 18; }
-  y += 18;
-  head('Limpieza del Salón del Reino', [['Semana', 4], ['Grupo', 220]]);
-  doc.setFont('helvetica', 'normal'); doc.setFontSize(10); doc.setTextColor(20);
-  for (const m of weeks) {
-    doc.text(`${fmtShort(m)} – ${fmtShort(addDays(m, 6))}`, M + 4, y); doc.text(cleaningOf(m) || '—', M + 220, y);
-    y += 19; doc.setDrawColor(220); doc.line(M, y - 13, W - M, y - 13);
+  if (!rows.length) { doc.setTextColor(120); doc.text('Sin datos por ahora.', M + 5, y); }
+  savePDF(doc, fname);
+}
+function preachingPDF(outings) {
+  const when = o => o.fecha ? capFirst(toDate(o.fecha).toLocaleDateString('es', { weekday: 'long', day: 'numeric', month: 'short' })) : `Cada ${WEEKDAYS[o.dia].toLowerCase()}`;
+  tablePDF('Programa de predicación', [['Cuándo', 15], ['Hora', 8], ['Capitán', 16], ['Tipo', 13], ['Lugar de la salida', 20], ['Territorio', 15], ['Grupo y notas', 17]],
+    outings.map(o => [when(o), fmtHora(o.hora), o.dirige, o.tipo, o.lugar, o.territorio, [o.grupo, o.notas].filter(Boolean).join(' · ')]), 'Programa de predicación');
+}
+// Programa de aseo; a elegir, con las tareas mecánicas de esa semana
+function openCleaningPDF(weeks) {
+  const has = state.programs.length > 0;
+  let on = false; try { on = has && localStorage.getItem('aseo-mecanicas') === '1'; } catch (e) {}
+  const box = h('input', { type: 'checkbox', checked: on || null, disabled: has ? null : true });
+  const close = () => { dlg.close(); dlg.remove(); };
+  const dlg = h('dialog', { class: 'dlg' },
+    h('div', { class: 'dlg-body' }, h('h3', null, 'Programa de aseo'),
+      h('label', { class: 'row', style: { gap: '8px', color: 'var(--text)' } }, box, 'Agregar las tareas mecánicas de cada semana'),
+      h('p', { class: 'muted small-text', style: { margin: 0 } }, has ? 'Micrófonos, acomodadores y audio y video.' : 'Las tareas mecánicas solo están disponibles para los ancianos.')),
+    h('div', { class: 'dlg-foot' }, h('button', { class: 'btn', onclick: close }, 'Cancelar'),
+      h('button', { class: 'btn primary', onclick: () => {
+        try { localStorage.setItem('aseo-mecanicas', box.checked ? '1' : '0'); } catch (e) {}
+        close(); cleaningPDF(weeks, box.checked);
+      } }, 'Descargar')));
+  document.body.append(dlg); dlg.showModal();
+}
+function cleaningPDF(weeks, withMec) {
+  const week = m => `${fmtShort(m)} – ${fmtShort(addDays(m, 6))}`;
+  const names = (m, keys) => {
+    const p = state.programs.find(x => x.date === m);
+    if (!p) return '';
+    return [...new Set(MEETINGS.flatMap(([mtg]) => keys.map(k => (profById(mecGet(p, mtg, k)) || {}).name)).filter(Boolean))].join(', ');
+  };
+  const cols = [['Semana', 20], ['Grupo de aseo', 20]], rows = weeks.map(m => [week(m), cleaningOf(m)]);
+  if (withMec) {
+    for (const [t, keys] of [['Micrófonos', ['micPlat', 'micAud1', 'micAud2']], ['Acomodadores', ['acomInt', 'acomExt']], ['Audio y video', ['audio']]]) {
+      cols.push([t, 24]); weeks.forEach((m, i) => rows[i].push(names(m, keys)));
+    }
   }
-  savePDF(doc, 'Arreglos de predicación y limpieza');
+  tablePDF('Programa de aseo del Salón del Reino', cols, rows, 'Programa de aseo');
 }

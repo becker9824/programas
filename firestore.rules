@@ -237,7 +237,7 @@ service cloud.firestore {
       match /salidas/{id} {
         allow read: if isActive(c);
         allow delete: if isElder(c);
-        allow create, update: if isElder(c) && only(['dia', 'hora', 'lugar', 'dirige', 'grupo', 'notas'])
+        allow create, update: if isElder(c) && only(['dia', 'hora', 'lugar', 'dirige', 'grupo', 'notas', 'tipo', 'territorio', 'fecha'])
           && request.resource.data.dia is int && request.resource.data.dia >= 0 && request.resource.data.dia <= 6
           && request.resource.data.lugar is string && request.resource.data.lugar.size() > 0 && request.resource.data.lugar.size() <= 120;
       }

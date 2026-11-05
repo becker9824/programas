@@ -236,6 +236,7 @@ const PRIVS = [
   ['vida', 'Nuestra vida cristiana'],
   ['conductor', 'Conductor del estudio bíblico'],
   ['lector', 'Lector del estudio bíblico'],
+  ['consejero_aux', 'Consejero de la sala auxiliar'],
   // Asignaciones mecánicas
   ['presidente_fin', 'Presidente del fin de semana'],
   ['atalaya', 'Lector de La Atalaya'],
@@ -246,7 +247,7 @@ const PRIVS = [
 const MEC_PRIVS = ['presidente_fin', 'atalaya', 'microfonos', 'acomodador', 'audio'];
 // Para marcar varios de un jalón en el perfil: [nombre, privilegios, nombramiento, bautizado]
 const PRIV_PRESETS = [
-  ['Anciano', ['presidente', 'oracion', 'tesoros', 'lectura', 'vida', 'conductor', 'lector', ...MEC_PRIVS], 'anciano', true],
+  ['Anciano', ['presidente', 'oracion', 'tesoros', 'lectura', 'vida', 'conductor', 'lector', 'consejero_aux', ...MEC_PRIVS], 'anciano', true],
   ['Siervo ministerial', ['oracion', 'tesoros', 'lectura', 'vida', 'lector', ...MEC_PRIVS], 'sm', true],
   ['Varón bautizado', ['oracion', 'lectura', 'estudiante', 'lector', 'atalaya', 'microfonos', 'acomodador', 'audio'], '', true],
   ['Estudiante', ['estudiante'], '', null],
@@ -280,10 +281,21 @@ function roomForPick(inp) {
   fit(); setTimeout(fit, 400); // otra vez cuando ya salió el teclado
 }
 const privLabel = k =>(PRIVS.find(([key]) => key === k) || [k, k])[1];
+// Consejero de la sala auxiliar: quienes lo tengan marcado; si nadie lo tiene, los que pueden ser presidente, como antes
+const hasCounselors = () => state.profiles.some(p => Array.isArray(p.puede) && p.puede.includes('consejero_aux'));
+// Al elegir presidente también se le da la oración inicial, si está libre (se apaga en Ajustes)
+function presidentPrayer(p, pid) {
+  if (!pid || state.settings.presidenteOracion === false) return null;
+  const r = p.rows.find(x => x.kind === 'prayer');
+  if (!r || r.a) return null;
+  r.a = pid;
+  return r;
+}
 function privFor(row, slot) {
+  const aux = isAux(slot);
   slot = baseSlot(slot);
   if (row.kind === 'prayer') return 'oracion';
-  if (row.kind === 'chair') return 'presidente';
+  if (row.kind === 'chair') return aux && hasCounselors() ? 'consejero_aux' : 'presidente';
   if (row.helper === 'Lector') return slot === 'b' ? 'lector' : 'conductor';
   if (/lectura de la biblia/i.test(row.title || '')) return 'lectura';
   if (row.section === SECTIONS[1].name) return 'estudiante';
@@ -335,7 +347,7 @@ function mecGet(p, mtg, key) {
 }
 function mecSet(p, mtg, key, pid) {
   const l = mecLinked(p, mtg, key);
-  if (l) { l[0][l[1]] = pid; return; }
+  if (l) { l[0][l[1]] = pid; if (mtg === 'entre' && key === 'presidente') presidentPrayer(p, pid); return; }
   p.mec = p.mec || {}; p.mec[mtg] = p.mec[mtg] || {}; p.mec[mtg][key] = pid;
 }
 // Quiénes tienen asignación mecánica en una reunión (sin contar presidente y lector enlazados)

@@ -139,6 +139,14 @@ test('anuncios: los publica cualquier anciano; los publicadores solo ven los com
   await assertSucceeds(deleteDoc(cdoc(db('secre'), 'anuncios', 'a1')));
 });
 
+test('salidas: programa de predicación con tipo, territorio y fecha', async () => {
+  const salida = { dia: 5, hora: '09:30', lugar: 'Salón', dirige: 'Juan', grupo: '', notas: '', tipo: 'Casa en casa', territorio: 'Tarjeta 3', fecha: '2026-11-07' };
+  await assertSucceeds(setDoc(cdoc(db('prog'), 'salidas', 's1'), salida));
+  await assertFails(setDoc(cdoc(db('prog'), 'salidas', 's2'), { ...salida, otro: 1 }));
+  await assertFails(setDoc(cdoc(db('pub'), 'salidas', 's3'), salida));
+  await assertSucceeds(getDoc(cdoc(db('pub'), 'salidas', 's1')));
+});
+
 test('predicación pública: los ancianos arman turnos y cada quien se apunta solo a sí mismo', async () => {
   const turno = { fecha: '2026-12-05', hora: '10:00', horaFin: '12:00', lugar: 'Plaza', cupo: 2, inscritos: {}, notas: '' };
   await assertSucceeds(setDoc(cdoc(db('prog'), 'publica', 't1'), turno));

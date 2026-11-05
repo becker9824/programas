@@ -329,13 +329,23 @@ function openTerritoryDataDialog(t, shape) {
 // función Capitán. Quien tiene los datos los usa directo; los demás, las listas publicadas.
 function captainOptions() {
   const accounts = isAdmin() ? nube.miembros.filter(m => m.estado === 'activo' && (m.permisos || []).includes('capitan')).map(m => ({ uid: m.id, perfil: m.perfil || '', nombre: m.nombre })) : nube.capitanes;
-  const people = can('programa') ? state.profiles.filter(p => p.capitan).map(p => ({ perfil: p.id, nombre: p.name })) : nube.capitanesHermanos;
+  const people = isElder() ? state.profiles.filter(p => p.capitan).map(p => ({ perfil: p.id, nombre: p.name })) : nube.capitanesHermanos;
   const out = people.map(p => { const a = accounts.find(x => x.perfil && x.perfil === p.perfil); return { uid: a ? a.uid : '', nombre: p.nombre }; });
   for (const a of accounts) if (!out.some(o => o.uid === a.uid)) out.push({ uid: a.uid, nombre: (a.perfil && profById(a.perfil) || {}).name || a.nombre });
   return out.sort(byNombre);
 }
-// Asignar a un capitán o a cualquier nombre o grupo
+// Color de cada tarjeta en el mapa: siempre el mismo para la misma tarjeta. El ángulo áureo hace que
+// números seguidos queden con colores muy distintos.
+function terrColor(t) {
+  const n = parseInt(t.numero, 10);
+  const k = Number.isFinite(n) ? n : [...String(t.numero || t.id)].reduce((a, c) => a + c.charCodeAt(0), 0);
+  return `hsl(${Math.round(k * 137.508) % 360}, 72%, 46%)`;
+}
+const terrByCard = () => { try { return localStorage.getItem('terr-colores') !== 'estado'; } catch (e) { return true; } };
+// Asignar a un capitán o a cualquier nombre o grupo. Si ya está asignada, cambia de capitán: el que
+// sale queda en el historial y se conserva lo trabajado (por ejemplo, otro la retoma por la tarde).
 function openAssignDialog(t) {
+  const change = t.estado === 'asignado';
   const caps = captainOptions();
   const capSel = h('select', { onchange: () => { who.style.display = capSel.value ? 'none' : ''; } },
     caps.map((c, i) => h('option', { value: 'c' + i }, c.nombre + (c.uid ? '' : ' (sin cuenta en la app)'))), h('option', { value: '' }, 'Otro (escribir el nombre o el grupo)'));
@@ -344,8 +354,9 @@ function openAssignDialog(t) {
   who.style.display = caps.length ? 'none' : '';
   const close = () => { dlg.close(); dlg.remove(); };
   const dlg = h('dialog', { class: 'dlg' },
-    h('div', { class: 'dlg-body' }, h('h3', null, `Asignar la tarjeta ${t.numero}`),
-      h('label', { class: 'field' }, '¿A quién?', capSel, who),
+    h('div', { class: 'dlg-body' }, h('h3', null, change ? `Cambiar capitán de la tarjeta ${t.numero}` : `Asignar la tarjeta ${t.numero}`),
+      change ? h('p', { class: 'muted small-text', style: { margin: 0 } }, `Ahora la tiene ${t.asignadoA}. Se conserva lo trabajado y hasta dónde se llegó.`) : null,
+      h('label', { class: 'field' }, change ? '¿Quién sigue?' : '¿A quién?', capSel, who),
       caps.length ? h('span', { class: 'small-text' }, 'Si el capitán tiene cuenta, la verá en su app, en “Mis tarjetas”, y podrá registrar lo que se trabaje.')
         : h('span', { class: 'small-text' }, 'Todavía no hay capitanes. Se marcan en Hermanos: abre al hermano y marca “Capitán de territorios”.'),
       h('label', { class: 'field' }, 'Desde', since)),
@@ -355,9 +366,11 @@ function openAssignDialog(t) {
         const cap = capSel.value ? caps[+capSel.value.slice(1)] : null;
         const name = cap ? cap.nombre : squash(who.value);
         if (!name) return who.focus();
-        await updateTerritory(t, { estado: 'asignado', asignadoA: name, capitan: cap ? cap.uid : '', desde: since.value || todayISO() }, `Tarjeta ${t.numero} asignada a ${name}`);
+        const patch = { estado: 'asignado', asignadoA: name, capitan: cap ? cap.uid : '', desde: since.value || todayISO() };
+        if (change) patch.historial = [...(t.historial || []), { quien: t.asignadoA, desde: t.desde || '', hasta: todayISO(), completo: false }].slice(-50);
+        await updateTerritory(t, patch, change ? `Tarjeta ${t.numero}: pasó de ${t.asignadoA} a ${name}` : `Tarjeta ${t.numero} asignada a ${name}`);
         close();
-      } }, 'Asignar')));
+      } }, change ? 'Cambiar' : 'Asignar')));
   refreshDatalist();
   document.body.append(dlg); dlg.showModal();
 }
@@ -634,8 +647,10 @@ function renderTerritories() {
     for (const t of nube.territorios) {
       if (!hasShape(t)) continue;
       const sel = t.id === terr.selected, hit = searching && matches(t), color = TERR[estadoDe(t, base)].color, dim = searching && !hit;
-      const shape = terrShape(L, t, { color: sel || hit ? '#000' : color, weight: sel ? 4 : hit ? 3 : dim ? 1 : 2, fillColor: color,
-        fillOpacity: sel ? 0.5 : dim ? 0.08 : hit ? 0.55 : 0.35, bubblingMouseEvents: false });
+      // Relleno: un color por tarjeta para distinguirlas; el borde sigue diciendo su estado
+      const fill = terrByCard() ? terrColor(t) : color;
+      const shape = terrShape(L, t, { color: sel || hit ? '#000' : color, weight: sel ? 4 : hit ? 3 : dim ? 1 : 2, fillColor: fill,
+        fillOpacity: sel ? 0.65 : dim ? 0.08 : hit ? 0.65 : 0.5, bubblingMouseEvents: false });
       // El número va una sola vez (en un territorio de calles, sobre la primera)
       (shape instanceof L.Polygon ? shape : shape.getLayers()[0]).bindTooltip(String(t.numero), { permanent: true, direction: 'center', className: 'terr-label' + (dim ? ' dim' : '') });
       shape.on('click', ev => { if (terr.mode) return onTap(ev.latlng); select(t.id, false); })
@@ -845,7 +860,7 @@ function renderTerritories() {
     const big = (icon, text, fn, primary) => h('button', { class: 'btn' + (primary ? ' primary' : ''), onclick: fn }, h('span', { style: { fontSize: '20px' } }, icon), text);
     actions.replaceChildren(h('div', { class: 'card', style: { padding: '12px 14px', marginBottom: '10px' } },
       h('div', { class: 'row spread' },
-        h('div', null, h('strong', { style: { fontSize: '17px' } }, terrTitle(t)),
+        h('div', null, h('span', { class: 'terr-dot', style: { background: terrColor(t) } }), h('strong', { style: { fontSize: '17px' } }, terrTitle(t)),
           ' ', h('span', { class: 'badge', style: { background: TERR[st].color, color: '#fff' } }, TERR[st].label),
           st === 'asignado' ? h('span', { class: 'small-text' }, ` a ${t.asignadoA}`) : null),
         h('button', { class: 'btn small', onclick: () => { terr.selected = null; refresh(); } }, '✕')),
@@ -858,6 +873,7 @@ function renderTerritories() {
         big('✅', 'Registrar salida', () => openWorkDialog(t)))
         : h('div', { class: 'small-text muted', style: { marginTop: '6px' } }, 'Para registrar aquí, el siervo de territorios tiene que asignártela.'),
       editor ? h('div', { class: 'row', style: { marginTop: '8px' } },
+        st === 'asignado' ? h('button', { class: 'btn small primary', onclick: () => openAssignDialog(t) }, 'Cambiar capitán') : null,
         st !== 'asignado' ? h('button', { class: 'btn small primary', onclick: () => openAssignDialog(t) }, 'Asignar') : h('button', { class: 'btn small', onclick: () => unassignTerritory(t) }, 'Quitar asignación'),
         h('button', { class: 'btn small', onclick: () => panel.scrollIntoView({ behavior: 'smooth' }) }, 'Más opciones ↓')) : null));
   }
@@ -871,7 +887,11 @@ function renderTerritories() {
     const n = k => all.filter(t => estadoDe(t, base) === k).length;
     counts.replaceChildren(...Object.entries(TERR).map(([k, v]) => h('span', null,
       h('span', { style: { display: 'inline-block', width: '10px', height: '10px', borderRadius: '50%', background: v.color, marginRight: '5px' } }),
-      h('strong', null, n(k)), ' ', v.label.toLowerCase() + (n(k) === 1 ? '' : 's'))));
+      h('strong', null, n(k)), ' ', v.label.toLowerCase() + (n(k) === 1 ? '' : 's'))),
+      h('button', { class: 'linkbtn', title: 'El borde siempre indica el estado', onclick: () => {
+        try { localStorage.setItem('terr-colores', terrByCard() ? 'estado' : 'tarjeta'); } catch (e) {}
+        refresh();
+      } }, terrByCard() ? 'Colorear por estado' : 'Colorear por tarjeta'));
     const pending = all.filter(t => estadoDe(t, base) === 'disponible');
     const sum = k => [...thisYear.values()].reduce((a, s) => a + s[k], 0);
     summary.replaceChildren(all.length ? h('div', { class: 'small-text', style: { margin: '-4px 0 10px' } },

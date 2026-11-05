@@ -71,7 +71,13 @@ function renderAuth(tab = 'entrar', msg = '', withPass = false, em0 = '') {
     tab === 'unirse' ? field('Código de la congregación', code) : null,
     tab === 'crear' ? field('Nombre de la congregación', congI) : null,
     tab !== 'entrar' ? field('Tu nombre', name) : null,
-    field('Correo', email), linkMode ? null : field('Contraseña', pass),
+    field('Correo', email), linkMode ? null : field('Contraseña', h('span', { class: 'pass-wrap' }, pass,
+      h('button', { type: 'button', class: 'pass-eye', title: 'Mostrar u ocultar la contraseña', 'aria-label': 'Mostrar u ocultar la contraseña', onclick: e => {
+        e.preventDefault();
+        const b = e.currentTarget, show = pass.type === 'password';
+        pass.type = show ? 'text' : 'password';
+        b.replaceChildren(icon(show ? 'eyeoff' : 'eye', 18));
+      } }, icon('eye', 18)))),
     tab !== 'entrar' ? boxes.el : null,
     err, btn,
     legalLinks(),

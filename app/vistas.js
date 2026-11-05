@@ -123,10 +123,35 @@ function slideInk(bar, target, inner) {
 }
 // Arriba (PC y tableta) van las secciones que caben; las demás, en "Más ▾". Se vuelve a acomodar
 // al cambiar el tamaño de la ventana.
+// Las secciones se ordenan por tema. Un tema con una sola sección para esta cuenta se muestra directo.
+const NAV_GROUPS = [
+  ['g-asignaciones', 'Asignaciones', 'list', ['list', 'mecanicas', 'finsemana']],
+  ['g-servicio', 'Servicio', 'territorios', ['territorios', 'grupos', 'pastoreo']],
+  ['g-arreglos', 'Arreglos', 'arreglos', ['arreglos', 'calendario', 'anuncios', 'pantalla']],
+  ['g-secretario', 'Secretario', 'report', ['report', 'people', 'families', 'asistencia', 'estadisticas', 'historial']],
+  ['g-admin', 'Administración', 'settings', ['cuentas', 'privacidad', 'settings']],
+];
+function groupedNav(items) {
+  const out = items.filter(i => !NAV_GROUPS.some(g => g[3].includes(i[0])));
+  for (const [v, t, ic, keys] of NAV_GROUPS) {
+    const kids = items.filter(i => keys.includes(i[0]));
+    if (kids.length === 1) out.push(kids[0]);
+    else if (kids.length) out.push([v, t, kids.reduce((a, i) => a + (i[2] || 0), 0), kids, ic]);
+  }
+  return out;
+}
+const entryActive = i => i[3] ? i[3].some(k => isActiveView(k[0])) : isActiveView(i[0]);
 function fitTopNav(items) {
   const nav = document.querySelector('header nav');
-  const btn = ([v, t, n]) => h('button', { class: isActiveView(v) ? 'active' : null, onclick: () => go({ name: v }) }, icon(v, 18), t, badge(n));
-  const shown = items.map(i => ({ i, el: btn(i) }));
+  const btn = i => {
+    const [v, t, n, kids, ic] = i;
+    const el = h('button', { class: entryActive(i) ? 'active' : null, onclick: e => {
+      if (!kids) return go({ name: v });
+      e.stopPropagation(); openNavMenu(el, kids);
+    } }, icon(ic || v, 18), t, badge(n), kids ? ' ▾' : null);
+    return el;
+  };
+  const shown = groupedNav(items).map(i => ({ i, el: btn(i) }));
   nav.replaceChildren(...shown.map(x => x.el));
   // Lo que miden los botones juntos (con la barra a la derecha, lo que no cabe se sale por la izquierda)
   const tooWide = () => [...nav.children].reduce((a, c) => a + c.offsetWidth + 2, 0) > nav.clientWidth;
@@ -139,19 +164,20 @@ function fitTopNav(items) {
   // Se quitan desde el final, pero la sección abierta se queda a la vista
   while (tooWide() && shown.length > 1) {
     let k = shown.length - 1;
-    if (isActiveView(shown[k].i[0]) && k > 0) k--;
+    if (entryActive(shown[k].i) && k > 0) k--;
     const [x] = shown.splice(k, 1);
     x.el.remove(); hidden.unshift(x); paint();
   }
-  more.classList.toggle('active', hidden.some(x => isActiveView(x.i[0])));
-  more.onclick = e => { e.stopPropagation(); openNavMenu(more, hidden.map(x => x.i)); };
+  more.classList.toggle('active', hidden.some(x => entryActive(x.i)));
+  more.onclick = e => { e.stopPropagation(); openNavMenu(more, hidden.flatMap(x => x.i[3] || [x.i])); };
 }
 function openNavMenu(anchor, items) {
   const old = document.querySelector('.nav-menu');
-  if (old) return old.remove();
+  if (old) { old.remove(); if (old.ancla === anchor) return; } // otro tema: se cambia de menú con un solo toque
   const box = anchor.getBoundingClientRect();
   const menu = h('div', { class: 'nav-menu', style: { top: (box.bottom + 6) + 'px', right: Math.max(8, innerWidth - box.right) + 'px' } },
     items.map(([v, t, n]) => h('button', { class: isActiveView(v) ? 'active' : null, onclick: () => { menu.remove(); go({ name: v }); } }, icon(v, 18), t, badge(n))));
+  menu.ancla = anchor;
   document.body.append(menu);
   setTimeout(() => document.addEventListener('click', function off(e) { if (!menu.contains(e.target)) { menu.remove(); document.removeEventListener('click', off); } }));
 }
@@ -160,13 +186,18 @@ addEventListener('resize', () => { clearTimeout(navResize); navResize = setTimeo
 
 function openMoreSheet(items) {
   const close = () => { dlg.close(); dlg.remove(); };
+  // Mismos temas que arriba; lo que no tenga tema va al final
+  const groups = NAV_GROUPS.map(g => [g[1], items.filter(i => g[3].includes(i[0]))]).filter(g => g[1].length);
+  const rest = items.filter(i => !NAV_GROUPS.some(g => g[3].includes(i[0])));
+  if (rest.length) groups.push(['Otras', rest]);
+  let k = 0;
   // Cuadrícula de íconos, como el menú de apps del celular; aparecen uno tras otro
   const dlg = h('dialog', { class: 'sheet more-sheet', onclick: e => { if (e.target === dlg) close(); } },
     h('div', { class: 'grab' }),
-    h('div', { class: 'more-title' }, 'Más secciones'),
-    h('div', { class: 'more-grid' }, items.map(([v, t, n], k) => h('button', { class: 'more-item' + (isActiveView(v) ? ' active' : ''),
-      style: { '--d': (k * 25) + 'ms' }, onclick: () => { close(); go({ name: v }); } },
-      h('span', { class: 'more-ic' }, icon(v, 24), badge(n)), h('span', { class: 'more-t' }, t)))));
+    h('div', { class: 'more-scroll' }, groups.map(([title, list]) => [h('div', { class: 'more-title' }, title),
+      h('div', { class: 'more-grid' }, list.map(([v, t, n]) => h('button', { class: 'more-item' + (isActiveView(v) ? ' active' : ''),
+        style: { '--d': (k++ * 25) + 'ms' }, onclick: () => { close(); go({ name: v }); } },
+        h('span', { class: 'more-ic' }, icon(v, 24), badge(n)), h('span', { class: 'more-t' }, t))))])));
   document.body.append(dlg); dlg.showModal();
 }
 
@@ -413,9 +444,12 @@ function renderEditor(p) {
   }
 
   function assign(row, slot, pid) {
-    row[slot] = pid; save();
+    row[slot] = pid;
+    const prayer = row.kind === 'chair' && row.intro && slot === 'a' ? presidentPrayer(p, pid) : null;
+    save();
     const inp = body.querySelector(`input[data-row="${row.id}"][data-slot="${slot}"]`);
     if (inp) inp.value = pid ? profById(pid).name : '';
+    if (prayer) { const i = body.querySelector(`input[data-row="${prayer.id}"][data-slot="a"]`); if (i) i.value = profById(pid).name; }
     updateHints();
   }
 
@@ -971,6 +1005,9 @@ function nomPrefsCard() {
   return [
     h('h2', { class: 'group' }, 'Preferir nombrados'),
     h('div', { class: 'card settings', style: { marginTop: 0 } },
+      h('label', { class: 'row', style: { gap: '8px', fontSize: '14px', color: 'var(--text)' } },
+        h('input', { type: 'checkbox', checked: s.presidenteOracion !== false, onchange: e => { s.presidenteOracion = e.target.checked; save(); } }),
+        'Al elegir presidente, darle también la oración inicial si está libre'),
       h('p', { class: 'muted small-text', style: { margin: 0 } }, 'En las asignaciones que elijas, las sugerencias ponen primero a los ancianos, a los siervos ministeriales o a los dos. Los demás siguen saliendo, después. Va aparte de los filtros por edad.'),
       h('strong', { class: 'small-text' }, 'Asignaciones mecánicas'),
       PRIVS.filter(([k]) => MEC_PRIVS.includes(k)).map(row),

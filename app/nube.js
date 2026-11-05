@@ -300,7 +300,7 @@ function enterCongregation() {
     return view.name === 'people';
   });
   // Capitanes (cuentas con la función): el coordinador publica la lista para que el siervo de territorios asigne
-  if (can('territorios')) {
+  if (can('territorios') || isElder()) {
     listen('capitanes', congRef('capitanes', 'lista'), s => { nube.capitanes = (s.exists() && s.data().lista) || []; return false; });
     listen('capitanesHermanos', congRef('capitanes', 'hermanos'), s => { nube.capitanesHermanos = (s.exists() && s.data().lista) || []; return false; });
   }
