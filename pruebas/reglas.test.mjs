@@ -2,7 +2,7 @@
 import { test, before, after } from 'node:test';
 import { readFileSync } from 'node:fs';
 import { initializeTestEnvironment, assertSucceeds, assertFails } from '@firebase/rules-unit-testing';
-import { doc, getDoc, setDoc, updateDoc, deleteDoc, deleteField, collection, getDocs, query, where } from 'firebase/firestore';
+import { doc, getDoc, setDoc, updateDoc, deleteDoc, deleteField, serverTimestamp, collection, getDocs, query, where } from 'firebase/firestore';
 
 let env;
 const C = 'cong1', CODE = 'ABC234';
@@ -164,6 +164,36 @@ test('avisos al celular: cada quien guarda solo sus tokens y nadie más los ve',
   await assertSucceeds(getDoc(cdoc(db('pub'), 'avisos', 'pub')));
   await assertFails(getDoc(cdoc(db('admin'), 'avisos', 'pub')));
   await assertFails(getDocs(collection(db('admin'), 'congregaciones', C, 'avisos')));
+});
+
+test('consentimiento y solicitudes de privacidad', async () => {
+  const consent = { version: '2026-11-04', estado: 'aceptado', sensibles: true, mayor: true, nombre: 'Pub', email: 'x@x.com', plataforma: 'Web', fecha: serverTimestamp() };
+  await assertSucceeds(setDoc(cdoc(db('pub'), 'consentimientos', 'pub'), consent));
+  await assertFails(setDoc(cdoc(db('pub'), 'consentimientos', 'prog'), consent));              // no se acepta por otro
+  await assertFails(setDoc(cdoc(db('pub'), 'consentimientos', 'pub'), { ...consent, fecha: 1 }));   // la hora la pone el servidor
+  await assertFails(setDoc(cdoc(db('pub'), 'consentimientos', 'pub'), { ...consent, sensibles: false }));
+  await assertSucceeds(setDoc(cdoc(db('pub'), 'consentimientos', 'pub'), { ...consent, estado: 'revocado', sensibles: false }));
+  await assertSucceeds(getDoc(cdoc(db('admin'), 'consentimientos', 'pub')));
+  await assertFails(getDoc(cdoc(db('prog'), 'consentimientos', 'pub')));
+  await assertFails(deleteDoc(cdoc(db('admin'), 'consentimientos', 'pub')));                    // nadie la borra
+
+  const solicitud = { uid: 'pub', nombre: 'Pub', email: 'x@x.com', perfil: 'p1', tipo: 'rectificacion', detalle: 'Mi teléfono', estado: 'pendiente', fecha: serverTimestamp() };
+  await assertSucceeds(setDoc(cdoc(db('pub'), 'solicitudes', 's1'), solicitud));
+  await assertFails(setDoc(cdoc(db('pub'), 'solicitudes', 's2'), { ...solicitud, uid: 'prog' }));
+  await assertFails(setDoc(cdoc(db('pub'), 'solicitudes', 's2'), { ...solicitud, tipo: 'otra' }));
+  await assertSucceeds(getDocs(query(collection(db('pub'), 'congregaciones', C, 'solicitudes'), where('uid', '==', 'pub'))));
+  await assertFails(getDocs(collection(db('pub'), 'congregaciones', C, 'solicitudes')));
+  await assertFails(getDoc(cdoc(db('prog'), 'solicitudes', 's1')));
+  await assertFails(updateDoc(cdoc(db('pub'), 'solicitudes', 's1'), { estado: 'atendida' }));
+  await assertSucceeds(updateDoc(cdoc(db('admin'), 'solicitudes', 's1'), { estado: 'atendida', respuesta: 'Listo', atendida: 1 }));
+  await assertFails(updateDoc(cdoc(db('admin'), 'solicitudes', 's1'), { detalle: 'Otro' }));
+
+  await assertSucceeds(updateDoc(cdoc(db('admin')), { legal: { responsable: 'Ancianos', domicilio: 'Calle 1', correo: 'a@b.c' } }));
+  await assertFails(updateDoc(cdoc(db('pub')), { legal: {} }));
+  // Cada quien puede eliminar su cuenta, pero no la de otro
+  await env.withSecurityRulesDisabled(x => setDoc(doc(x.firestore(), 'congregaciones', C, 'miembros', 'baja'), memberData({ estado: 'activo' })));
+  await assertFails(deleteDoc(cdoc(db('pub'), 'miembros', 'baja')));
+  await assertSucceeds(deleteDoc(cdoc(db('baja'), 'miembros', 'baja')));
 });
 
 test('pastoreo: solo los ancianos lo ven y lo anotan', async () => {

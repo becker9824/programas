@@ -1,0 +1,115 @@
+// Programas · Textos legales. Los usa la app (app/legal.js) y la página pública app/legal.html.
+// Si cambia algo importante, sube LEGAL_VERSION: al entrar, cada quien vuelve a aceptar.
+// Cada sección: [título, ...bloques]; un bloque es un párrafo (texto) o una lista (arreglo de textos).
+const LEGAL_VERSION = '2026-11-04';
+const LEGAL_FECHA = '4 de noviembre de 2026';
+const LEGAL_CONTACTO = 'contacto.programasapp@gmail.com'; // correo público del proveedor de la app
+const LEGAL_URL = 'https://programas-congregacion.web.app/app/legal.html';
+const LEGAL_MEDIO_CONTACTO = LEGAL_CONTACTO || '(correo de contacto pendiente)';
+
+const LEGAL_DOCS = {
+  privacidad: {
+    titulo: 'Aviso de privacidad',
+    secciones: [
+      ['Quién responde por tus datos',
+        'El responsable de tus datos personales es la congregación a la que perteneces, por medio de sus ancianos. Ellos deciden qué se guarda y para qué. Su nombre, domicilio y correo aparecen dentro de la app, en la pantalla de aceptación y en Ajustes.',
+        `Programas es una herramienta gratuita. Quien la mantiene da el servicio técnico por cuenta de cada congregación y puede ver los datos solo cuando hace falta para que funcione. Contacto técnico: ${LEGAL_MEDIO_CONTACTO}.`],
+      ['Datos que se guardan', [
+        'Cuenta: nombre, correo y contraseña (la contraseña la guarda Google cifrada; nadie de la congregación puede verla).',
+        'Ficha: nombre, sexo, edad o fecha de nacimiento, familia, grupo, situación y notas.',
+        'Contacto: teléfono, dirección y contacto de emergencia. Solo los ven los ancianos.',
+        'Uso de la app: sesiones abiertas, tipo de equipo y registro de quién hizo cada cambio.',
+        'Territorios: el recorrido de una salida con GPS, si decides usarla, y direcciones marcadas por los capitanes.',
+        'Cuentas de la congregación: movimientos de dinero. No se piden datos bancarios personales.']],
+      ['Datos sensibles',
+        'La ley considera sensibles las creencias religiosas, y casi todo lo de esta app las revela. Por eso se necesita tu consentimiento expreso y por escrito para estos datos:',
+        ['Que perteneces a la congregación o asistes a ella.',
+          'Fecha de bautismo, esperanza, nombramiento y privilegios.',
+          'Asignaciones, confirmaciones y ausencias (el motivo que escribas podría revelar algo de tu salud).',
+          'Informes mensuales de predicación.',
+          'Visitas de pastoreo.']],
+      ['Para qué se usan',
+        'Estos usos son necesarios para que la app funcione:',
+        ['Organizar las reuniones, las asignaciones y los programas.',
+          'Llevar los registros de la congregación: informes, asistencia, grupos y territorios.',
+          'Darte acceso según tus funciones y cuidar la seguridad de tu cuenta.'],
+        'Estos usos son opcionales y puedes apagarlos cuando quieras:',
+        ['Avisos al celular y recordatorios.', 'Salida con GPS en territorios.', 'Teléfono de contacto para avisarte por WhatsApp.'],
+        'Tus datos no se venden, no se usan para publicidad y no se comparten con otras congregaciones.'],
+      ['Quién los puede ver',
+        'Cada persona ve solo lo que su función le permite. Tu informe lo ven tú y el secretario. El directorio y las visitas de pastoreo, los ancianos. El programa con las asignaciones lo ven los miembros aprobados de tu congregación y, si la congregación usa la Pantalla del Salón, también quienes estén en el Salón. Tu nombre puede aparecer en documentos impresos o compartidos del programa.'],
+      ['Servicios que usa la app',
+        'Para funcionar, la app usa estos proveedores. Sus servidores pueden estar fuera de México:',
+        ['Google Firebase: cuentas, base de datos, página web y avisos al celular.',
+          'Cloudflare: envío de avisos y lectura de la Guía de actividades. Procesa tu cuenta, tu nombre y el texto del aviso para mandarlo.',
+          'GitHub: descarga de las actualizaciones. No recibe tus datos de la congregación.',
+          'OpenStreetMap y Esri: mapas de territorios. Reciben la zona que se está viendo y las búsquedas de direcciones.',
+          'WhatsApp, Google Maps y tu calendario: solo si tú los abres desde la app.']],
+      ['Tus derechos',
+        'Puedes pedir acceso a tus datos, corregirlos, cancelarlos u oponerte a su uso (derechos ARCO), así como limitar su uso o divulgación. Hazlo en Ajustes → Privacidad y mis datos o por el correo de tu congregación. Se te responde en un máximo de 20 días hábiles.',
+        'En Ajustes también puedes descargar tus datos y eliminar tu cuenta. Los registros que la congregación deba conservar, como informes ya entregados, se tratan en tu solicitud.',
+        'Si no recibes respuesta o no estás de acuerdo, puedes acudir a la Secretaría Anticorrupción y Buen Gobierno.'],
+      ['Retirar tu consentimiento',
+        'Puedes retirarlo cuando quieras en Ajustes → Privacidad y mis datos. Esto no afecta lo que ya se hizo antes. Como la app no funciona sin esos datos, ya no podrás usarla, y tu solicitud llega al coordinador para que decida qué datos se borran.'],
+      ['Personas sin cuenta y menores de edad',
+        'Si alguien aparece en la app sin tener cuenta, la congregación debe tener su consentimiento firmado en papel. Si es menor de edad, lo firma su madre, padre o tutor. La sección Privacidad del coordinador trae la hoja para imprimir y permite anotar la fecha.'],
+      ['Cuánto tiempo se guardan',
+        'Mientras seas parte de la congregación y mientras sean necesarios para sus registros. Las copias de seguridad automáticas guardan las últimas 8 semanas y después se reemplazan.'],
+      ['Seguridad',
+        'Cada lectura y cambio pasa por reglas de seguridad en el servidor, y la conexión va cifrada. Ningún sistema es perfecto: cuida tu contraseña y avisa si crees que alguien entró a tu cuenta.'],
+      ['Datos en tu equipo',
+        'La app guarda datos en tu equipo para abrir rápido y funcionar sin internet. No usa cookies de publicidad ni de seguimiento.'],
+      ['Cambios a este aviso',
+        'Si este aviso cambia en algo importante, te lo mostraremos al entrar para que lo aceptes de nuevo. También estará siempre en la app y en la página pública.'],
+    ],
+  },
+  terminos: {
+    titulo: 'Términos y condiciones',
+    secciones: [
+      ['Qué es Programas',
+        'Programas es una herramienta gratuita para organizar las reuniones, asignaciones y registros de una congregación. Al crear una cuenta o seguir usándola, aceptas estos términos.'],
+      ['No es una app oficial',
+        'Programas es un proyecto independiente. No pertenece ni está respaldado por la organización de los testigos de Jehová ni por sus entidades. Sus nombres y publicaciones son de sus respectivos dueños. La app solo enlaza y muestra información de la Guía de actividades para organizar el programa.'],
+      ['Tu cuenta',
+        'Te pertenece solo a ti. Usa datos verdaderos, cuida tu contraseña y no la compartas. Si eres menor de edad, necesitas la autorización de tu madre, padre o tutor. El coordinador de tu congregación aprueba las cuentas y puede quitarlas.'],
+      ['Uso correcto', [
+        'Usa la información solo para los asuntos de la congregación.',
+        'No compartas fuera de la app los datos de otros hermanos, sobre todo teléfonos, direcciones, informes y notas.',
+        'No intentes entrar a datos o funciones que no te correspondan.',
+        'No escribas datos delicados que no hagan falta, sobre todo en notas y motivos.']],
+      ['Responsabilidad de la congregación',
+        'Cada congregación responde por los datos que guarda, por tener los consentimientos necesarios y por atender las solicitudes de privacidad. Quienes tienen funciones deben usarlas con discreción y solo para lo que les corresponde.'],
+      ['Disponibilidad',
+        'La app se ofrece gratis y tal como está. Se procura que funcione bien, pero puede tener fallas, interrupciones o cambios, y depende de servicios de terceros. Revisa la información importante antes de usarla. La congregación es quien debe conservar sus propios registros oficiales y descargar sus respaldos.'],
+      ['Límite de responsabilidad',
+        'En la medida que la ley lo permita, quien mantiene la app no responde por daños causados por interrupciones, errores, uso indebido por parte de los usuarios o fallas de terceros.'],
+      ['Fin del uso',
+        'Puedes dejar de usar la app y eliminar tu cuenta cuando quieras. La cuenta se puede suspender si se usa en contra de estos términos.'],
+      ['Cambios y ley aplicable',
+        'Estos términos pueden cambiar. Si el cambio es importante, se te pedirá aceptarlo de nuevo. Se rigen por las leyes de México.'],
+      ['Contacto', `Dudas sobre la app: ${LEGAL_MEDIO_CONTACTO}. Asuntos de tus datos: los ancianos de tu congregación.`],
+    ],
+  },
+  datos: {
+    titulo: 'Uso de datos',
+    secciones: [
+      ['En pocas palabras', [
+        'Tus datos son para organizar tu congregación, y nada más.',
+        'No se venden, no hay publicidad y no se comparten con otras congregaciones.',
+        'Cada quien ve solo lo que su función le permite.',
+        'Puedes ver, corregir, descargar o pedir que se borren tus datos.']],
+      ['Qué ve cada quien', [
+        'Publicador: su informe, sus asignaciones, el programa publicado, el calendario y los anuncios compartidos.',
+        'Ancianos: fichas, directorio, grupos, asistencia, pastoreo y anuncios para ancianos.',
+        'Secretario: además, los informes de todos.',
+        'Programa VyM: edita el programa y las fichas.',
+        'Cuentas: el dinero de la congregación.',
+        'Coordinador: además, las cuentas de la app, las funciones, los respaldos y las solicitudes de privacidad.']],
+      ['Avisos y ubicación', [
+        'Avisos: los eliges tú y puedes apagarlos en Ajustes.',
+        'Ubicación: solo se usa durante una salida con GPS que tú inicias.']],
+      ['Tus opciones',
+        'Todo está en Ajustes → Privacidad y mis datos. Consulta los detalles en el Aviso de privacidad.'],
+    ],
+  },
+};

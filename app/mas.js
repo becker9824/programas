@@ -599,6 +599,7 @@ function setupChecklist() {
   const hideKey = 'config-oculta-' + nube.cong;
   try { if (localStorage.getItem(hideKey)) return null; } catch (e) {}
   const steps = [
+    ['Pon los datos de privacidad', 'Quién responde por los datos, domicilio y correo.', !!(nube.congData.legal && nube.congData.legal.domicilio && nube.congData.legal.correo), () => go({ name: 'privacidad' })],
     ['Agrega a los hermanos', 'Uno por uno o con una lista de Excel.', state.profiles.length >= 3, () => go({ name: 'people' })],
     ['Invita a los hermanos a la app', 'Comparte el código de la congregación (en Hermanos).', nube.miembros.length > 1, () => go({ name: 'people' })],
     ['Une tu cuenta con tu nombre', 'En Hermanos → Cuentas, elige tu nombre.', !!nube.me.perfil, () => go({ name: 'people' })],

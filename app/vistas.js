@@ -77,6 +77,7 @@ function navItems(all = false) {
   else if (reportsByMembers()) items.push(['report', 'Informe']);
   items.push(['anuncios', 'Anuncios', unreadAnnouncements()], ['calendario', 'Calendario'], ['arreglos', 'Arreglos']);
   if (can('cuentas')) items.push(['cuentas', 'Cuentas']);
+  if (isAdmin()) items.push(['privacidad', 'Privacidad']);
   items.push(['territorios', 'Territorios']);
   items.push(['settings', 'Ajustes']);
   return all ? items : customNav(items);
@@ -189,6 +190,7 @@ function render() {
   if (view.name === 'pastoreo') return app.replaceChildren(renderShepherding());
   if (view.name === 'estadisticas') return app.replaceChildren(renderStats());
   if (view.name === 'pantalla') return app.replaceChildren(renderKioskPage());
+  if (view.name === 'privacidad') return app.replaceChildren(renderPrivacy());
   if (view.name === 'historial') return app.replaceChildren(renderHistory());
   if (view.name === 'finsemana') return app.replaceChildren(renderWeekend());
   if (view.name === 'anuncios') { app.replaceChildren(renderAnnouncements()); return buildNav(); }

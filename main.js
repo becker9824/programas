@@ -109,6 +109,7 @@ async function screenTest(win) {
       await F.createUserWithEmailAndPassword(F.auth, 'pantallas' + Date.now() + '@prueba.test', crypto.randomUUID());
       for (let i = 0; i < 100 && !nube.user; i++) await new Promise(r => setTimeout(r, 100));
       await createCongregation('Congregación de prueba', 'Coordinador Prueba');
+      await saveConsent();
       localStorage.setItem('pantallas', '2'); location.reload();
     })()`);
     return; // sigue al volver a cargar

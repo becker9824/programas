@@ -270,6 +270,8 @@ function renderHome() {
       h('p', null, congName() || 'Programas y asignaciones')),
     isAdmin() && !homeEdit ? h('button', { class: 'hello-edit', title: 'Ordenar u ocultar las tarjetas de Inicio', onclick: startHomeEdit }, icon('edit', 16), 'Editar') : null);
   if (homeEdit && isAdmin()) return homeEditor(hero, tiles, weeks);
+  if (isAdmin() && nube.solicitudes.length) tiles.push(tile('privacidad', 'Solicitudes de privacidad', `${nube.solicitudes.length} pendiente${nube.solicitudes.length > 1 ? 's' : ''}`,
+    'Responder en máximo 20 días hábiles', () => go({ name: 'privacidad' }), 'warn'));
   // Predicación pública: tu próximo turno, o cuántos hay con lugar
   const mt = myTurns()[0], openTurns = turnsAhead().filter(t => Object.keys(t.inscritos || {}).length < t.cupo).length;
   if (mt) tiles.push(tile('publica', 'Predicación pública', `${capFirst(toDate(mt.fecha).toLocaleDateString('es', { weekday: 'short', day: 'numeric', month: 'short' }))} · ${fmtHora(mt.hora)}`, mt.lugar, () => go({ name: 'arreglos' }), 'ok'));

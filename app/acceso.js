@@ -23,6 +23,7 @@ function renderAuth(tab = 'entrar', msg = '', withPass = false, em0 = '') {
   const name = h('input', { type: 'text', autocomplete: 'name', placeholder: 'Nombre y apellido' });
   const congI = h('input', { type: 'text', placeholder: 'Ej.: Congregación Centro' });
   const err = h('div', { class: 'err' }, msg);
+  const boxes = consentBoxes();
   const btn = h('button', { class: 'btn primary', onclick: submit },
     linkMode ? '📧 Enviarme el enlace para entrar' : tab === 'entrar' ? 'Entrar' : tab === 'unirse' ? 'Crear mi cuenta' : 'Crear congregación');
 
@@ -33,6 +34,7 @@ function renderAuth(tab = 'entrar', msg = '', withPass = false, em0 = '') {
       if (tab === 'unirse' && !code.value.trim()) return err.textContent = 'Escribe el código de la congregación.';
       if (tab === 'crear' && !squash(congI.value)) return err.textContent = 'Escribe el nombre de la congregación.';
       if (!squash(name.value)) return err.textContent = 'Escribe tu nombre.';
+      if (!boxes.ok()) return err.textContent = 'Para crear la cuenta hay que marcar las tres casillas.';
     }
     btn.disabled = true;
     try {
@@ -43,7 +45,7 @@ function renderAuth(tab = 'entrar', msg = '', withPass = false, em0 = '') {
       }
       if (tab === 'entrar') await F.signInWithEmailAndPassword(F.auth, em, pw);
       else {
-        nube.registro = tab === 'unirse' ? { tipo: 'unirse', codigo: code.value, nombre: name.value } : { tipo: 'crear', cong: congI.value, nombre: name.value };
+        nube.registro = tab === 'unirse' ? { tipo: 'unirse', codigo: code.value, nombre: name.value, acepta: true } : { tipo: 'crear', cong: congI.value, nombre: name.value, acepta: true };
         try { await F.createUserWithEmailAndPassword(F.auth, em, pw); }
         catch (e) {
           if (e.code !== 'auth/email-already-in-use') throw e;
@@ -70,7 +72,9 @@ function renderAuth(tab = 'entrar', msg = '', withPass = false, em0 = '') {
     tab === 'crear' ? field('Nombre de la congregación', congI) : null,
     tab !== 'entrar' ? field('Tu nombre', name) : null,
     field('Correo', email), linkMode ? null : field('Contraseña', pass),
+    tab !== 'entrar' ? boxes.el : null,
     err, btn,
+    legalLinks(),
     tab === 'entrar' ? h('button', { class: 'linkbtn', onclick: () => renderAuth('entrar', '', !withPass, email.value.trim()) },
       withPass ? '📧 Mejor entrar con un enlace a mi correo' : '🔑 Entrar con mi contraseña') : null,
     tab === 'entrar' ? h('button', { class: 'linkbtn', onclick: forgot }, '¿Olvidaste tu contraseña?') : null);

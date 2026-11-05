@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Programas · Legal</title>
+<style>
+  :root { --bg: #f4f6fb; --card: #fff; --text: #111a2e; --muted: #5d6a80; --accent: #2563eb; --border: #e2e7f0; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #0c111c; --card: #141a27; --text: #e6eaf2; --muted: #96a1b5; --accent: #6aa5ff; --border: #263048; } }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  main { max-width: 760px; margin: 0 auto; padding: 24px 16px 60px; }
+  nav { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 18px; }
+  nav a { padding: 7px 14px; border-radius: 999px; border: 1px solid var(--border); background: var(--card); color: var(--text); text-decoration: none; font-size: 14px; }
+  nav a.on { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+  article { background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 24px; }
+  h1 { font-size: 28px; line-height: 1.2; margin: 0 0 4px; letter-spacing: -.02em; }
+  h2 { font-size: 17px; margin: 24px 0 6px; }
+  p { margin: 8px 0; } ul { margin: 8px 0; padding-left: 22px; } li { margin: 4px 0; }
+  .fecha { color: var(--muted); font-size: 14px; }
+</style>
+</head>
+<body>
+<main id="legal"></main>
+<script src="legal-textos.js"></script>
+<script>
+  const doc = new URLSearchParams(location.search).get('doc');
+  const key = LEGAL_DOCS[doc] ? doc : 'privacidad', d = LEGAL_DOCS[key];
+  const main = document.getElementById('legal'), el = (t, txt) => { const e = document.createElement(t); if (txt) e.textContent = txt; return e; };
+  document.title = 'Programas · ' + d.titulo;
+  const nav = el('nav');
+  for (const [k, v] of Object.entries(LEGAL_DOCS)) { const a = el('a', v.titulo); a.href = '?doc=' + k; if (k === key) a.className = 'on'; nav.append(a); }
+  const art = el('article');
+  art.append(el('h1', d.titulo), Object.assign(el('div', `Última actualización: ${LEGAL_FECHA}`), { className: 'fecha' }));
+  for (const [titulo, ...blocks] of d.secciones) {
+    art.append(el('h2', titulo));
+    for (const b of blocks) {
+      if (typeof b === 'string') art.append(el('p', b));
+      else { const ul = el('ul'); b.forEach(x => ul.append(el('li', x))); art.append(ul); }
+    }
+  }
+  main.append(nav, art);
+</script>
+</body>
+</html>

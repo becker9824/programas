@@ -40,9 +40,10 @@ service cloud.firestore {
     match /congregaciones/{c} {
       allow get: if isActive(c) || (signedIn() && resource.data.creador == me());
       allow create: if signedIn() && request.resource.data.creador == me()
-        && only(['nombre', 'codigo', 'creador', 'modo']);
+        && only(['nombre', 'codigo', 'creador', 'modo', 'legal']);
       allow update: if isAdmin(c) && request.resource.data.creador == resource.data.creador
-        && only(['nombre', 'codigo', 'creador', 'modo'])
+        && only(['nombre', 'codigo', 'creador', 'modo', 'legal'])
+        && (!('legal' in request.resource.data) || request.resource.data.legal is map)
         && (!('modo' in request.resource.data) || request.resource.data.modo in ['todos', 'encargados']);
 
       match /miembros/{uid} {
@@ -61,7 +62,31 @@ service cloud.firestore {
               && get(/databases/$(db)/documents/congregaciones/$(c)).data.creador == me()));
         // Solo el coordinador aprueba, une al perfil o da funciones.
         allow update: if isAdmin(c) && validPerms(request.resource.data);
-        allow delete: if isAdmin(c);
+        // Cada quien puede eliminar su cuenta; el coordinador debe pasar antes su función a otro.
+        allow delete: if isAdmin(c) || (signedIn() && me() == uid && resource.data.admin != true);
+      }
+      // Constancia del consentimiento: cada quien la suya, con la hora del servidor. Nadie la borra,
+      // porque demuestra que se aceptó; retirar el consentimiento la cambia a 'revocado'.
+      match /consentimientos/{uid} {
+        allow read: if (signedIn() && me() == uid) || isAdmin(c);
+        allow create, update: if isMember(c) && me() == uid
+          && only(['version', 'estado', 'sensibles', 'mayor', 'nombre', 'email', 'plataforma', 'fecha'])
+          && request.resource.data.version is string && request.resource.data.version.size() <= 20
+          && request.resource.data.estado in ['aceptado', 'revocado']
+          && request.resource.data.fecha == request.time
+          && (request.resource.data.estado == 'revocado' || request.resource.data.sensibles == true);
+        allow delete: if false;
+      }
+      // Solicitudes de privacidad (derechos ARCO): las hace cada quien; las ve y responde el coordinador.
+      match /solicitudes/{id} {
+        allow read: if isAdmin(c) || (isMember(c) && resource.data.uid == me());
+        allow create: if isMember(c) && request.resource.data.uid == me()
+          && only(['uid', 'nombre', 'email', 'perfil', 'tipo', 'detalle', 'estado', 'fecha'])
+          && request.resource.data.tipo in ['acceso', 'rectificacion', 'cancelacion', 'oposicion', 'revocacion', 'baja']
+          && request.resource.data.estado == 'pendiente' && request.resource.data.fecha == request.time
+          && request.resource.data.detalle is string && request.resource.data.detalle.size() <= 1000;
+        allow update: if isAdmin(c) && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['estado', 'respuesta', 'atendida']);
+        allow delete: if false;
       }
 
       // Datos del programa: perfiles (con edad y notas), familias, semanas y ajustes.
