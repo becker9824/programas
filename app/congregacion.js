@@ -779,7 +779,7 @@ async function setCleaning(changes, msg) {
 }
 
 function renderArrangements() {
-  const editor = isElder(), thisMonday = mondayOf(todayISO());
+  const editor = isElder(), outEditor = can('servicio'), thisMonday = mondayOf(todayISO());
   // Las de una sola fecha se dejan de ver cuando ya pasaron
   const outings = nube.salidas.filter(o => !o.fecha || o.fecha >= todayISO()).sort((a, b) => a.dia - b.dia || (a.hora || '').localeCompare(b.hora || ''));
   const weeks = Array.from({ length: 12 }, (_, i) => addDays(thisMonday, i * 7));
@@ -802,16 +802,16 @@ function renderArrangements() {
     h('div', { class: 'row spread', style: { margin: '18px 0 8px' } },
       h('h2', { class: 'group', style: { margin: 0 } }, 'Programa de predicación'),
       h('span', { class: 'row' }, h('button', { class: 'btn small', onclick: () => preachingPDF(outings) }, '⬇ PDF o imagen'),
-        editor ? h('button', { class: 'btn small primary', onclick: () => openOutingDialog(null) }, '+ Nueva salida') : null)),
+        outEditor ? h('button', { class: 'btn small primary', onclick: () => openOutingDialog(null) }, '+ Nueva salida') : null)),
     h('div', { class: 'card', style: { padding: '4px 14px' } },
       byDay.length ? byDay.map(([d, list]) => h('div', { class: 'out-day' },
         h('div', { class: 'out-dayname' }, d),
-        list.map(o => h('div', { class: 'urow', style: { cursor: editor ? 'pointer' : null }, onclick: editor ? () => openOutingDialog(o) : null },
+        list.map(o => h('div', { class: 'urow', style: { cursor: outEditor ? 'pointer' : null }, onclick: outEditor ? () => openOutingDialog(o) : null },
           h('strong', { class: 'out-time' }, fmtHora(o.hora)),
           h('div', { class: 'info' }, h('strong', null, o.lugar), o.tipo ? h('span', { class: 'tag-fam' }, o.tipo) : null,
             o.fecha ? h('span', { class: 'tag-fam' }, 'Solo el ' + fmtShort(o.fecha)) : null,
             h('div', { class: 'small-text muted' }, [o.dirige ? 'Capitán: ' + o.dirige : '', o.territorio ? 'Territorio: ' + o.territorio : '', o.grupo, o.notas].filter(Boolean).join(' · ')))))))
-        : h('div', { class: 'empty' }, editor ? 'Todavía no hay salidas. Toca “+ Nueva salida”.' : 'Todavía no hay salidas.')),
+        : h('div', { class: 'empty' }, outEditor ? 'Todavía no hay salidas. Toca “+ Nueva salida”.' : 'Todavía no hay salidas.')),
     ...publicTurnsSection(),
     h('div', { class: 'row spread', style: { margin: '18px 0 8px' } },
       h('h2', { class: 'group', style: { margin: 0 } }, 'Programa de aseo del Salón del Reino'),

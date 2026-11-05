@@ -141,9 +141,17 @@ test('anuncios: los publica cualquier anciano; los publicadores solo ven los com
 
 test('salidas: programa de predicación con tipo, territorio y fecha', async () => {
   const salida = { dia: 5, hora: '09:30', lugar: 'Salón', dirige: 'Juan', grupo: '', notas: '', tipo: 'Casa en casa', territorio: 'Tarjeta 3', fecha: '2026-11-07' };
-  await assertSucceeds(setDoc(cdoc(db('prog'), 'salidas', 's1'), salida));
-  await assertFails(setDoc(cdoc(db('prog'), 'salidas', 's2'), { ...salida, otro: 1 }));
+  // Solo Servicio y el coordinador; los demás ancianos ya no
+  await assertFails(setDoc(cdoc(db('prog'), 'salidas', 's1'), salida));
+  await assertFails(setDoc(cdoc(db('secre'), 'salidas', 's1'), salida));
   await assertFails(setDoc(cdoc(db('pub'), 'salidas', 's3'), salida));
+  await assertSucceeds(setDoc(cdoc(db('admin'), 'salidas', 's1'), salida));
+  await assertSucceeds(updateDoc(cdoc(db('admin'), 'miembros', 'pub'), { permisos: ['servicio'] }));
+  await assertSucceeds(setDoc(cdoc(db('pub'), 'salidas', 's2'), salida));
+  await assertFails(setDoc(cdoc(db('pub'), 'salidas', 's4'), { ...salida, otro: 1 }));
+  await assertSucceeds(deleteDoc(cdoc(db('pub'), 'salidas', 's2')));
+  await assertSucceeds(updateDoc(cdoc(db('admin'), 'miembros', 'pub'), { permisos: [] }));
+  await assertFails(deleteDoc(cdoc(db('prog'), 'salidas', 's1')));
   await assertSucceeds(getDoc(cdoc(db('pub'), 'salidas', 's1')));
 });
 
@@ -329,10 +337,10 @@ test('calendario, salidas, limpieza e historial', async () => {
   await assertFails(setDoc(cdoc(db('pub'), 'eventos', 'e2'), ev));
   await assertFails(setDoc(cdoc(db('secre'), 'eventos', 'e2'), { ...ev, tipo: 'fiesta' }));
   const sal = { dia: 5, hora: '09:30', lugar: 'Salón del Reino', dirige: 'Pub', grupo: '', notas: '' };
-  await assertSucceeds(setDoc(cdoc(db('prog'), 'salidas', 's1'), sal));
+  await assertSucceeds(setDoc(cdoc(db('admin'), 'salidas', 's1'), sal));
   await assertSucceeds(getDoc(cdoc(db('pub'), 'salidas', 's1')));
   await assertFails(setDoc(cdoc(db('pub'), 'salidas', 's2'), sal));
-  await assertFails(setDoc(cdoc(db('prog'), 'salidas', 's2'), { ...sal, dia: 9 }));
+  await assertFails(setDoc(cdoc(db('admin'), 'salidas', 's2'), { ...sal, dia: 9 }));
   await assertSucceeds(setDoc(cdoc(db('secre'), 'arreglos', 'limpieza'), { semanas: { '2026-11-02': 'Grupo 1' } }));
   await assertSucceeds(getDoc(cdoc(db('pub'), 'arreglos', 'limpieza')));
   await assertFails(setDoc(cdoc(db('pub'), 'arreglos', 'limpieza'), { semanas: {} }));

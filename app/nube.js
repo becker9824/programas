@@ -16,6 +16,7 @@ const PERMS = [
   ['ancianos', 'Anciano', 'Anuncios y directorio (las otras funciones ya los incluyen)'],
   ['cuentas', 'Cuentas', 'Entradas, salidas y saldos de la congregación'],
   ['territorios', 'Territorios', 'Dibujar, asignar y terminar territorios (todos pueden ver el mapa)'],
+  ['servicio', 'Servicio', 'Arma el programa de predicación'],
   ['capitan', 'Capitán', 'Ve los territorios que se le asignan y registra lo que se trabajó'],
 ];
 // Cuentas de la congregación (solo el coordinador las ve: nube.miembros)
@@ -300,7 +301,7 @@ function enterCongregation() {
     return view.name === 'people';
   });
   // Capitanes (cuentas con la función): el coordinador publica la lista para que el siervo de territorios asigne
-  if (can('territorios') || isElder()) {
+  if (can('territorios') || can('servicio') || isElder()) {
     listen('capitanes', congRef('capitanes', 'lista'), s => { nube.capitanes = (s.exists() && s.data().lista) || []; return false; });
     listen('capitanesHermanos', congRef('capitanes', 'hermanos'), s => { nube.capitanesHermanos = (s.exists() && s.data().lista) || []; return false; });
   }

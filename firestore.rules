@@ -18,7 +18,7 @@ service cloud.firestore {
     function isElder(c) { return can(c, 'ancianos') || can(c, 'programa') || can(c, 'secretario'); }
     function cong(c) { return get(/databases/$(db)/documents/congregaciones/$(c)).data; }
     function only(keys) { return request.resource.data.keys().hasOnly(keys); }
-    function validPerms(d) { return !('permisos' in d) || (d.permisos is list && d.permisos.hasOnly(['programa', 'secretario', 'ancianos', 'cuentas', 'territorios', 'capitan'])); }
+    function validPerms(d) { return !('permisos' in d) || (d.permisos is list && d.permisos.hasOnly(['programa', 'secretario', 'ancianos', 'cuentas', 'territorios', 'servicio', 'capitan'])); }
 
     // Qué congregación usa cada cuenta (solo la propia persona)
     match /usuarios/{uid} {
@@ -223,7 +223,7 @@ service cloud.firestore {
         allow create, update: if isElder(c) && mes.matches('[0-9]{4}-[0-9]{2}')
           && only(['entre', 'fin']) && request.resource.data.entre is map && request.resource.data.fin is map;
       }
-      // Calendario, salidas de predicación y limpieza: los ven todos; los cambian los ancianos.
+      // Calendario y limpieza: los ven todos; los cambian los ancianos. Salidas de predicación: las cambia la función Servicio.
       match /eventos/{id} {
         allow read: if isActive(c);
         allow delete: if isElder(c);
@@ -236,8 +236,8 @@ service cloud.firestore {
       }
       match /salidas/{id} {
         allow read: if isActive(c);
-        allow delete: if isElder(c);
-        allow create, update: if isElder(c) && only(['dia', 'hora', 'lugar', 'dirige', 'grupo', 'notas', 'tipo', 'territorio', 'fecha'])
+        allow delete: if can(c, 'servicio');
+        allow create, update: if can(c, 'servicio') && only(['dia', 'hora', 'lugar', 'dirige', 'grupo', 'notas', 'tipo', 'territorio', 'fecha'])
           && request.resource.data.dia is int && request.resource.data.dia >= 0 && request.resource.data.dia <= 6
           && request.resource.data.lugar is string && request.resource.data.lugar.size() > 0 && request.resource.data.lugar.size() <= 120;
       }
