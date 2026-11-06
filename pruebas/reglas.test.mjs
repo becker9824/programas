@@ -156,8 +156,19 @@ test('Solo Servicio: salidas, turnos y territorios; desactivable por el coordina
   await assertSucceeds(setDoc(cdoc(db('pub'), 'publica', 'z1'), tur));
   await assertSucceeds(setDoc(cdoc(db('pub'), 'territorios', 'z1'), ter));
   await assertSucceeds(deleteDoc(cdoc(db('pub'), 'territorios', 'z1')));
+  // Grupos: Servicio sí, el secretario solo los ve; Servicio cuenta como anciano (lee hermanos y anuncios)
+  const gru = { nombre: 'Grupo Z', superintendente: null, auxiliar: null, miembros: [] };
+  await assertSucceeds(setDoc(cdoc(db('pub'), 'grupos', 'z1'), gru));
+  await assertFails(setDoc(cdoc(db('secre'), 'grupos', 'z2'), gru));
+  await assertFails(deleteDoc(cdoc(db('secre'), 'grupos', 'z1')));
+  await assertSucceeds(getDoc(cdoc(db('secre'), 'grupos', 'z1')));
+  await assertSucceeds(getDoc(cdoc(db('pub'), 'grupos', 'z1')));
+  await assertSucceeds(getDocs(collection(db('pub'), 'congregaciones', C, 'perfiles')));
   await assertSucceeds(updateDoc(cdoc(db('admin'), 'miembros', 'pub'), { permisos: ['territorios'] }));
   await assertSucceeds(updateDoc(c(db('admin')), { soloServicio: false }));
+  await assertSucceeds(setDoc(cdoc(db('secre'), 'grupos', 'z2'), gru));
+  await assertSucceeds(deleteDoc(cdoc(db('secre'), 'grupos', 'z2')));
+  await assertSucceeds(deleteDoc(cdoc(db('admin'), 'grupos', 'z1')));
   await assertSucceeds(setDoc(cdoc(db('prog'), 'salidas', 'z2'), sal));
   await assertSucceeds(setDoc(cdoc(db('prog'), 'publica', 'z2'), tur));
   await assertSucceeds(setDoc(cdoc(db('pub'), 'territorios', 'z2'), ter));

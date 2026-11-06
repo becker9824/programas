@@ -15,12 +15,13 @@ service cloud.firestore {
     function can(c, p) { return isActive(c) && (member(c).admin == true || p in member(c).get('permisos', [])); }
     function myProfile(c) { return member(c).get('perfil', null); }
     // Todas las funciones son de ancianos: cualquiera de ellas da anuncios y directorio
-    function isElder(c) { return can(c, 'ancianos') || can(c, 'programa') || can(c, 'secretario'); }
+    function isElder(c) { return can(c, 'ancianos') || can(c, 'programa') || can(c, 'secretario') || can(c, 'servicio'); }
     function cong(c) { return get(/databases/$(db)/documents/congregaciones/$(c)).data; }
-    // Solo Servicio (de fábrica): salidas, turnos y territorios. Con soloServicio: false, también ancianos y función Territorios.
+    // Solo Servicio (de fábrica): grupos, salidas, turnos y territorios. Con soloServicio: false, también secretario, ancianos y función Territorios.
     function abierto(c) { return cong(c).get('soloServicio', true) == false; }
     function canPreach(c) { return can(c, 'servicio') || (abierto(c) && isElder(c)); }
     function canTerr(c) { return can(c, 'servicio') || (abierto(c) && can(c, 'territorios')); }
+    function canGroups(c) { return can(c, 'servicio') || (abierto(c) && can(c, 'secretario')); }
     function only(keys) { return request.resource.data.keys().hasOnly(keys); }
     function validPerms(d) { return !('permisos' in d) || (d.permisos is list && d.permisos.hasOnly(['programa', 'secretario', 'ancianos', 'cuentas', 'territorios', 'servicio', 'capitan'])); }
 
@@ -213,8 +214,8 @@ service cloud.firestore {
       // Grupos de servicio del campo: los ven los ancianos (cualquier función); los arma el secretario.
       match /grupos/{id} {
         allow read: if isElder(c);
-        allow delete: if can(c, 'secretario');
-        allow create, update: if can(c, 'secretario')
+        allow delete: if canGroups(c);
+        allow create, update: if canGroups(c)
           && only(['nombre', 'superintendente', 'auxiliar', 'miembros'])
           && request.resource.data.nombre is string && request.resource.data.nombre.size() > 0 && request.resource.data.nombre.size() <= 60
           && (request.resource.data.superintendente == null || request.resource.data.superintendente is string)

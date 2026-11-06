@@ -13,6 +13,7 @@ function guideSteps() {
     { icon: 'list', title: 'Programa de Vida y Ministerio', text: 'En Semanas, las guías de jw.org se bajan solas. Toca un espacio y elige de la lista de recomendados, o usa “Sugerencias” para llenar toda la semana. Si hay sala auxiliar, actívala en la semana.' },
     { icon: 'mecanicas', title: 'Mecánicas y fin de semana', text: 'En Mecánicas van micrófonos, acomodadores y audio; en Fin de semana, el discurso público, el orador y el lector de La Atalaya. “Avisar por WhatsApp” manda a cada quien su asignación.' });
   if (can('secretario')) steps.push({ icon: 'report', title: 'Informes y registros', text: 'En Informes ves quién falta, capturas informes y sacas las tarjetas S-21. En Asistencia anotas cuántos asistieron a cada reunión (S-88).' });
+  if (can('servicio') && !isAdmin()) steps.push({ icon: 'grupos', title: 'Grupos de servicio', text: 'En Grupos armas los grupos, con su superintendente, su auxiliar y sus hermanos. En Arreglos manejas las salidas de predicación y la predicación pública.' });
   if (canTerritories()) steps.push({ icon: 'territorios', title: 'Territorios', text: 'Dibuja cada tarjeta en el mapa, asígnala a un capitán y revisa lo que se trabajó. Cuando se completan todas, empieza otra vuelta sola.' });
   else if (can('capitan')) steps.push({ icon: 'territorios', title: 'Capitán de territorios', text: 'En Territorios salen “Mis tarjetas”. Al llegar, toca “Empezar salida con GPS”: graba lo que recorren y al terminar lo registra. También puedes marcar casas y hasta dónde llegaron.' });
   if (isElder()) steps.push({ icon: 'calendario', title: 'Calendario y arreglos', text: 'En Calendario van la visita del superintendente de circuito, asambleas y la Conmemoración. En Arreglos, las salidas de predicación y la limpieza del Salón. En Historial ves quién cambió qué.' });
@@ -304,6 +305,7 @@ function accountExtras() {
     nube.me.perfil ? remindersToggle() : null,
     pushCard(false),
     textSizeRow(),
+    menuRow(),
     privacyCard(),
     h('div', { class: 'row', style: { marginTop: '8px' } },
       h('button', { class: 'btn', onclick: () => openSessionsDialog(false) }, '📱 Mis sesiones abiertas'),
@@ -410,7 +412,8 @@ function openViewDialog() {
     h('button', { class: 'btn small', title: 'Subir', disabled: i === 0 || null, onclick: () => { [arr[i - 1], arr[i]] = [arr[i], arr[i - 1]]; list(box, arr); } }, '↑'),
     h('button', { class: 'btn small', title: 'Bajar', disabled: i === arr.length - 1 || null, onclick: () => { [arr[i + 1], arr[i]] = [arr[i], arr[i + 1]]; list(box, arr); } }, '↓'))));
   list(navBox, navAll); list(tileBox, tilesAll);
-  const store = async vista => {
+  const store = async nueva => {
+    const vista = menuSuelto() ? { ...nueva, menu: 'sueltas' } : nueva; // el estilo de menú no se pierde
     try {
       await F.setDoc(ref('usuarios', nube.user.uid), { vista }, { merge: true });
       nube.vista = vista; homeEdit = null; dlg.close(); render(); toast('Listo: así se verá solo en tu cuenta');

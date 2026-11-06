@@ -2,7 +2,7 @@
 // Se carga en orden desde index.html (scripts normales: comparten variables y funciones).
 
 // ---------- sección Grupos (grupos de servicio del campo) ----------
-// Los ven los ancianos; los arman el secretario y el coordinador. Cada hermano está en un solo grupo.
+// Los ven los ancianos; los arman Servicio y el coordinador (canGroups). Cada hermano está en un solo grupo.
 function groupStats(people) {
   const n = f => people.filter(f).length;
   return [['Hermanos', people.length], ['Publicadores', n(p => p.tipo !== 'no')], ['Precursores regulares', n(p => p.tipo === 'reg')], ['Precursores auxiliares este mes', n(p => auxIn(p, todayISO().slice(0, 7)))],
@@ -77,7 +77,7 @@ function openGroupDialog(g) {
 }
 
 function renderGroups() {
-  const editor = can('secretario');
+  const editor = canGroups();
   const groups = [...nube.grupos].sort(byGrupo);
   const name = id => { const p = id && profById(id); return p ? p.name : '—'; };
   const free = state.profiles.filter(p => !grupoOf(p.id)).sort((a, b) => a.name.localeCompare(b.name, 'es'));
@@ -99,7 +99,7 @@ function renderGroups() {
   return h('div', null,
     h('div', { class: 'row spread', style: { marginBottom: '14px' } },
       h('div', null, h('h1', null, 'Grupos'),
-        h('p', { class: 'sub', style: { margin: 0 } }, editor ? 'Arma los grupos de servicio del campo: su superintendente, su auxiliar y sus hermanos.' : 'Grupos de servicio del campo. Los arman el secretario y el coordinador.')),
+        h('p', { class: 'sub', style: { margin: 0 } }, editor ? 'Arma los grupos de servicio del campo: su superintendente, su auxiliar y sus hermanos.' : 'Grupos de servicio del campo. Los arma el encargado de Servicio.')),
       editor ? h('button', { class: 'btn primary', onclick: () => openGroupDialog(null) }, '+ Nuevo grupo') : null),
     h('div', { class: 'card', style: { padding: '14px', marginBottom: '14px' } }, h('strong', null, 'Toda la congregación'), statsRow(state.profiles)),
     groups.length ? groups.map(card) : h('div', { class: 'card empty', style: { padding: '20px' } }, editor ? 'Todavía no hay grupos. Toca “+ Nuevo grupo”.' : 'Todavía no hay grupos.'),

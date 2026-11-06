@@ -124,9 +124,9 @@ function congregationSettings() {
         radio('encargados', 'Solo los encargados', 'Los publicadores pueden ver el programa, pero los informes los registra el secretario.')),
       h('label', { class: 'row', style: { flexWrap: 'nowrap', alignItems: 'flex-start', gap: '8px', color: 'var(--text)', fontSize: '14px' } },
         h('input', { type: 'checkbox', checked: soloServicio() || null, style: { marginTop: '3px' }, onchange: e =>
-          update({ soloServicio: e.target.checked }, e.target.checked ? 'Ahora solo Servicio y el coordinador hacen esos cambios' : 'Ahora los ancianos y la función Territorios también pueden') }),
-        h('span', null, h('strong', null, 'Solo Servicio cambia predicación y territorios'),
-          h('div', { class: 'muted small-text' }, 'Salidas, predicación pública y territorios: los cambian Servicio y el coordinador; los demás solo los ven. Si lo desactivas, también pueden los ancianos (salidas y turnos) y la función Territorios (territorios).'))))];
+          update({ soloServicio: e.target.checked }, e.target.checked ? 'Ahora solo Servicio y el coordinador hacen esos cambios' : 'Ahora también pueden los demás encargados') }),
+        h('span', null, h('strong', null, 'Solo Servicio cambia grupos, predicación y territorios'),
+          h('div', { class: 'muted small-text' }, 'Salidas, predicación pública, territorios y grupos: los cambian Servicio y el coordinador; los demás solo los ven. Si lo desactivas, también pueden el secretario (grupos), los ancianos (salidas y turnos) y la función Territorios (territorios).'))))];
 }
 
 function renderPubSettings() {

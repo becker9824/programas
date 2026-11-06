@@ -15,7 +15,7 @@ const PERMS = [
   ['secretario', 'Secretario', 'Informes de todos: verlos y capturarlos'],
   ['ancianos', 'Anciano', 'Anuncios y directorio (las otras funciones ya los incluyen)'],
   ['cuentas', 'Cuentas', 'Entradas, salidas y saldos de la congregación'],
-  ['servicio', 'Servicio', 'Salidas de predicación, predicación pública y territorios'],
+  ['servicio', 'Servicio', 'Grupos de servicio, salidas, predicación pública y territorios'],
   ['territorios', 'Territorios', 'Dibujar y asignar territorios, solo si el coordinador desactiva “Solo Servicio”'],
   ['capitan', 'Capitán', 'Ve los territorios que se le asignan y registra lo que se trabajó'],
 ];
@@ -70,7 +70,7 @@ function setGroupMember(pid, from, to) {
   return Promise.all(w).catch(e => toast(errMsg(e)));
 }
 // Colecciones que se guardan por documento: [colección, parte de state, permisos para leer]
-const COLLS = [['perfiles', 'profiles', ['programa', 'secretario', 'ancianos']], ['familias', 'families', ['programa']], ['semanas', 'programs', ['programa', 'secretario', 'ancianos']]];
+const COLLS = [['perfiles', 'profiles', ['programa', 'secretario', 'ancianos', 'servicio']], ['familias', 'families', ['programa']], ['semanas', 'programs', ['programa', 'secretario', 'ancianos', 'servicio']]];
 let F = null; // funciones de Firebase, cargadas al abrir
 
 async function loadFirebase() {
@@ -103,13 +103,14 @@ const congRef = (...path) => ref('congregaciones', nube.cong, ...path);
 const isAdmin = () => !!(nube.me && nube.me.estado === 'activo' && nube.me.admin); // coordinador
 const can = p => isAdmin() || !!(nube.me && nube.me.estado === 'activo' && (nube.me.permisos || []).includes(p));
 // Todas las funciones son de ancianos: cualquiera da anuncios (publicar) y directorio
-const isElder = () => can('ancianos') || can('programa') || can('secretario');
+const isElder = () => can('ancianos') || can('programa') || can('secretario') || can('servicio');
 const accessKey = () => nube.me ? JSON.stringify([!!nube.me.admin, [...(nube.me.permisos || [])].sort()]) : '';
-// Solo Servicio (de fábrica): salidas, predicación pública y territorios los cambian Servicio y el coordinador.
-// Desactivado (congData.soloServicio === false), también los ancianos (salidas y turnos) y la función Territorios.
+// Solo Servicio (de fábrica): grupos, salidas, predicación pública y territorios los cambian Servicio y el coordinador.
+// Desactivado (congData.soloServicio === false), también el secretario (grupos), los ancianos (salidas y turnos) y la función Territorios.
 const soloServicio = () => !nube.congData || nube.congData.soloServicio !== false;
 const canPreach = () => can('servicio') || (!soloServicio() && isElder());
 const canTerritories = () => can('servicio') || (!soloServicio() && can('territorios'));
+const canGroups = () => can('servicio') || (!soloServicio() && can('secretario'));
 const reportsByMembers = () => !nube.congData || nube.congData.modo !== 'encargados';
 // JSON con las claves ordenadas, para saber si un documento cambió de verdad
 const stable = v => JSON.stringify(v, (k, x) => x && typeof x === 'object' && !Array.isArray(x)

@@ -732,6 +732,19 @@ const TEXT_SIZES = [['1', 'Normal'], ['1.12', 'Grande'], ['1.25', 'Muy grande']]
 const textSize = () => { try { return localStorage.getItem('letra') || '1'; } catch (e) { return '1'; } };
 function applyTextSize() { document.documentElement.style.zoom = textSize() === '1' ? '' : textSize(); }
 applyTextSize();
+// Menú: por secciones (temas) o todo suelto. Se guarda en la cuenta (usuarios.vista.menu).
+function menuRow() {
+  const box = h('div', { class: 'chips wide', style: { margin: '6px 0 0' } });
+  const paint = () => box.replaceChildren(...[['secciones', 'Por secciones'], ['sueltas', 'Todo suelto']].map(([v, t]) => h('button', { class: (menuSuelto() ? 'sueltas' : 'secciones') === v ? 'on' : '',
+    onclick: async () => {
+      const vista = { ...(nube.vista || {}), menu: v };
+      try { await F.setDoc(ref('usuarios', nube.user.uid), { vista: { menu: v } }, { merge: true }); nube.vista = vista; render(); toast('Listo: así se verá solo en tu cuenta'); }
+      catch (e) { toast(errMsg(e)); }
+    } }, t)));
+  paint();
+  return h('div', { style: { margin: '10px 0' } }, h('strong', { class: 'small-text' }, '🧭 Menú'), box,
+    h('div', { class: 'muted small-text', style: { marginTop: '4px' } }, 'Todo suelto deja arriba las principales; las demás van en Más, ordenadas.'));
+}
 function textSizeRow() {
   const box = h('div', { class: 'chips wide', style: { margin: '6px 0 0' } });
   const paint = () => box.replaceChildren(...TEXT_SIZES.map(([v, t], i) => h('button', { class: textSize() === v ? 'on' : '', style: { fontSize: (13 + i * 2) + 'px' },

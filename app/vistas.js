@@ -131,6 +131,16 @@ const NAV_GROUPS = [
   ['g-secretario', 'Secretario', 'report', ['report', 'people', 'families', 'asistencia', 'estadisticas', 'historial']],
   ['g-admin', 'Administración', 'settings', ['cuentas', 'privacidad', 'settings']],
 ];
+const menuSuelto = () => !!(FB_CONFIG && nube.vista && nube.vista.menu === 'sueltas');
+// Mismo orden que los temas; lo que no tenga tema va al final
+const byTheme = items => [...NAV_GROUPS.flatMap(g => g[3]).map(k => items.find(i => i[0] === k)).filter(Boolean), ...items.filter(i => !NAV_GROUPS.some(g => g[3].includes(i[0])))];
+// Todo suelto: arriba solo las principales; las demás, en Más
+function flatNav(items) {
+  const own = myView() && (myView().nav || []).length;
+  const main = own ? items.slice(0, 5) : ['inicio', 'list', 'report', 'anuncios', 'territorios'].map(v => items.find(i => i[0] === v)).filter(Boolean);
+  const rest = items.filter(i => !main.includes(i)), list = own ? rest : byTheme(rest);
+  return list.length ? [...main, ['g-mas', 'Más', list.reduce((a, i) => a + (i[2] || 0), 0), list, 'mas']] : main;
+}
 function groupedNav(items) {
   const out = items.filter(i => !NAV_GROUPS.some(g => g[3].includes(i[0])));
   for (const [v, t, ic, keys] of NAV_GROUPS) {
@@ -151,7 +161,7 @@ function fitTopNav(items) {
     } }, icon(ic || v, 18), t, badge(n), kids ? ' ▾' : null);
     return el;
   };
-  const shown = groupedNav(items).map(i => ({ i, el: btn(i) }));
+  const shown = (menuSuelto() ? flatNav(items) : groupedNav(items)).map(i => ({ i, el: btn(i) }));
   nav.replaceChildren(...shown.map(x => x.el));
   // Lo que miden los botones juntos (con la barra a la derecha, lo que no cabe se sale por la izquierda)
   const tooWide = () => [...nav.children].reduce((a, c) => a + c.offsetWidth + 2, 0) > nav.clientWidth;
@@ -187,14 +197,14 @@ addEventListener('resize', () => { clearTimeout(navResize); navResize = setTimeo
 function openMoreSheet(items) {
   const close = () => { dlg.close(); dlg.remove(); };
   // Mismos temas que arriba; lo que no tenga tema va al final
-  const groups = NAV_GROUPS.map(g => [g[1], items.filter(i => g[3].includes(i[0]))]).filter(g => g[1].length);
+  const groups = menuSuelto() ? [['', byTheme(items)]] : NAV_GROUPS.map(g => [g[1], items.filter(i => g[3].includes(i[0]))]).filter(g => g[1].length);
   const rest = items.filter(i => !NAV_GROUPS.some(g => g[3].includes(i[0])));
-  if (rest.length) groups.push(['Otras', rest]);
+  if (rest.length && !menuSuelto()) groups.push(['Otras', rest]);
   let k = 0;
   // Cuadrícula de íconos, como el menú de apps del celular; aparecen uno tras otro
   const dlg = h('dialog', { class: 'sheet more-sheet', onclick: e => { if (e.target === dlg) close(); } },
     h('div', { class: 'grab' }),
-    h('div', { class: 'more-scroll' }, groups.map(([title, list]) => [h('div', { class: 'more-title' }, title),
+    h('div', { class: 'more-scroll' }, groups.map(([title, list]) => [title ? h('div', { class: 'more-title' }, title) : null,
       h('div', { class: 'more-grid' }, list.map(([v, t, n]) => h('button', { class: 'more-item' + (isActiveView(v) ? ' active' : ''),
         style: { '--d': (k++ * 25) + 'ms' }, onclick: () => { close(); go({ name: v }); } },
         h('span', { class: 'more-ic' }, icon(v, 24), badge(n)), h('span', { class: 'more-t' }, t))))])));

@@ -452,7 +452,7 @@ dialog.dlg::backdrop, dialog.sheet::backdrop { background: rgba(10,15,30,.45); b
 dialog.sheet[open] { animation: sheet-in .24s cubic-bezier(.2,.8,.2,1); }
 @keyframes sheet-in { from { transform: translateY(100%); } to { transform: none; } }
 .toast { border-radius: 12px; box-shadow: var(--shadow-lg); font-weight: 500; padding: 11px 18px; }
-.nav-menu { border-radius: 14px; box-shadow: var(--shadow-lg); }
+.nav-menu { border-radius: 14px; box-shadow: var(--shadow-lg); max-height: calc(100vh - 90px); overflow-y: auto; }
 
 /* Barra de abajo (celular): píldora detrás del ícono activo, como las apps nativas */
 @media (max-width: 760px) {

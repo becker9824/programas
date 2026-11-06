@@ -52,7 +52,7 @@ function openProfileDialog(prof, opts = {}) {
   sexM.addEventListener('change', syncNom); sexF.addEventListener('change', syncNom); syncNom();
   // Grupo: se guarda en grupos/{id}.miembros; lo cambian el secretario y el coordinador
   const oldGroup = prof ? grupoOf(prof.id) : null;
-  const groupSel = h('select', { disabled: FB_CONFIG && !can('secretario') ? true : null }, h('option', { value: '' }, '(Sin grupo)'),
+  const groupSel = h('select', { disabled: FB_CONFIG && !canGroups() ? true : null }, h('option', { value: '' }, '(Sin grupo)'),
     [...nube.grupos].sort(byGrupo).map(g => h('option', { value: g.id, selected: oldGroup && oldGroup.id === g.id ? true : null }, g.nombre)));
   // Cuenta (solo el coordinador): funciones de quien ya tiene cuenta, o unir una cuenta sin hermano
   const account = FB_CONFIG && isAdmin() ? (prof && memberOfProfile(prof.id)) || null : null;
@@ -191,7 +191,7 @@ function openProfileDialog(prof, opts = {}) {
         state.profiles = state.profiles.filter(x => x !== prof);
         for (const q of state.programs) for (const r of q.rows) for (const k of ['a', 'b', 'xa', 'xb']) if (r[k] === prof.id) r[k] = null;
         if (account) memberUpdate(account, { perfil: null });
-        if (oldGroup && (!FB_CONFIG || can('secretario'))) setGroupMember(prof.id, oldGroup, null);
+        if (oldGroup && (!FB_CONFIG || canGroups())) setGroupMember(prof.id, oldGroup, null);
         save(); saved = true; dlg.close(); render();
       } }, 'Eliminar') : null,
       h('button', { class: 'btn', onclick: () => dlg.close() }, 'Cancelar'),
