@@ -13,7 +13,7 @@ function guideSteps() {
     { icon: 'list', title: 'Programa de Vida y Ministerio', text: 'En Semanas, las guías de jw.org se bajan solas. Toca un espacio y elige de la lista de recomendados, o usa “Sugerencias” para llenar toda la semana. Si hay sala auxiliar, actívala en la semana.' },
     { icon: 'mecanicas', title: 'Mecánicas y fin de semana', text: 'En Mecánicas van micrófonos, acomodadores y audio; en Fin de semana, el discurso público, el orador y el lector de La Atalaya. “Avisar por WhatsApp” manda a cada quien su asignación.' });
   if (can('secretario')) steps.push({ icon: 'report', title: 'Informes y registros', text: 'En Informes ves quién falta, capturas informes y sacas las tarjetas S-21. En Asistencia anotas cuántos asistieron a cada reunión (S-88).' });
-  if (can('territorios')) steps.push({ icon: 'territorios', title: 'Territorios', text: 'Dibuja cada tarjeta en el mapa, asígnala a un capitán y revisa lo que se trabajó. Cuando se completan todas, empieza otra vuelta sola.' });
+  if (canTerritories()) steps.push({ icon: 'territorios', title: 'Territorios', text: 'Dibuja cada tarjeta en el mapa, asígnala a un capitán y revisa lo que se trabajó. Cuando se completan todas, empieza otra vuelta sola.' });
   else if (can('capitan')) steps.push({ icon: 'territorios', title: 'Capitán de territorios', text: 'En Territorios salen “Mis tarjetas”. Al llegar, toca “Empezar salida con GPS”: graba lo que recorren y al terminar lo registra. También puedes marcar casas y hasta dónde llegaron.' });
   if (isElder()) steps.push({ icon: 'calendario', title: 'Calendario y arreglos', text: 'En Calendario van la visita del superintendente de circuito, asambleas y la Conmemoración. En Arreglos, las salidas de predicación y la limpieza del Salón. En Historial ves quién cambió qué.' });
   steps.push({ icon: 'report', title: 'Tu parte', text: 'En Inicio ves tu próxima asignación. ' + (reportsByMembers() ? 'Cada mes mandas tu informe desde Informe. ' : '') + 'Si vas a faltar un tiempo, activa tu Ausencia en Inicio y no te tomarán en cuenta para asignaciones. Si se va el internet, la app sigue funcionando y guarda los cambios para subirlos después.' });
@@ -207,7 +207,7 @@ function remindersToggle() {
     if (LN) scheduleReminders();
     toast(on ? 'Te avisaremos antes de tus asignaciones' : 'Recordatorios apagados');
   } });
-  return h('label', { class: 'row', style: { gap: '8px', margin: '10px 0 4px', color: 'var(--text)', fontSize: '14px' } }, box,
+  return h('label', { class: 'row', style: { flexWrap: 'nowrap', gap: '8px', margin: '10px 0 4px', color: 'var(--text)', fontSize: '14px' } }, box,
     h('span', null, '🔔 Recordarme mis asignaciones', h('div', { class: 'muted small-text' },
       LN ? 'El celular te avisa 3 días antes y el día anterior, aunque la app esté cerrada.'
         : 'Al abrir la app te avisa si tienes una asignación en los próximos 2 días.')));

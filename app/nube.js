@@ -15,8 +15,8 @@ const PERMS = [
   ['secretario', 'Secretario', 'Informes de todos: verlos y capturarlos'],
   ['ancianos', 'Anciano', 'Anuncios y directorio (las otras funciones ya los incluyen)'],
   ['cuentas', 'Cuentas', 'Entradas, salidas y saldos de la congregación'],
-  ['territorios', 'Territorios', 'Dibujar, asignar y terminar territorios (todos pueden ver el mapa)'],
-  ['servicio', 'Servicio', 'Arma el programa de predicación'],
+  ['servicio', 'Servicio', 'Salidas de predicación, predicación pública y territorios'],
+  ['territorios', 'Territorios', 'Dibujar y asignar territorios, solo si el coordinador desactiva “Solo Servicio”'],
   ['capitan', 'Capitán', 'Ve los territorios que se le asignan y registra lo que se trabajó'],
 ];
 // Cuentas de la congregación (solo el coordinador las ve: nube.miembros)
@@ -105,6 +105,11 @@ const can = p => isAdmin() || !!(nube.me && nube.me.estado === 'activo' && (nube
 // Todas las funciones son de ancianos: cualquiera da anuncios (publicar) y directorio
 const isElder = () => can('ancianos') || can('programa') || can('secretario');
 const accessKey = () => nube.me ? JSON.stringify([!!nube.me.admin, [...(nube.me.permisos || [])].sort()]) : '';
+// Solo Servicio (de fábrica): salidas, predicación pública y territorios los cambian Servicio y el coordinador.
+// Desactivado (congData.soloServicio === false), también los ancianos (salidas y turnos) y la función Territorios.
+const soloServicio = () => !nube.congData || nube.congData.soloServicio !== false;
+const canPreach = () => can('servicio') || (!soloServicio() && isElder());
+const canTerritories = () => can('servicio') || (!soloServicio() && can('territorios'));
 const reportsByMembers = () => !nube.congData || nube.congData.modo !== 'encargados';
 // JSON con las claves ordenadas, para saber si un documento cambió de verdad
 const stable = v => JSON.stringify(v, (k, x) => x && typeof x === 'object' && !Array.isArray(x)
@@ -306,7 +311,7 @@ function enterCongregation() {
     listen('capitanesHermanos', congRef('capitanes', 'hermanos'), s => { nube.capitanesHermanos = (s.exists() && s.data().lista) || []; return false; });
   }
   // Registros de lo trabajado en territorios (desde el año pasado)
-  if (can('territorios') || can('capitan')) listen('trabajos', F.query(F.collection(F.db, 'congregaciones', nube.cong, 'trabajos'),
+  if (can('territorios') || can('servicio') || can('capitan')) listen('trabajos', F.query(F.collection(F.db, 'congregaciones', nube.cong, 'trabajos'),
     F.where('fecha', '>=', `${new Date().getFullYear() - 1}-01-01`)), s => {
     nube.trabajos = s.docs.map(d => ({ id: d.id, ...d.data() }));
     if (view.name === 'territorios' && terr && terr.refresh) terr.refresh();

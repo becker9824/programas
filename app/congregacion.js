@@ -779,7 +779,7 @@ async function setCleaning(changes, msg) {
 }
 
 function renderArrangements() {
-  const editor = isElder(), outEditor = can('servicio'), thisMonday = mondayOf(todayISO());
+  const editor = isElder(), outEditor = canPreach(), thisMonday = mondayOf(todayISO());
   // Las de una sola fecha se dejan de ver cuando ya pasaron
   const outings = nube.salidas.filter(o => !o.fecha || o.fecha >= todayISO()).sort((a, b) => a.dia - b.dia || (a.hora || '').localeCompare(b.hora || ''));
   const weeks = Array.from({ length: 12 }, (_, i) => addDays(thisMonday, i * 7));

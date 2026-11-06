@@ -21,7 +21,7 @@ after(() => env.cleanup());
 test('el creador arma su congregación y entra como coordinador', async () => {
   await env.clearFirestore();
   const a = db('admin');
-  await assertSucceeds(setDoc(cdoc(a), { nombre: 'Centro', codigo: CODE, creador: 'admin', modo: 'todos' }));
+  await assertSucceeds(setDoc(cdoc(a), { nombre: 'Centro', codigo: CODE, creador: 'admin', modo: 'todos', soloServicio: false }));
   await assertSucceeds(setDoc(doc(a, 'codigos', CODE), { cong: C }));
   await assertSucceeds(setDoc(cdoc(a, 'miembros', 'admin'), memberData({ estado: 'activo', admin: true })));
   await assertSucceeds(setDoc(cdoc(a, 'perfiles', 'p1'), { name: 'Pub' }));
@@ -139,8 +139,37 @@ test('anuncios: los publica cualquier anciano; los publicadores solo ven los com
   await assertSucceeds(deleteDoc(cdoc(db('secre'), 'anuncios', 'a1')));
 });
 
+test('Solo Servicio: salidas, turnos y territorios; desactivable por el coordinador', async () => {
+  const c = d => doc(d, 'congregaciones', C);
+  const sal = { dia: 5, hora: '09:30', lugar: 'Salón', dirige: '', grupo: '', notas: '', tipo: 'Casa en casa', territorio: '', fecha: '' };
+  const tur = { fecha: '2026-11-07', hora: '10:00', horaFin: '12:00', lugar: 'Plaza', cupo: 2, inscritos: {}, notas: '' };
+  const ter = { numero: '77', territorio: '', nombre: 'X', tarjeta: '', notas: '', coords: '', calles: '', estado: 'disponible', asignadoA: '', capitan: '', desde: '2026-10-01', historial: [], veces: 0 };
+  await assertFails(updateDoc(c(db('prog')), { soloServicio: true }));
+  await assertFails(updateDoc(c(db('admin')), { soloServicio: 'si' }));
+  await assertSucceeds(updateDoc(c(db('admin')), { soloServicio: true }));
+  await assertFails(setDoc(cdoc(db('prog'), 'salidas', 'z1'), sal));
+  await assertFails(setDoc(cdoc(db('prog'), 'publica', 'z1'), tur));
+  await assertSucceeds(updateDoc(cdoc(db('admin'), 'miembros', 'pub'), { permisos: ['territorios'] }));
+  await assertFails(setDoc(cdoc(db('pub'), 'territorios', 'z1'), ter));
+  await assertSucceeds(updateDoc(cdoc(db('admin'), 'miembros', 'pub'), { permisos: ['servicio'] }));
+  await assertSucceeds(setDoc(cdoc(db('pub'), 'salidas', 'z1'), sal));
+  await assertSucceeds(setDoc(cdoc(db('pub'), 'publica', 'z1'), tur));
+  await assertSucceeds(setDoc(cdoc(db('pub'), 'territorios', 'z1'), ter));
+  await assertSucceeds(deleteDoc(cdoc(db('pub'), 'territorios', 'z1')));
+  await assertSucceeds(updateDoc(cdoc(db('admin'), 'miembros', 'pub'), { permisos: ['territorios'] }));
+  await assertSucceeds(updateDoc(c(db('admin')), { soloServicio: false }));
+  await assertSucceeds(setDoc(cdoc(db('prog'), 'salidas', 'z2'), sal));
+  await assertSucceeds(setDoc(cdoc(db('prog'), 'publica', 'z2'), tur));
+  await assertSucceeds(setDoc(cdoc(db('pub'), 'territorios', 'z2'), ter));
+  await assertFails(setDoc(cdoc(db('secre'), 'territorios', 'z3'), ter));
+  await assertFails(setDoc(cdoc(db('pub'), 'salidas', 'z3'), sal));
+  await assertSucceeds(deleteDoc(cdoc(db('pub'), 'territorios', 'z2')));
+  await assertSucceeds(updateDoc(cdoc(db('admin'), 'miembros', 'pub'), { permisos: [] }));
+});
+
 test('salidas: programa de predicación con tipo, territorio y fecha', async () => {
   const salida = { dia: 5, hora: '09:30', lugar: 'Salón', dirige: 'Juan', grupo: '', notas: '', tipo: 'Casa en casa', territorio: 'Tarjeta 3', fecha: '2026-11-07' };
+  await assertSucceeds(updateDoc(doc(db('admin'), 'congregaciones', C), { soloServicio: true }));
   // Solo Servicio y el coordinador; los demás ancianos ya no
   await assertFails(setDoc(cdoc(db('prog'), 'salidas', 's1'), salida));
   await assertFails(setDoc(cdoc(db('secre'), 'salidas', 's1'), salida));
@@ -152,6 +181,7 @@ test('salidas: programa de predicación con tipo, territorio y fecha', async () 
   await assertSucceeds(deleteDoc(cdoc(db('pub'), 'salidas', 's2')));
   await assertSucceeds(updateDoc(cdoc(db('admin'), 'miembros', 'pub'), { permisos: [] }));
   await assertFails(deleteDoc(cdoc(db('prog'), 'salidas', 's1')));
+  await assertSucceeds(updateDoc(doc(db('admin'), 'congregaciones', C), { soloServicio: false }));
   await assertSucceeds(getDoc(cdoc(db('pub'), 'salidas', 's1')));
 });
 

@@ -596,7 +596,7 @@ function tripMarkHere(kind) {
 // Modos del mapa (terr.mode.kind): 'zona' y 'calles' (forma del territorio), 'trabajada' (calles
 // predicadas), 'casa' y 'avance' (un toque).
 function renderTerritories() {
-  const editor = can('territorios');
+  const editor = canTerritories();
   const canWork = t => editor || (can('capitan') && isMyTerritory(t));
   if (terr && terr.map) terr.map.remove();
   terr = { selected: terr && terr.selected, filter: (terr && terr.filter) || 'todos', q: (terr && terr.q) || '', year: (terr && terr.year) || new Date().getFullYear(), mode: null };

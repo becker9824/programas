@@ -114,7 +114,7 @@ async function toggleTurn(t) {
   } catch (e) { toast(errMsg(e)); }
 }
 function publicTurnsSection() {
-  const editor = isElder(), pid = nube.me && nube.me.perfil, list = turnsAhead().slice(0, 40);
+  const editor = canPreach(), pid = nube.me && nube.me.perfil, list = turnsAhead().slice(0, 40);
   const byDay = [...new Set(list.map(t => t.fecha))].map(d => [d, list.filter(t => t.fecha === d)]);
   return [
     h('div', { class: 'row spread', style: { margin: '18px 0 8px' } },

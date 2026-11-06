@@ -111,7 +111,7 @@ function congregationSettings() {
     update({ nombre: v }, 'Nombre actualizado');
   } });
   const mode = c.modo === 'encargados' ? 'encargados' : 'todos';
-  const radio = (value, label, desc) => h('label', { class: 'row', style: { alignItems: 'flex-start', gap: '8px', color: 'var(--text)', fontSize: '14px' } },
+  const radio = (value, label, desc) => h('label', { class: 'row', style: { flexWrap: 'nowrap', alignItems: 'flex-start', gap: '8px', color: 'var(--text)', fontSize: '14px' } },
     h('input', { type: 'radio', name: 'modo', checked: mode === value, style: { marginTop: '3px' }, onchange: () =>
       update({ modo: value }, value === 'todos' ? 'Los publicadores ya pueden enviar su informe' : 'Ahora solo el secretario registra los informes') }),
     h('span', null, h('strong', null, label), h('div', { class: 'muted small-text' }, desc)));
@@ -121,7 +121,12 @@ function congregationSettings() {
       h('label', { class: 'field' }, 'Nombre de la congregación', nameI),
       h('div', { class: 'field' }, h('span', null, '¿Quién usa la app?'),
         radio('todos', 'Todos los publicadores', 'Cada hermano tiene su cuenta, ve su asignación y envía su informe.'),
-        radio('encargados', 'Solo los encargados', 'Los publicadores pueden ver el programa, pero los informes los registra el secretario.')))];
+        radio('encargados', 'Solo los encargados', 'Los publicadores pueden ver el programa, pero los informes los registra el secretario.')),
+      h('label', { class: 'row', style: { flexWrap: 'nowrap', alignItems: 'flex-start', gap: '8px', color: 'var(--text)', fontSize: '14px' } },
+        h('input', { type: 'checkbox', checked: soloServicio() || null, style: { marginTop: '3px' }, onchange: e =>
+          update({ soloServicio: e.target.checked }, e.target.checked ? 'Ahora solo Servicio y el coordinador hacen esos cambios' : 'Ahora los ancianos y la función Territorios también pueden') }),
+        h('span', null, h('strong', null, 'Solo Servicio cambia predicación y territorios'),
+          h('div', { class: 'muted small-text' }, 'Salidas, predicación pública y territorios: los cambian Servicio y el coordinador; los demás solo los ven. Si lo desactivas, también pueden los ancianos (salidas y turnos) y la función Territorios (territorios).'))))];
 }
 
 function renderPubSettings() {
