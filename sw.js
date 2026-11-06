@@ -1,6 +1,6 @@
 // Guarda la app en el celular para que abra rápido y funcione sin internet.
 // Sube el número de versión cada vez que cambies index.html o app/.
-const CACHE = 'programas-v54';
+const CACHE = 'programas-v55';
 const FILES = [
   './',
   './index.html',
