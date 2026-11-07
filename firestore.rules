@@ -34,6 +34,17 @@ service cloud.firestore {
     }
 
     // Código de la congregación -> id. Se puede consultar un código, no listarlos.
+    // Reportes de errores: solo datos técnicos. La app los escribe y nadie los lee desde ella (se ven en la consola de Firebase).
+    match /errores/{id} {
+      allow create: if signedIn() && request.resource.data.keys().hasOnly(['fecha', 'app', 'version', 'vista', 'mensaje', 'pila'])
+        && request.resource.data.fecha == request.time
+        && request.resource.data.app in ['web', 'pc', 'android']
+        && request.resource.data.version is string && request.resource.data.version.size() <= 20
+        && request.resource.data.vista is string && request.resource.data.vista.size() <= 40
+        && request.resource.data.mensaje is string && request.resource.data.mensaje.size() <= 300
+        && request.resource.data.pila is string && request.resource.data.pila.size() <= 1500;
+      allow read, update, delete: if false;
+    }
     match /codigos/{codigo} {
       allow get: if signedIn();
       allow create: if signedIn() && only(['cong'])

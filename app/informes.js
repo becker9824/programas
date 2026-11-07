@@ -118,7 +118,7 @@ function renderReport() {
     if (!ownAllowed) return box.replaceChildren(h('div', { class: 'card settings muted' }, !reportsByMembers()
       ? 'En tu congregación los informes los registra el secretario.'
       : 'Un encargado todavía no ha unido tu cuenta con tu nombre en la lista de hermanos. Cuando lo haga, podrás enviar tu informe aquí.'));
-    box.replaceChildren(h('div', { class: 'card settings muted' }, 'Cargando…'));
+    box.replaceChildren(h('div', { class: 'card settings' }, skeletonList(4)));
     let prev = null, last = null;
     // Sin conexión (y sin copia en el equipo) se puede llenar igual: se sube al volver el internet
     const get = m => F.getDoc(congRef('informes', `${perfil}_${m}`)).then(s => s.exists() ? s.data() : null,
@@ -237,7 +237,7 @@ function congregationReports() {
     if (unsub) { unsub(); viewSubs = viewSubs.filter(f => f !== unsub); }
     const months = monthsBefore(month, 6), key = nube.cong + '|' + months.join();
     if (reportsCache.key === key) { docs = reportsCache.docs; draw(); }
-    else box.replaceChildren(h('div', { class: 'muted' }, 'Cargando…'));
+    else box.replaceChildren(skeletonList(5));
     const q = F.query(F.collection(F.db, 'congregaciones', nube.cong, 'informes'), F.where('mes', 'in', months));
     unsub = F.onSnapshot(q, snap => {
       docs = snap.docs.map(d => d.data());

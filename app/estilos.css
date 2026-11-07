@@ -751,3 +751,20 @@ a.btn { text-decoration: none; }
 .pass-eye { position: absolute; right: 4px; top: 50%; transform: translateY(-50%); width: 34px; height: 34px; display: grid; place-items: center; border: 0; background: none; color: var(--muted); border-radius: 8px; cursor: pointer; }
 .pass-eye:hover { background: var(--surface-2); color: var(--text); }
 .terr-dot { display: inline-block; width: 12px; height: 12px; border-radius: 50%; margin-right: 6px; vertical-align: -1px; }
+
+/* ---- 1.43: conexión, siluetas de carga, estados vacíos ---- */
+.net-bar { position: fixed; z-index: 40; top: 66px; left: 50%; transform: translateX(-50%); width: max-content; max-width: calc(100vw - 24px);
+  padding: 7px 14px; border-radius: 999px; background: #b45309; color: #fff; font-size: 13px; font-weight: 600; text-align: center; box-shadow: var(--shadow-lg); }
+.net-bar.ok { background: #15803d; }
+.net-bar[hidden] { display: none; }
+.skel { border-radius: var(--radius); background: linear-gradient(90deg, var(--surface-2) 25%, var(--border) 50%, var(--surface-2) 75%); background-size: 200% 100%; animation: skel 1.3s ease-in-out infinite; }
+@keyframes skel { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+@media (prefers-reduced-motion: reduce) { .skel { animation: none; } }
+.skel-list { display: grid; gap: 10px; }
+.skel-row { height: 42px; }
+.skel-home { display: grid; gap: 12px; }
+.skel-hero { height: 124px; }
+.skel-card { height: 78px; }
+.empty::before { content: ''; display: block; width: 52px; height: 52px; margin: 0 auto 12px; border-radius: 16px;
+  background: var(--accent-2) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%232563eb' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 13l3-8h12l3 8v6H3z'/%3E%3Cpath d='M3 13h5l1.5 3h5l1.5-3h5'/%3E%3C/svg%3E") center / 26px no-repeat; }
+@media (max-width: 760px) { .brand { flex: 1 1 auto; max-width: none; } .net-bar { top: 62px; } }

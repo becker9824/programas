@@ -160,7 +160,7 @@ let privacyData = null;
 function renderPrivacy() {
   const box = h('div');
   const load = async () => {
-    box.replaceChildren(h('p', { class: 'muted' }, 'Cargando…'));
+    box.replaceChildren(skeletonList(4));
     try {
       const [c, r] = await Promise.all(['consentimientos', 'solicitudes'].map(n => F.getDocs(F.collection(F.db, 'congregaciones', nube.cong, n))));
       privacyData = { consents: new Map(c.docs.map(d => [d.id, d.data()])), requests: r.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => stampMs(b.fecha) - stampMs(a.fecha)) };

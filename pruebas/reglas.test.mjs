@@ -178,6 +178,16 @@ test('Solo Servicio: salidas, turnos y territorios; desactivable por el coordina
   await assertSucceeds(updateDoc(cdoc(db('admin'), 'miembros', 'pub'), { permisos: [] }));
 });
 
+test('errores: cualquier cuenta los manda, nadie los lee ni cambia', async () => {
+  const e = { fecha: serverTimestamp(), app: 'web', version: '1.43.0', vista: 'inicio', mensaje: 'x', pila: '' };
+  await assertSucceeds(setDoc(doc(db('pub'), 'errores', 'e1'), e));
+  await assertFails(setDoc(doc(db('pub'), 'errores', 'e2'), { ...e, otro: 1 }));
+  await assertFails(setDoc(doc(db('pub'), 'errores', 'e3'), { ...e, mensaje: 'x'.repeat(301) }));
+  await assertFails(getDoc(doc(db('admin'), 'errores', 'e1')));
+  await assertFails(deleteDoc(doc(db('admin'), 'errores', 'e1')));
+  await assertFails(setDoc(doc(env.unauthenticatedContext().firestore(), 'errores', 'e4'), e));
+});
+
 test('salidas: programa de predicación con tipo, territorio y fecha', async () => {
   const salida = { dia: 5, hora: '09:30', lugar: 'Salón', dirige: 'Juan', grupo: '', notas: '', tipo: 'Casa en casa', territorio: 'Tarjeta 3', fecha: '2026-11-07' };
   await assertSucceeds(updateDoc(doc(db('admin'), 'congregaciones', C), { soloServicio: true }));

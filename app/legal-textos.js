@@ -58,7 +58,7 @@ const LEGAL_DOCS = {
       ['Seguridad',
         'Cada lectura y cambio pasa por reglas de seguridad en el servidor, y la conexión va cifrada. Ningún sistema es perfecto: cuida tu contraseña y avisa si crees que alguien entró a tu cuenta.'],
       ['Datos en tu equipo',
-        'La app guarda datos en tu equipo para abrir rápido y funcionar sin internet. No usa cookies de publicidad ni de seguimiento.'],
+        'La app guarda datos en tu equipo para abrir rápido y funcionar sin internet. No usa cookies de publicidad ni de seguimiento. Si la app falla, manda un reporte técnico del error, sin tu nombre ni tu cuenta, para poder corregirlo.'],
       ['Cambios a este aviso',
         'Si este aviso cambia en algo importante, te lo mostraremos al entrar para que lo aceptes de nuevo. También estará siempre en la app y en la página pública.'],
     ],

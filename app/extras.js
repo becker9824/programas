@@ -112,7 +112,7 @@ function describeChanges(col, before, after) {
 
 let histFilter = '', histCache = null; // lo último leído: se ve al instante mientras se actualiza
 function renderHistory() {
-  const box = h('div', { class: 'card', style: { padding: '4px 14px' } }, h('div', { class: 'empty' }, 'Cargando…'));
+  const box = h('div', { class: 'card', style: { padding: '14px' } }, skeletonList(5));
   const search = h('input', { type: 'search', placeholder: 'Buscar: un nombre, una semana…', value: histFilter, style: { width: '100%', maxWidth: '380px' },
     oninput: () => { histFilter = search.value; fill(); } });
   let items = histCache || [];
@@ -216,7 +216,7 @@ function remindersToggle() {
 
 // ---------- cambios de una semana (del historial) ----------
 function openWeekHistory(p) {
-  const box = h('div', null, h('p', { class: 'muted' }, 'Cargando…'));
+  const box = h('div', null, skeletonList(3));
   const dlg = h('dialog', { class: 'dlg' },
     h('div', { class: 'dlg-body' }, h('h3', null, `Cambios · ${p.title}`), box),
     h('div', { class: 'dlg-foot' }, h('button', { class: 'btn', onclick: () => dlg.close() }, 'Cerrar')));
@@ -260,7 +260,7 @@ function trackSession() {
 }
 const forgetSession = () => FB_CONFIG && nube.cong && nube.user ? F.deleteDoc(congRef('sesiones', sessionId())).catch(() => {}) : Promise.resolve();
 async function openSessionsDialog(all) {
-  const box = h('div', null, h('p', { class: 'muted' }, 'Cargando…'));
+  const box = h('div', null, skeletonList(3));
   const foot = h('div', { class: 'dlg-foot' });
   const dlg = h('dialog', { class: 'dlg' },
     h('div', { class: 'dlg-body' },
@@ -360,7 +360,7 @@ async function downloadBackup(b) {
   } catch (e) { toast('No se pudo bajar el respaldo: ' + errMsg(e)); }
 }
 function backupsCard() {
-  const list = h('div', null, h('p', { class: 'muted small-text' }, 'Cargando…'));
+  const list = h('div', null, skeletonList(2));
   const fill = () => F.getDocs(F.query(backupsCol(), F.orderBy('fecha', 'desc'))).then(s => {
     const items = s.docs.map(d => d.data());
     list.replaceChildren(...(items.length ? items.map(b => h('div', { class: 'ses-row' },

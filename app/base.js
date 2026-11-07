@@ -180,6 +180,9 @@ const meetingDate = p => addDays(p.date, state.settings.meetingDay);
 const fmtMeeting = p => capFirst(toDate(meetingDate(p)).toLocaleDateString('es', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }));
 function fmtTime(m) { const h24 = Math.floor(m / 60) % 24; return `${((h24 + 11) % 12) + 1}:${pad(m % 60)}`; }
 
+// Siluetas mientras carga: se nota lo que viene, sin pantalla en blanco
+const skeletonList = (n = 3) => h('div', { class: 'skel-list', 'aria-label': 'Cargando', role: 'status' }, Array.from({ length: n }, () => h('div', { class: 'skel skel-row' })));
+const skeletonHome = () => h('div', { class: 'skel-home', 'aria-label': 'Cargando', role: 'status' }, h('div', { class: 'skel skel-hero' }), Array.from({ length: 4 }, () => h('div', { class: 'skel skel-card' })));
 function toast(msg) {
   const t = document.getElementById('toast');
   t.textContent = msg; t.classList.add('show');

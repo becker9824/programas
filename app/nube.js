@@ -229,7 +229,7 @@ function watchAuth() {
     Object.assign(nube, { user, mesInforme: null, mesInformes: null, cong: null, congData: null, me: null, acceso: '', listo: false, miembros: [], anuncios: [],
       contactos: new Map(), cuentas: [], cuentasIni: null, territorios: [], grupos: [], capitanes: [], capitanesHermanos: [], trabajos: [], asistencia: new Map(), eventos: [], salidas: [], publica: [], pastoreo: [], solicitudes: [], limpieza: null, ausencias: new Map(), confirmaciones: new Map(), vista: null, publico: null, sent: {}, ultimoPub: '' });
     if (!user) return renderAuth();
-    screen(h('div', { class: 'card auth-card' }, h('p', { class: 'muted' }, 'Cargando tu cuenta…')));
+    loadingScreen();
     let joinErr = '';
     try {
       const reg = nube.registro; nube.registro = null;
@@ -278,7 +278,7 @@ function enterCongregation() {
   stopListening();
   nube.listo = false; nube.sent = {}; nube.ultimoPub = ''; captainsSent = ''; view = { name: 'inicio' };
   state = defaults();
-  screen(h('div', { class: 'card auth-card' }, h('p', { class: 'muted' }, 'Cargando la congregación…')));
+  loadingScreen();
   const waiting = new Set();
   // fn devuelve true si cambió algo que hay que volver a dibujar
   // soft: si esa parte falla (por ejemplo, sin permiso), la app sigue sin ella en vez de mostrar el error

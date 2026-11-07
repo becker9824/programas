@@ -8,6 +8,10 @@ function screen(...kids) {
     EMU ? h('div', { class: 'notice warn' }, 'Modo de prueba: usando el Firebase local de esta PC.') : null,
     h('div', { class: 'auth' }, ...kids)].filter(Boolean));
 }
+function loadingScreen() {
+  buildNav([]);
+  document.getElementById('app').replaceChildren(...[EMU ? h('div', { class: 'notice warn' }, 'Modo de prueba: usando el Firebase local de esta PC.') : null, skeletonHome()].filter(Boolean));
+}
 function screenMessage(msg) {
   screen(h('div', { class: 'card auth-card' }, h('p', null, msg),
     h('div', { class: 'row' }, h('button', { class: 'btn', onclick: () => location.reload() }, 'Reintentar'), nube.user ? signOutBtn() : null)));

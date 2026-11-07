@@ -326,7 +326,7 @@ function renderStats() {
     };
     if (statsCache && statsCache.key === last12.join()) draw(statsCache.docs);
     else {
-      reportsBox.replaceChildren(h('p', { class: 'muted' }, 'Cargando informes…'));
+      reportsBox.replaceChildren(skeletonList(3));
       F.getDocs(F.query(F.collection(F.db, 'congregaciones', nube.cong, 'informes'), F.where('mes', 'in', last12)))
         .then(s => { statsCache = { key: last12.join(), docs: s.docs.map(d => d.data()) }; if (view.name === 'estadisticas') draw(statsCache.docs); })
         .catch(e => reportsBox.replaceChildren(h('p', { class: 'err' }, errMsg(e))));
@@ -752,3 +752,38 @@ function textSizeRow() {
   paint();
   return h('div', { style: { margin: '10px 0' } }, h('strong', { class: 'small-text' }, '🔠 Tamaño de letra (en este equipo)'), box);
 }
+
+// ---------- estado de la conexión ----------
+// Sin internet todo sigue funcionando: los datos están en el equipo y los cambios se suben solos. Aquí se dice claro.
+function initNetBar() {
+  const bar = h('div', { class: 'net-bar', role: 'status', hidden: true });
+  document.body.append(bar);
+  let quita = null;
+  const show = (text, ok) => { clearTimeout(quita); bar.textContent = text; bar.classList.toggle('ok', !!ok); bar.hidden = false; };
+  const off = () => show('Sin conexión. Puedes seguir usando la app; los cambios se suben al volver.');
+  if (!navigator.onLine) off();
+  addEventListener('offline', off);
+  addEventListener('online', async () => {
+    show('Conexión de vuelta. Subiendo tus cambios…');
+    if (F) await Promise.race([F.waitForPendingWrites(F.db).catch(() => {}), new Promise(ok => setTimeout(ok, 20000))]);
+    if (!navigator.onLine) return off();
+    show('Todo guardado', true);
+    quita = setTimeout(() => { bar.hidden = true; }, 2500);
+  });
+}
+// ---------- reporte de errores ----------
+// Solo datos técnicos, sin cuenta ni congregación. errores/{id} nadie lo lee desde la app: se ve en la consola de Firebase.
+const errorLog = { n: 0, seen: new Set() };
+function reportError(msg, stack) {
+  try {
+    const clean = (s, max) => String(s || '').replace(/[\w.+-]+@[\w-]+\.[\w.]+/g, '[correo]').slice(0, max);
+    const mensaje = clean(msg, 300);
+    if (!FB_CONFIG || EMU || !F || !nube.user || !mensaje || errorLog.n >= 3 || errorLog.seen.has(mensaje) || /ResizeObserver|^Script error/.test(mensaje)) return;
+    errorLog.seen.add(mensaje); errorLog.n++;
+    F.addDoc(F.collection(F.db, 'errores'), { fecha: F.serverTimestamp(), app: /Electron/.test(navigator.userAgent) ? 'pc' : 'web', version: APP_VERSION,
+      vista: String((view && view.name) || '').slice(0, 40), mensaje, pila: clean(stack, 1500) }).catch(() => {});
+  } catch (e) {}
+}
+addEventListener('error', e => reportError(e.message, e.error && e.error.stack));
+addEventListener('unhandledrejection', e => { const r = e.reason; if (r && /^(auth|firestore)\/|permission|unavailable|Failed to fetch/i.test(String(r.code || r.message || r))) return; reportError((r && r.message) || r, r && r.stack); });
+initNetBar();
