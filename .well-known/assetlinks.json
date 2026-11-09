@@ -1,0 +1,14 @@
+[
+  {
+    "relation": [
+      "delegate_permission/common.handle_all_urls"
+    ],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "io.github.becker9824.programas",
+      "sha256_cert_fingerprints": [
+        "03:F5:61:DA:56:E9:2A:CF:7E:6B:D0:F7:0E:D1:D8:91:E3:DF:65:B9:9C:AC:D3:D7:78:CC:CE:D3:E6:16:CA:32"
+      ]
+    }
+  }
+]

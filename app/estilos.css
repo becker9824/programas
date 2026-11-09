@@ -768,3 +768,4 @@ a.btn { text-decoration: none; }
 .empty::before { content: ''; display: block; width: 52px; height: 52px; margin: 0 auto 12px; border-radius: 16px;
   background: var(--accent-2) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%232563eb' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 13l3-8h12l3 8v6H3z'/%3E%3Cpath d='M3 13h5l1.5 3h5l1.5-3h5'/%3E%3C/svg%3E") center / 26px no-repeat; }
 @media (max-width: 760px) { .brand { flex: 1 1 auto; max-width: none; } .net-bar { top: 62px; } }
+.link-paste { margin: 6px 0 10px; } .link-paste summary { cursor: pointer; color: var(--accent); font-size: 14px; font-weight: 600; } .link-paste[open] { display: grid; gap: 8px; }

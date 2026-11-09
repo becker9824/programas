@@ -4,6 +4,7 @@
   },
   "hosting": {
     "public": "web",
+    "ignore": ["firebase.json", "**/node_modules/**"],
     "predeploy": "node copiar-web.js",
     "headers": [
       { "source": "**", "headers": [{ "key": "Cache-Control", "value": "no-cache" }] }

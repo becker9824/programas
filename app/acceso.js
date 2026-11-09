@@ -17,8 +17,8 @@ function screenMessage(msg) {
     h('div', { class: 'row' }, h('button', { class: 'btn', onclick: () => location.reload() }, 'Reintentar'), nube.user ? signOutBtn() : null)));
 }
 
-function renderAuth(tab = 'entrar', msg = '', withPass = false, em0 = '') {
-  const linkMode = tab === 'entrar' && !withPass;
+function renderAuth(tab = 'entrar', msg = '', withLink = false, em0 = '') {
+  const linkMode = tab === 'entrar' && withLink;
   const field = (label, el) => h('label', { class: 'field' }, label, el);
   const email = h('input', { type: 'email', autocomplete: 'email', placeholder: 'tu@correo.com', value: em0 || linkEmail() || '' });
   const pass = h('input', { type: 'password', autocomplete: tab === 'entrar' ? 'current-password' : 'new-password',
@@ -69,7 +69,7 @@ function renderAuth(tab = 'entrar', msg = '', withPass = false, em0 = '') {
   const card = h('div', { class: 'card auth-card' },
     h('div', { class: 'tabs' }, [['entrar', 'Entrar'], ['unirse', 'Crear cuenta'], ['crear', 'Nueva congregación']].map(([k, t]) =>
       h('button', { class: k === tab ? 'on' : null, onclick: () => renderAuth(k) }, t))),
-    linkMode ? h('p', { class: 'muted small-text' }, 'Te llega un correo con un botón para entrar. Así nadie puede entrar a tu cuenta sin tener tu correo.') : null,
+    linkMode ? h('p', { class: 'muted small-text' }, 'Te mandamos un correo con un botón: al tocarlo, entras sin escribir tu contraseña.') : null,
     tab === 'unirse' ? h('p', { class: 'muted small-text' }, 'Pide el código a un administrador de tu congregación. Tu cuenta quedará en espera hasta que te aprueben.') : null,
     tab === 'crear' ? h('p', { class: 'muted small-text' }, 'Solo para el primer administrador. Después compartirás el código para que los demás creen su cuenta.') : null,
     tab === 'unirse' ? field('Código de la congregación', code) : null,
@@ -85,8 +85,8 @@ function renderAuth(tab = 'entrar', msg = '', withPass = false, em0 = '') {
     tab !== 'entrar' ? boxes.el : null,
     err, btn,
     legalLinks(),
-    tab === 'entrar' ? h('button', { class: 'linkbtn', onclick: () => renderAuth('entrar', '', !withPass, email.value.trim()) },
-      withPass ? '📧 Mejor entrar con un enlace a mi correo' : '🔑 Entrar con mi contraseña') : null,
+    tab === 'entrar' ? h('button', { class: 'linkbtn', onclick: () => renderAuth('entrar', '', !withLink, email.value.trim()) },
+      withLink ? '🔑 Entrar con mi contraseña' : '📧 Entrar sin contraseña (te mando un enlace)') : null,
     tab === 'entrar' ? h('button', { class: 'linkbtn', onclick: forgot }, '¿Olvidaste tu contraseña?') : null);
   card.addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.tagName === 'INPUT') submit(); });
   screen(h('div', { class: 'auth-hero' }, logo(64), h('h2', null, 'Programas'),
@@ -134,11 +134,13 @@ function renderLinkSent(em) {
     h('p', null, 'Te mandamos un enlace a ', h('b', null, em), '. Abre el correo y pulsa el botón para entrar.'),
     h('p', { class: 'muted small-text' }, 'Puede tardar un minuto. Si no aparece, revisa la carpeta de Spam o Correo no deseado.'),
     LINK_APP ? [
-      h('p', { class: 'muted small-text' }, 'Al abrir el enlace, el navegador te ofrece volver a Programas. Si no, copia el enlace (en el correo, mantén pulsado o clic derecho sobre el botón → Copiar enlace) y pégalo aquí:'),
+      h('p', { class: 'muted small-text' }, 'Si abres el correo en esta misma computadora, el navegador te ofrece volver a Programas.'),
+      h('details', { class: 'link-paste' }, h('summary', null, '¿No se abrió Programas? Pegar el enlace'),
+      h('p', { class: 'muted small-text' }, 'Copia el enlace (en el correo, mantén pulsado o clic derecho sobre el botón → Copiar enlace) y pégalo aquí:'),
       h('label', { class: 'field' }, 'Enlace del correo', paste),
-      h('button', { class: 'btn primary', onclick: () => { err.textContent = receiveLink(paste.value) ? '' : errMsg({ code: 'enlace-malo' }); } }, 'Entrar')] : null,
+      h('button', { class: 'btn primary', onclick: () => { err.textContent = receiveLink(paste.value) ? '' : errMsg({ code: 'enlace-malo' }); } }, 'Entrar'))] : null,
     err,
-    h('div', { class: 'row' }, resend, h('button', { class: 'btn', onclick: () => renderAuth('entrar', '', true, em) }, '🔑 Usar mi contraseña'),
+    h('div', { class: 'row' }, resend, h('button', { class: 'btn', onclick: () => renderAuth('entrar', '', false, em) }, '🔑 Usar mi contraseña'),
       h('button', { class: 'linkbtn', onclick: () => renderAuth() }, 'Volver'))));
 }
 // Se abrió el enlace en otro equipo o navegador: se confirma el correo
