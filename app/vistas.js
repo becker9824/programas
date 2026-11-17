@@ -247,6 +247,61 @@ function render() {
     p ? renderEditor(p) : view.name === 'people' ? renderPeople() : view.name === 'families' ? renderFamilies() : renderList());
 }
 
+// "Armar el mes": elige el mes, llena lo vacío de todas sus semanas y explica cada elección.
+// "Deshacer" regresa todo a como estaba antes de armarlo.
+function openPlanDialog() {
+  const thisMonday = mondayOf(todayISO());
+  const weeksAll = state.programs.filter(p => p.date >= thisMonday);
+  const months = [...new Set(weeksAll.map(p => meetingDate(p).slice(0, 7)))].sort();
+  if (!months.length) return toast('No hay semanas próximas. Primero busca las semanas nuevas.');
+  const monthSel = h('select', null, months.map(m => h('option', { value: m }, capFirst(fmtMonth(m)))));
+  const progI = h('input', { type: 'checkbox', checked: true }), mecI = h('input', { type: 'checkbox', checked: true });
+  const info = h('p', { class: 'small-text muted' });
+  const weeksOf = () => weeksAll.filter(p => meetingDate(p).slice(0, 7) === monthSel.value).sort((a, b) => a.date.localeCompare(b.date));
+  const paintInfo = () => {
+    const w = weeksOf(), empty = w.reduce((n, p) => n + slotsOf(p).filter(x => !x.pid).length, 0);
+    const emptyMec = w.reduce((n, p) => n + MEETINGS.reduce((k, [mtg]) => k + MEC.filter(r => !mecGet(p, mtg, r.key)).length, 0), 0);
+    info.textContent = `${w.length} semana${w.length === 1 ? '' : 's'} · ${empty} asignaciones del programa y ${emptyMec} mecánicas sin nadie. Lo que ya está puesto no se cambia.`;
+  };
+  monthSel.addEventListener('change', paintInfo); paintInfo();
+  const body = h('div', { class: 'dlg-body' });
+  const foot = h('div', { class: 'dlg-foot' });
+  const dlg = h('dialog', { class: 'dlg' }, body, foot);
+  const close = () => dlg.close();
+  dlg.addEventListener('close', () => { dlg.remove(); render(); });
+  body.replaceChildren(h('h3', null, '✨ Armar el mes'),
+    h('p', { class: 'small-text', style: { marginTop: 0 } }, 'La app reparte las asignaciones vacías de forma justa: respeta privilegios, filtros, ausencias y días de descanso, y elige primero a quien lleva más tiempo sin participar. Después puedes cambiar a quien quieras.'),
+    h('label', { class: 'field' }, 'Mes', monthSel),
+    h('label', { class: 'row', style: { gap: '8px' } }, progI, 'Programa de entre semana'),
+    h('label', { class: 'row', style: { gap: '8px', marginTop: '6px' } }, mecI, 'Mecánicas (acomodadores, micrófonos, audio…)'),
+    info);
+  foot.replaceChildren(h('button', { class: 'btn', onclick: close }, 'Cancelar'),
+    h('button', { class: 'btn primary', onclick: () => {
+      if (!progI.checked && !mecI.checked) return toast('Elige al menos una opción.');
+      const weeks = weeksOf();
+      const before = weeks.map(p => [p, JSON.stringify({ rows: p.rows, mec: p.mec || null })]);
+      const res = planWeeks(weeks, { programa: progI.checked, mecanicas: mecI.checked });
+      const n = res.reduce((k, r) => k + r.filled.length, 0), left = res.reduce((k, r) => k + r.empty.length, 0);
+      if (n) { save(); logChange(`Armó ${fmtMonth(monthSel.value)}: ${n} asignaciones`); }
+      const undo = () => {
+        for (const [p, j] of before) { const o = JSON.parse(j); p.rows = o.rows; if (o.mec) p.mec = o.mec; else delete p.mec; }
+        save(); logChange(`Deshizo el armado de ${fmtMonth(monthSel.value)}`); toast('Se regresó todo como estaba'); close();
+      };
+      body.replaceChildren(h('h3', null, n ? `✨ Listo: ${n} asignaciones` : 'No había nada que llenar'),
+        h('p', { class: 'small-text muted', style: { marginTop: 0 } }, left ? `Quedaron ${left} sin nadie (abajo dice por qué).` : 'Todo quedó cubierto.', ' Revisa y cambia lo que quieras.'),
+        h('div', { class: 'plan-res' }, res.map(r => h('div', { class: 'card', style: { padding: '10px 12px', marginBottom: '8px' } },
+          h('strong', null, r.p.title),
+          r.filled.length || r.empty.length ? null : h('div', { class: 'small-text muted' }, 'Ya estaba completa.'),
+          r.filled.map(x => h('div', { class: 'small-text', style: { marginTop: '4px' } },
+            h('span', { class: 'muted' }, (x.title && !x.label.includes(x.title) ? x.label + ' · ' + x.title : x.label) + ': '), h('strong', null, progNameById(x.pid)),
+            h('span', { class: 'muted' }, ' — ' + x.why))),
+          r.empty.map(x => h('div', { class: 'small-text', style: { marginTop: '4px', color: 'var(--orange)' } },
+            '⚠ ' + (x.title && !x.label.includes(x.title) ? x.label + ' · ' + x.title : x.label) + ': ' + x.why))))));
+      foot.replaceChildren(n ? h('button', { class: 'btn', onclick: undo }, '↶ Deshacer') : null, h('button', { class: 'btn primary', onclick: close }, 'Listo'));
+    } }, 'Armar'));
+  document.body.append(dlg); dlg.showModal();
+}
+
 function renderList() {
   const thisMonday = mondayOf(todayISO());
   const all = sortedPrograms();
@@ -278,7 +333,7 @@ function renderList() {
   return h('div', null,
     h('div', { class: 'row spread', style: { marginBottom: '14px' } },
       h('div', null, h('h1', null, 'Semanas'), h('p', { class: 'sub', style: { margin: 0 } }, 'Programas de la reunión con sus asignaciones.')),
-      h('div', { class: 'row' }, monthDownload(state.programs, downloadPDF), pdfBtn)),
+      h('div', { class: 'row' }, !FB_CONFIG || can('programa') ? h('button', { class: 'btn primary', onclick: openPlanDialog }, '✨ Armar el mes') : null, monthDownload(state.programs, downloadPDF), pdfBtn)),
     FB_CONFIG && nube.me.perfil ? nextAssignmentCard(publicWeeks()) : null,
     location.protocol === 'file:' ? h('div', { class: 'notice warn' },
       'Abriste la app directamente. Para que busque las guías en jw.org, ciérrala y ábrela con el archivo “Programas.bat”.') : null,
@@ -400,7 +455,7 @@ function renderEditor(p) {
     const partner = fr && fr.helper === 'Ayudante' ? fr[mateSlot(focus.slot)] : null;
     const rule = fr ? ruleFor(fr) : null;
     const items = state.profiles
-      .filter(pr => !used.has(pr.id) && (!f || nameMatches(pr.name, f)))
+      .filter(pr => !used.has(pr.id) && (!f || profMatches(pr, f)))
       .map(pr => {
         const l = ctx.last.get(pr.id);
         return { pr, fam: !!partner && sameFamily(partner, pr.id), days: l ? daysBetween(l.q.date, p.date) : Infinity,
@@ -504,9 +559,9 @@ function renderEditor(p) {
     if (!typed) items = best.filter(c => nomOk(c.pr)).slice(0, 8).map(c => ({ ...c, why: '' }));
     else {
       const shown = new Set();
-      items = best.filter(c => nameMatch(c.pr.name, typed)).map(c => { shown.add(c.pr.id); return { ...c, why: '' }; });
+      items = best.filter(c => profMatches(c.pr, typed)).map(c => { shown.add(c.pr.id); return { ...c, why: '' }; });
       for (const pr of state.profiles) {
-        if (shown.has(pr.id) || pr.id === current || !nameMatch(pr.name, typed)) continue;
+        if (shown.has(pr.id) || pr.id === current || !profMatches(pr, typed)) continue;
         const l = ctx.last.get(pr.id);
         const why = counts.has(pr.id) ? 'Ya asignado esta semana' : awayOn(pr.id, meetingDate(p)) ? 'Ausente' : ctx.recent.has(pr.id) ? 'Descansando'
           : !canDo(pr, priv) ? 'Sin privilegio' : men && pr.sex === 'F' ? 'Normalmente un varón' : 'Pareja de distinto sexo';

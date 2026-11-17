@@ -387,6 +387,11 @@ function mecHistory(skip) {
 }
 // Recomendados para una asignación mecánica: varones con el privilegio, sin otra asignación
 // en esa reunión, sin mecánica en los últimos mecRestDays días; primero quien lleva más tiempo.
+// Desempate justo: quien tuvo menos asignaciones en los últimos 6 meses y, si empatan, un sorteo
+// fijo por semana (siempre da lo mismo para esa semana, pero no favorece a nadie por su nombre).
+const LOAD_DAYS = 180;
+function tieHash(s) { let h = 0x811c9dc5; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; } return h; }
+const tieBreak = (a, b, date) => tieHash(a.id + '|' + date) - tieHash(b.id + '|' + date);
 function mecCandidates(p, mtg, key) {
   const priv = mecPriv(mtg, key), date = mecDate(p, mtg);
   const busy = new Set();
@@ -399,8 +404,9 @@ function mecCandidates(p, mtg, key) {
     const before = dates.filter(d => d < date).sort().pop();
     const rest = mecRestDaysFor(pr), near = dates.some(d => Math.abs(daysBetween(d, date)) < rest);
     const why = busy.has(pr.id) ? 'Ya tiene asignación en esta reunión' : awayOn(pr.id, date) ? 'Ausente' : !canDo(pr, priv) ? 'Sin privilegio' : near ? 'Descansando' : '';
-    return { pr, why, pref: prefersMe(pr, priv), days: before ? daysBetween(before, date) : Infinity };
-  }).sort((a, b) => (!b.why - !a.why) || b.pref - a.pref || b.days - a.days || a.pr.name.localeCompare(b.pr.name, 'es'));
+    const load = dates.filter(d => d < date && daysBetween(d, date) <= LOAD_DAYS).length;
+    return { pr, why, pref: prefersMe(pr, priv), days: before ? daysBetween(before, date) : Infinity, load };
+  }).sort((a, b) => (!b.why - !a.why) || b.pref - a.pref || b.days - a.days || a.load - b.load || tieBreak(a.pr, b.pr, date));
 }
 
 // En Seamos mejores maestros se prefiere a las hermanas: 2 por cada hermano, sin dejar de
@@ -422,8 +428,8 @@ function candidatesFor(p, row, slot, ctx, reserved, partnerId) {
   const list = state.profiles
     .filter(pr => !reserved.has(pr.id) && canDo(pr, priv) && !(men && pr.sex === 'F') && !ctx.recent.has(pr.id) && !awayOn(pr.id, meetingDate(p))
       && (!partner || partner.sex === pr.sex || sameFamily(partner.id, pr.id)))
-    .map(pr => { const l = ctx.last.get(pr.id); return { pr, rule, fits: fitsRule(pr, rule), pref: prefersMe(pr, priv), days: l ? daysBetween(l.q.date, p.date) : Infinity }; })
-    .sort((a, b) => (rule ? b.fits - a.fits : 0) || b.pref - a.pref || b.days - a.days || a.pr.name.localeCompare(b.pr.name, 'es'));
+    .map(pr => { const l = ctx.last.get(pr.id); return { pr, rule, fits: fitsRule(pr, rule), pref: prefersMe(pr, priv), days: l ? daysBetween(l.q.date, p.date) : Infinity, load: (ctx.load && ctx.load.get(pr.id)) || 0 }; })
+    .sort((a, b) => (rule ? b.fits - a.fits : 0) || b.pref - a.pref || b.days - a.days || a.load - b.load || tieBreak(a.pr, b.pr, p.date));
   if (!womenFirst(row, slot, partnerId)) return list;
   // Los que cumplen el filtro siguen yendo primero; dentro de cada grupo se intercala
   return [...preferWomen(list.filter(c => c.fits || !rule)), ...(rule ? preferWomen(list.filter(c => !c.fits)) : [])];
@@ -449,7 +455,20 @@ function timesFor(p) {
 
 // ---------- perfiles y asignaciones ----------
 const profById = id => state.profiles.find(p => p.id === id);
-const profByName = name => state.profiles.find(p => norm(p.name) === norm(name));
+const profByName = name => state.profiles.find(p => norm(p.name) === norm(name)) || state.profiles.find(p => p.corto && norm(p.corto) === norm(name));
+// Nombre que sale en el programa (PDF, programa publicado, mecánicas): el corto si lo tiene; si no, el completo
+const progName = pr => pr ? (pr.corto || pr.name || '') : '';
+const progNameById = id => progName(id && profById(id));
+// Busca por el nombre completo y por el del programa
+const profMatches = (pr, typed) => nameMatches(pr.name, typed) || (!!pr.corto && nameMatches(pr.corto, typed));
+// Sugerencias para el nombre del programa: primer nombre + primer apellido, etc.
+function shortNameOptions(full) {
+  const w = squash(full).split(' ').filter(Boolean);
+  if (w.length < 3) return [];
+  const out = [w[0] + ' ' + w[w.length - 2], w[1] + ' ' + w[w.length - 2], w[0] + ' ' + w[w.length - 1]];
+  if (w.length >= 4) out.push(w[0] + ' ' + w[2]);
+  return [...new Set(out)].filter(x => x !== squash(full));
+}
 const famById = id => state.families.find(f => f.id === id);
 const famOf = pid => { const pr = profById(pid); return pr && pr.familyId ? famById(pr.familyId) : null; };
 const sameFamily = (a, b) => { const f = famOf(a); return !!f && f === famOf(b); };
@@ -488,7 +507,11 @@ function countsFor(p) {
 function contextFor(p) {
   const priors = sortedPrograms().filter(q => q !== p && q.date <= p.date);
   const last = new Map();
-  for (const q of priors) for (const x of assignmentsOf(q)) if (!last.has(x.pid)) last.set(x.pid, { q, ...x });
+  const load = new Map();
+  for (const q of priors) for (const x of assignmentsOf(q)) {
+    if (!last.has(x.pid)) last.set(x.pid, { q, ...x });
+    if (daysBetween(q.date, p.date) <= LOAD_DAYS) load.set(x.pid, (load.get(x.pid) || 0) + 1);
+  }
   // "Descansando": tiene otra asignación a menos de restDays días, antes o después de esta semana
   const recent = new Map();
   for (const q of state.programs) {
@@ -500,7 +523,44 @@ function contextFor(p) {
       if (!prev || Math.abs(daysBetween(prev.q.date, p.date)) > d) recent.set(x.pid, { q, ...x });
     }
   }
-  return { last, recent };
+  return { last, recent, load };
+}
+
+// ---------- Armar el mes ----------
+// Llena, semana por semana y en orden, lo que esté vacío del programa de entre semana y de las
+// mecánicas. Cada semana ya "ve" lo que se puso en las anteriores (descanso y quién lleva más tiempo).
+// No cambia nada de lo que ya estaba puesto. Devuelve lo que hizo, con el porqué de cada elección.
+const whyText = c => [c.days === Infinity ? 'nunca ha participado' : `no participa desde hace ${c.days} días`,
+  c.rule ? (c.fits ? 'cumple el filtro' : 'nadie cumple el filtro') : '', c.pref ? 'lo prefiere' : ''].filter(Boolean).join(' · ');
+function planWeeks(weeks, opts = { programa: true, mecanicas: true }) {
+  const out = [];
+  for (const p of [...weeks].sort((a, b) => a.date.localeCompare(b.date))) {
+    const res = { p, filled: [], empty: [] };
+    if (opts.programa) {
+      const ctx = contextFor(p);
+      const reserved = new Set([...slotsOf(p).map(x => x.pid).filter(Boolean), ...mecIds(p, 'entre')]);
+      for (const x of slotsOf(p)) {
+        if (x.row[x.slot]) continue;
+        const list = candidatesFor(p, x.row, x.slot, ctx, reserved, x.row[mateSlot(x.slot)] || undefined);
+        const c = list[0];
+        if (!c) { res.empty.push({ label: roleLabel(x.row, x.slot), title: displayTitle(x.row), why: 'Nadie disponible: los que pueden ya tienen asignación, descansan o están ausentes' }); continue; }
+        x.row[x.slot] = c.pr.id; reserved.add(c.pr.id);
+        const prayer = x.row.kind === 'chair' && x.row.intro && x.slot === 'a' ? presidentPrayer(p, c.pr.id) : null;
+        res.filled.push({ label: roleLabel(x.row, x.slot), title: displayTitle(x.row), pid: c.pr.id, why: whyText(c) });
+        if (prayer) res.filled.push({ label: roleLabel(prayer, 'a'), title: displayTitle(prayer), pid: c.pr.id, why: 'el presidente hace la oración' });
+      }
+    }
+    if (opts.mecanicas) for (const [mtg, mtgName] of MEETINGS) for (const { key, label } of MEC) {
+      if (mecGet(p, mtg, key)) continue;
+      const best = mecCandidates(p, mtg, key).find(x => !x.why);
+      const name = `${label} (${String(mtgName).toLowerCase()})`;
+      if (!best) { res.empty.push({ label: name, title: '', why: 'Nadie disponible con ese privilegio' }); continue; }
+      mecSet(p, mtg, key, best.pr.id);
+      res.filled.push({ label: name, title: '', pid: best.pr.id, why: best.days === Infinity ? 'nunca la ha tenido' : `no la tiene desde hace ${best.days} días` });
+    }
+    out.push(res);
+  }
+  return out;
 }
 const restText = (r, p) => {
   const d = daysBetween(p.date, r.q.date);

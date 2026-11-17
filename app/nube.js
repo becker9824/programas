@@ -509,7 +509,7 @@ document.addEventListener('visibilitychange', () => { if (document.visibilitySta
 // Lo que ven todos: semanas desde hace un mes, ya con horas y nombres (sin edades ni notas)
 function publicWeeks() {
   const from = addDays(mondayOf(todayISO()), -28);
-  const person = id => { const pr = id && profById(id); return pr ? { id, n: pr.name } : null; };
+  const person = id => { const pr = id && profById(id); return pr ? { id, n: progName(pr) } : null; };
   return state.programs.filter(p => p.date >= from).sort((a, b) => a.date.localeCompare(b.date)).map(p => {
     const t = timesFor(p);
     return { id: p.id, date: p.date, day: meetingDate(p), title: p.title, reading: p.reading || '', meeting: fmtMeeting(p),

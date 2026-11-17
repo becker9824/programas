@@ -5,6 +5,11 @@
 function openProfileDialog(prof, opts = {}) {
   let saved = false;
   const nameI = h('input', { type: 'text', value: prof ? prof.name : (opts.name || ''), placeholder: 'Nombre y apellido' });
+  const cortoI = h('input', { type: 'text', maxlength: 60, value: prof && prof.corto || '', placeholder: 'Igual que el nombre' });
+  const cortoSug = h('div', { class: 'chips nom-chips', style: { marginTop: '6px' } });
+  const paintCorto = () => cortoSug.replaceChildren(...shortNameOptions(nameI.value).map(o => h('button', { type: 'button', class: norm(cortoI.value) === norm(o) ? 'on' : '',
+    onclick: () => { cortoI.value = norm(cortoI.value) === norm(o) ? '' : o; paintCorto(); } }, o)));
+  nameI.addEventListener('input', paintCorto); cortoI.addEventListener('input', paintCorto); paintCorto();
   const ageI = h('input', { type: 'number', min: 0, max: 120, value: prof && prof.age != null ? prof.age : '', style: { width: '120px' } });
   const sex = prof ? prof.sex : '';
   const sexM = h('input', { type: 'radio', name: 'sexo', value: 'M', checked: sex === 'M' });
@@ -132,7 +137,7 @@ function openProfileDialog(prof, opts = {}) {
   }
   // Sin Programa VyM (secretario, función Anciano): solo ve los datos y cambia el directorio
   if (ro) {
-    [nameI, ageI, sexM, sexF, notesI, ...(can('secretario') ? [] : [tipoSel]), famSel, nomSel, sitSel, bautI, capI, birthI, baptI, hopeSel, ...privBoxes.map(p => p.box)].forEach(el => { el.disabled = true; });
+    [nameI, cortoI, ageI, sexM, sexF, notesI, ...(can('secretario') ? [] : [tipoSel]), famSel, nomSel, sitSel, bautI, capI, birthI, baptI, hopeSel, ...privBoxes.map(p => p.box)].forEach(el => { el.disabled = true; });
     privField.querySelectorAll('button').forEach(b => b.remove());
   }
 
@@ -150,6 +155,8 @@ function openProfileDialog(prof, opts = {}) {
       h('h3', null, ro ? prof.name : prof ? 'Editar hermano' : 'Nuevo hermano'),
       h('div', { class: 'dlg-sec' }, 'Datos'),
       h('label', { class: 'field' }, 'Nombre', nameI),
+      h('div', { class: 'field' }, h('span', null, 'Nombre en el programa (opcional)'), cortoI, cortoSug,
+        h('span', { class: 'small-text muted' }, 'Si tiene varios nombres o apellidos, escribe o elige cómo quieres que salga en el programa, los PDF y las mecánicas. Vacío = sale el nombre completo.')),
       h('div', { class: 'row', style: { gap: '24px', alignItems: 'flex-start' } },
         h('label', { class: 'field' }, 'Edad', ageI),
         h('div', { class: 'field' }, h('span', { class: 'muted', style: { fontSize: '13px' } }, 'Sexo'),
@@ -220,7 +227,8 @@ function openProfileDialog(prof, opts = {}) {
     const age = born ? now.getFullYear() - born.getFullYear() - (now < new Date(now.getFullYear(), born.getMonth(), born.getDate()) ? 1 : 0)
       : ageI.value === '' ? null : Math.max(0, Math.round(+ageI.value));
     const p = prof || { id: uid() };
-    Object.assign(p, { name, sex: sexV, age, notes: squash(notesI.value), familyId: famSel.value || null, tipo: tipoSel.value, auxMeses: auxValue(),
+    const corto = squash(cortoI.value);
+    Object.assign(p, { name, corto: corto && norm(corto) !== norm(name) ? corto : '', sex: sexV, age, notes: squash(notesI.value), familyId: famSel.value || null, tipo: tipoSel.value, auxMeses: auxValue(),
       nombramiento: sexV === 'M' ? nomSel.value : '', situacion: sitSel.value, bautizado: bautI.checked || !!baptI.value, capitan: capI.checked,
       nacimiento: birthI.value || null, bautismoFecha: baptI.value || null, esperanza: hopeSel.value });
     // Si tiene cuenta, también se le da (o quita) la función Capitán para que registre en la app

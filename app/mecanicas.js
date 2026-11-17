@@ -9,7 +9,7 @@ function attachPicker(inp, getList, onChoose) {
   const close = () => { if (el) { el.remove(); el = null; } };
   const fill = () => {
     const typed = norm(inp.value), all = getList();
-    items = (typed ? all.filter(x => nameMatches(x.pr.name, typed)) : all.filter(x => !x.why && nomOk(x.pr)).slice(0, 8)).slice(0, 30);
+    items = (typed ? all.filter(x => profMatches(x.pr, typed)) : all.filter(x => !x.why && nomOk(x.pr)).slice(0, 8)).slice(0, 30);
     at = Math.min(at, Math.max(items.length - 1, 0));
     el.replaceChildren(h('div', { class: 'pick-head' }, typed ? 'Coincidencias' : 'Recomendados'),
       typed ? null : nomChips(fill),
@@ -78,7 +78,7 @@ function mecanicasPDF(weeks) {
     for (const [mtg, label] of MEETINGS) {
       const cells = cols.map((c, i) => i === 0
         ? [label, fmtD(mecDate(p, mtg)), mecTime(mtg)]
-        : c.keys.map(k => (profById(mecGet(p, mtg, k)) || {}).name).filter(Boolean).flatMap(n => doc.splitTextToSize(n, widths[i] - 3)));
+        : c.keys.map(k => progNameById(mecGet(p, mtg, k))).filter(Boolean).flatMap(n => doc.splitTextToSize(n, widths[i] - 3)));
       const lines = Math.max(2, ...cells.map(l => l.length || 1));
       const rh = Math.max(11, lines * 3.9 + 3);
       if (y + rh > H - M) { doc.addPage(); header(); }

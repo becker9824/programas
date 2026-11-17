@@ -344,7 +344,7 @@ function weekendPDF(weeks) {
   if (!weeks.length) return toast('No hay semanas para el PDF.');
   const s = state.settings, doc = new J({ orientation: 'landscape', unit: 'pt', format: s.paper === 'a4' ? 'a4' : 'letter' });
   const W = doc.internal.pageSize.getWidth(), H = doc.internal.pageSize.getHeight(), M = 32;
-  const nm = id => (profById(id) || {}).name || '';
+  const nm = id => progNameById(id);
   const cols = [['Fecha', 0.12], ['Presidente', 0.14], ['Discurso público', 0.27], ['Orador', 0.17], ['Lector de La Atalaya', 0.15], ['Hospitalidad', 0.15]];
   const widths = cols.map(([, f]) => f * (W - 2 * M));
   const header = () => {
@@ -364,7 +364,7 @@ function weekendPDF(weeks) {
       [capFirst(toDate(mecDate(p, 'fin')).toLocaleDateString('es', { weekday: 'short', day: 'numeric', month: 'short' })), mecTime('fin')],
       [nm(mecGet(p, 'fin', 'presidente'))],
       [[f.bosquejo ? `Núm. ${f.bosquejo}` : '', f.tema].filter(Boolean).join(' · ') || '—'],
-      [f.orador || '—', f.cong ? `(${f.cong})` : ''],
+      [(f.oradorId && profById(f.oradorId) ? progNameById(f.oradorId) : f.orador) || '—', f.cong ? `(${f.cong})` : ''],
       [nm(mecGet(p, 'fin', 'lector'))],
       [f.hosp || ''],
     ].map((lines, i) => { doc.setFont('helvetica', 'normal'); doc.setFontSize(9.5); return lines.filter(Boolean).flatMap(l => doc.splitTextToSize(l, widths[i] - 10)); });
@@ -881,7 +881,7 @@ function cleaningPDF(weeks, withMec) {
   const names = (m, keys) => {
     const p = state.programs.find(x => x.date === m);
     if (!p) return '';
-    return [...new Set(MEETINGS.flatMap(([mtg]) => keys.map(k => (profById(mecGet(p, mtg, k)) || {}).name)).filter(Boolean))].join(', ');
+    return [...new Set(MEETINGS.flatMap(([mtg]) => keys.map(k => progNameById(mecGet(p, mtg, k)))).filter(Boolean))].join(', ');
   };
   const cols = [['Semana', 20], ['Grupo de aseo', 20]], rows = weeks.map(m => [week(m), cleaningOf(m)]);
   if (withMec) {

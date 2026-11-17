@@ -156,7 +156,7 @@ function pdfFlow(doc, programs, design) {
     compacto: { font: 'helvetica', head: 'helvetica', size: 9, lh: 1.18, color: false, bar: 'text', gapWeek: 14, songName: false },
     elegante: { font: 'times', head: 'times', size: 10.5, lh: 1.22, color: true, bar: 'line', gapWeek: 22, songName: true },
   }[design];
-  const M = 40, L = ST.size * ST.lh, name = id => (profById(id) || {}).name || '';
+  const M = 40, L = ST.size * ST.lh, name = id => progNameById(id);
   let aux = false, xAux = 0; // cambian en cada semana (sala auxiliar sí o no)
   const xTime = M, xDot = M + 38, xTitle = M + 46;
   const xMain = W - M - 140, colW = W - M - xMain;
@@ -276,7 +276,7 @@ function pdfClassic(doc, programs) {
   const W = doc.internal.pageSize.getWidth(), H = doc.internal.pageSize.getHeight();
   const M = 36, LINE = 13;
   const xTime = M, xDot = M + 36, xTitle = M + 46, xNames = W - M - 170, xLabelR = xNames - 8;
-  const name = id => (profById(id) || {}).name || '';
+  const name = id => progNameById(id);
   const printed = new Date().toLocaleDateString('es', { day: '2-digit', month: '2-digit', year: 'numeric' });
 
   programs.forEach((p, idx) => {
@@ -367,7 +367,7 @@ function downloadSlips(items) {
   const s = state.settings;
   const doc = new J({ unit: 'pt', format: s.paper === 'a4' ? 'a4' : 'letter' });
   const W = doc.internal.pageSize.getWidth();
-  const name = id => (profById(id) || {}).name || '';
+  const name = id => progNameById(id);
 
   // Medidas tomadas de la hoja de ejemplo (puntos, carta)
   const bold = size => { doc.setFont('helvetica', 'bold'); doc.setFontSize(size); };
@@ -458,7 +458,7 @@ function openSlipsDialog(p) {
   const rows = items.map(x => x.row);
   const who = x => x.row[x.aux ? 'xa' : 'a'], mate = x => x.row[x.aux ? 'xb' : 'b'];
   const checks = items.map(x => h('input', { type: 'checkbox', checked: isStudentPart(x.row) && !!who(x) }));
-  const name = id => (profById(id) || {}).name;
+  const name = id => progNameById(id);
   const list = h('div', { class: 'slips' }, items.map((x, i) => h('label', { class: 'slip' }, checks[i],
     h('span', null, h('span', null, displayTitle(x.row), x.aux ? h('em', { class: 'muted' }, ' · sala auxiliar') : null),
       h('small', null, who(x) ? [name(who(x)), x.row.helper && mate(x) ? ` & ${name(mate(x))}` : ''].join('') : 'Sin asignar')),
