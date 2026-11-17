@@ -9,7 +9,7 @@ function attachPicker(inp, getList, onChoose) {
   const close = () => { if (el) { el.remove(); el = null; } };
   const fill = () => {
     const typed = norm(inp.value), all = getList();
-    items = (typed ? all.filter(x => (' ' + norm(x.pr.name)).includes(' ' + typed)) : all.filter(x => !x.why && nomOk(x.pr)).slice(0, 8)).slice(0, 30);
+    items = (typed ? all.filter(x => nameMatches(x.pr.name, typed)) : all.filter(x => !x.why && nomOk(x.pr)).slice(0, 8)).slice(0, 30);
     at = Math.min(at, Math.max(items.length - 1, 0));
     el.replaceChildren(h('div', { class: 'pick-head' }, typed ? 'Coincidencias' : 'Recomendados'),
       typed ? null : nomChips(fill),
@@ -185,7 +185,7 @@ function renderMecanicas() {
     h('div', { class: 'row spread', style: { alignItems: 'flex-start' } },
       h('h1', null, 'Asignaciones mecánicas'),
       h('div', { class: 'row' }, monthDownload(state.programs, mecanicasPDF), weeks.length ? h('button', { class: 'btn primary', onclick: () => openMecanicasPDFDialog(weeks) }, '⬇ PDF') : null)),
-    h('p', { class: 'sub' }, `Toca un espacio para ver a los hermanos más recomendados, o usa “✨ Sugerir” para llenar los vacíos de la semana. No se repite a nadie en ${state.settings.mecRestDays ?? 14} días ni en la misma reunión.`),
+    h('p', { class: 'sub' }, `Toca un espacio para ver a los hermanos más recomendados, o usa “✨ Sugerir” para llenar los vacíos de la semana. No se repite a nadie en ${state.settings.mecRestDays ?? 14}${state.settings.mecRestDaysNom != null ? ` (nombrados: ${state.settings.mecRestDaysNom})` : ''} días ni en la misma reunión.`),
     weeks.length ? weeks.map(card) : h('div', { class: 'card empty' }, 'No hay semanas próximas. Agrégalas en Semanas.'));
 }
 

@@ -427,6 +427,7 @@ async function firstLoad() {
     state.settings.congregation = nube.congData.nombre; save();
   }
   nube.listo = true;
+  if (can('programa')) mergeDuplicateWeeks();
   // Una sola vez por congregación: los estudiantes varones también quedan para la lectura de la Biblia
   if (can('programa') && !state.settings.lecturaAuto) {
     const fix = state.profiles.filter(p => p.sex === 'M' && Array.isArray(p.puede) && p.puede.includes('estudiante') && !p.puede.includes('lectura'));
@@ -452,6 +453,29 @@ function saveCloud() {
   saveCloud.t = setTimeout(uploadState, 800);
 }
 // Sube solo los documentos que cambiaron (y borra los que ya no están)
+// Semanas repetidas (misma semana, distinto documento): se queda la que tiene más asignaciones y se le pasan las de las otras
+function mergeDuplicateWeeks() {
+  const byWeek = new Map();
+  for (const p of state.programs) if (p.week) (byWeek.get(p.week) || byWeek.set(p.week, []).get(p.week)).push(p);
+  let merged = 0;
+  for (const list of byWeek.values()) {
+    if (list.length < 2) continue;
+    const filled = q => slotsOf(q).filter(x => x.pid).length + Object.values(q.mec || {}).reduce((a, m) => a + Object.values(m || {}).filter(Boolean).length, 0) + (q.fin && q.fin.orador ? 1 : 0);
+    list.sort((a, b) => filled(b) - filled(a) || (a.id === weekId(a.week) ? -1 : 1));
+    const [keep, ...rest] = list;
+    for (const o of rest) {
+      for (const r of keep.rows || []) { const r2 = (o.rows || []).find(x => x.id === r.id || (x.title === r.title && x.kind === r.kind)); if (r2) for (const k of ['a', 'b', 'xa', 'xb']) if (!r[k] && r2[k]) r[k] = r2[k]; }
+      for (const [mtg, m] of Object.entries(o.mec || {})) for (const [k, v] of Object.entries(m || {})) { keep.mec = keep.mec || {}; keep.mec[mtg] = keep.mec[mtg] || {}; if (!keep.mec[mtg][k] && v) keep.mec[mtg][k] = v; }
+      if (!keep.fin && o.fin) keep.fin = o.fin;
+      if (o.aux && !keep.aux) keep.aux = o.aux;
+    }
+    const drop = new Set(rest.map(o => o.id));
+    state.programs = state.programs.filter(q => !drop.has(q.id));
+    merged += rest.length;
+  }
+  if (merged) { save(); logChange(`Juntó ${merged} semana${merged > 1 ? 's' : ''} repetida${merged > 1 ? 's' : ''}`); }
+  return merged;
+}
 async function uploadState() {
   clearTimeout(saveCloud.t); saveCloud.t = null;
   if (!nube.cong || !can('programa')) return; // ya se cerró la sesión

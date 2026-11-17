@@ -9,6 +9,12 @@ const FB_CONFIG = EMU ? { apiKey: 'demo-key', authDomain: 'localhost', projectId
 // (movil/copiar.js le agrega capacitor.js; sin él, como en la PC y la web, NATIVE es false)
 const NATIVE = !!(window.capacitorExports && Capacitor.isNativePlatform());
 const NP = NATIVE ? { http: capacitorExports.CapacitorHttp, files: capacitorExports.registerPlugin('Filesystem'), share: capacitorExports.registerPlugin('Share') } : null;
+// append, prepend y replaceChildren escriben "null" o "undefined" si les llega un hueco (por ejemplo, cond ? null : algo).
+// Aquí se ignoran esos huecos en toda la app; así nunca aparece esa palabra en pantalla.
+for (const proto of [Element.prototype, DocumentFragment.prototype]) for (const m of ['append', 'prepend', 'replaceChildren']) {
+  const orig = proto[m];
+  proto[m] = function (...kids) { return orig.apply(this, kids.filter(k => k != null && k !== false)); };
+}
 const OLD_PDF_TITLE = 'Reunión Vida y Ministerio Cristianos';
 // Preferir nombrados en cada asignación (Ajustes): privilegio → 'nom', 'anciano' o 'sm'
 const DEFAULT_NOM_PREFS = { microfonos: 'nom', acomodador: 'nom', audio: 'nom' };
@@ -170,6 +176,20 @@ function isoWeek(iso) {
   return { y: thu.getFullYear(), w: 1 + Math.round((thu - first) / (7 * 864e5)) };
 }
 const mondayOf = iso => addDays(iso, -((toDate(iso).getDay() + 6) % 7));
+// Búsqueda de nombres: cada palabra escrita debe ser el inicio de alguna palabra del nombre ("jua per" → Juan Pérez),
+// o el texto debe estar dentro del nombre. Sin acentos ni mayúsculas, y sin importar los espacios de más.
+function nameMatches(name, typed) {
+  const t = norm(String(typed || '')).replace(/\s+/g, ' ').trim();
+  if (!t) return true;
+  const n = norm(String(name || '')).replace(/\s+/g, ' ').trim(), words = n.split(' ');
+  return n.includes(t) || t.split(' ').every(w => words.some(x => x.startsWith(w)));
+}
+// Descanso: los nombrados (ancianos y siervos) pueden tener su propio número de días; si no, el general
+const isNombrado = pr => !!pr && (pr.nombramiento === 'anciano' || pr.nombramiento === 'sm');
+const restOwn = (pr, key, def) => { const s = state.settings, v = s[key + 'Nom']; return isNombrado(pr) && v != null && v !== '' ? +v : (s[key] ?? def); };
+const restDaysFor = pid => restOwn(profById(pid), 'restDays', 28);
+const mecRestDaysFor = pr => restOwn(pr, 'mecRestDays', 14);
+const weekId = key => 'sem-' + key; // el mismo en todos los equipos: dos que bajan la misma semana no la duplican
 const weekKey = iso => { const { y, w } = isoWeek(iso); return `${y}-W${pad(w)}`; };
 function weekLabel(monday) {
   const end = addDays(monday, 6), a = toDate(monday), b = toDate(end);
@@ -368,7 +388,7 @@ function mecHistory(skip) {
 // Recomendados para una asignación mecánica: varones con el privilegio, sin otra asignación
 // en esa reunión, sin mecánica en los últimos mecRestDays días; primero quien lleva más tiempo.
 function mecCandidates(p, mtg, key) {
-  const priv = mecPriv(mtg, key), date = mecDate(p, mtg), rest = state.settings.mecRestDays ?? 14;
+  const priv = mecPriv(mtg, key), date = mecDate(p, mtg);
   const busy = new Set();
   for (const r of MEC) if (r.key !== key) { const id = mecGet(p, mtg, r.key); if (id) busy.add(id); }
   const linked = mecLinked(p, mtg, key); // su propia fila del programa no cuenta como "ocupado"
@@ -377,7 +397,7 @@ function mecCandidates(p, mtg, key) {
   return state.profiles.filter(pr => pr.sex === 'M' && pr.tipo !== 'no').map(pr => {
     const dates = hist.get(pr.id) || [];
     const before = dates.filter(d => d < date).sort().pop();
-    const near = dates.some(d => Math.abs(daysBetween(d, date)) < rest);
+    const rest = mecRestDaysFor(pr), near = dates.some(d => Math.abs(daysBetween(d, date)) < rest);
     const why = busy.has(pr.id) ? 'Ya tiene asignación en esta reunión' : awayOn(pr.id, date) ? 'Ausente' : !canDo(pr, priv) ? 'Sin privilegio' : near ? 'Descansando' : '';
     return { pr, why, pref: prefersMe(pr, priv), days: before ? daysBetween(before, date) : Infinity };
   }).sort((a, b) => (!b.why - !a.why) || b.pref - a.pref || b.days - a.days || a.pr.name.localeCompare(b.pr.name, 'es'));
@@ -470,11 +490,12 @@ function contextFor(p) {
   const last = new Map();
   for (const q of priors) for (const x of assignmentsOf(q)) if (!last.has(x.pid)) last.set(x.pid, { q, ...x });
   // "Descansando": tiene otra asignación a menos de restDays días, antes o después de esta semana
-  const recent = new Map(), rest = state.settings.restDays || 28;
+  const recent = new Map();
   for (const q of state.programs) {
     const d = Math.abs(daysBetween(q.date, p.date));
-    if (q === p || d >= rest) continue;
+    if (q === p) continue;
     for (const x of assignmentsOf(q)) {
+      if (d >= restDaysFor(x.pid)) continue;
       const prev = recent.get(x.pid);
       if (!prev || Math.abs(daysBetween(prev.q.date, p.date)) > d) recent.set(x.pid, { q, ...x });
     }

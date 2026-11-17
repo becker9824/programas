@@ -400,7 +400,7 @@ function renderEditor(p) {
     const partner = fr && fr.helper === 'Ayudante' ? fr[mateSlot(focus.slot)] : null;
     const rule = fr ? ruleFor(fr) : null;
     const items = state.profiles
-      .filter(pr => !used.has(pr.id) && (!f || norm(pr.name).includes(f)))
+      .filter(pr => !used.has(pr.id) && (!f || nameMatches(pr.name, f)))
       .map(pr => {
         const l = ctx.last.get(pr.id);
         return { pr, fam: !!partner && sameFamily(partner, pr.id), days: l ? daysBetween(l.q.date, p.date) : Infinity,
@@ -492,7 +492,7 @@ function renderEditor(p) {
     roomForPick(inp);
   }
   // Busca por el inicio de cada palabra del nombre: "ana" encuentra "Ana María", no "Hermana"
-  const nameMatch = (name, typed) => (' ' + norm(name)).includes(' ' + typed);
+  const nameMatch = nameMatches;
   function fillPick() {
     const { row, slot, inp } = pick;
     const ctx = contextFor(p), counts = new Set([...slotsOf(p).filter(x => x.pid && !(x.row === row && x.slot === slot)).map(x => x.pid), ...mecIds(p, 'entre')]);
@@ -737,7 +737,7 @@ function renderPeople() {
 
   function stats() {
     const progs = sortedPrograms();
-    const recentPids = new Set(progs.filter(q => Math.abs(daysBetween(q.date, mondayOf(today))) < state.settings.restDays).flatMap(q => assignmentsOf(q).map(x => x.pid)));
+    const recentPids = new Set(progs.flatMap(q => assignmentsOf(q).filter(x => Math.abs(daysBetween(q.date, mondayOf(today))) < restDaysFor(x.pid)).map(x => x.pid)));
     return state.profiles.map(pr => {
       let count = 0, last = null, next = null;
       for (const q of progs) for (const x of assignmentsOf(q)) {
@@ -881,6 +881,11 @@ function renderSettings() {
   const s = state.settings;
   const num = (label, key, min, max) => h('label', { class: 'field' }, label,
     h('input', { type: 'number', min, max, value: s[key], style: { width: '120px' }, onchange: e => { s[key] = Math.min(max, Math.max(min, Math.round(+e.target.value) || min)); e.target.value = s[key]; save(); } }));
+  // Número opcional: vacío = se usa el general
+  const numOpt = (label, key, min, max) => h('label', { class: 'field' }, label,
+    h('input', { type: 'number', min, max, value: s[key] ?? '', placeholder: 'Igual que todos', style: { width: '160px' }, onchange: e => {
+      if (e.target.value === '') delete s[key]; else { s[key] = Math.min(max, Math.max(min, Math.round(+e.target.value) || 0)); e.target.value = s[key]; }
+      save(); } }));
   const text = (label, key, ph) => h('label', { class: 'field' }, label,
     h('input', { type: 'text', value: s[key], placeholder: ph, oninput: e => { s[key] = e.target.value; save(); } }));
   const pick = (label, key, opts, after) => h('label', { class: 'field' }, label,
@@ -934,7 +939,9 @@ function renderSettings() {
       toggles('Las hojas de asignación llevan', [['Minutos', 'slipShowMin'], ['Texto de la parte', 'slipShowText'], ['Lección', 'slipShowLesson']]),
       pick('Fecha en las hojas de asignación', 'slipDate', DATE_FORMATS),
       num('No repetir a nadie en … días (antes o después de su asignación)', 'restDays', 7, 120),
+      numOpt('Ancianos y siervos ministeriales: no repetir en … días (vacío = igual que todos)', 'restDaysNom', 0, 120),
       num('Asignaciones mecánicas: no repetir a nadie en … días', 'mecRestDays', 0, 120),
+      numOpt('Mecánicas, ancianos y siervos ministeriales: no repetir en … días (vacío = igual que todos)', 'mecRestDaysNom', 0, 120),
       num('Marcar como “hace mucho” después de … días', 'staleDays', 1, 3650),
       num('Cuántas semanas hacia adelante buscar en jw.org', 'weeksAhead', 1, 16),
       h('div', { class: 'row' },

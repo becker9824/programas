@@ -177,7 +177,7 @@ async function syncGuides(manual) {
     try {
       const g = await fetchGuide(monday);
       if (!g) { state.missing[key] = Date.now(); continue; }
-      state.programs.push({ id: uid(), week: key, date: monday, source: 'jw', ...g });
+      state.programs.push({ id: weekId(key), week: key, date: monday, source: 'jw', ...g });
       delete state.missing[key];
       added++;
     } catch (e) { failed++; }
@@ -203,7 +203,7 @@ async function addWeek(dateISO) {
     try { g = await fetchGuide(monday); } catch (e) {}
     if (!g) toast('No se encontró la guía de esa semana. Se creó un programa en blanco.');
   }
-  const p = { id: uid(), week: key, date: monday, source: g ? 'jw' : 'manual', ...(g || { title: weekLabel(monday), reading: '', rows: blankRows() }) };
+  const p = { id: weekId(key), week: key, date: monday, source: g ? 'jw' : 'manual', ...(g || { title: weekLabel(monday), reading: '', rows: blankRows() }) };
   state.programs.push(p); save();
   go({ name: 'edit', id: p.id });
   ensureSongTitles([p]);
