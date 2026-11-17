@@ -620,13 +620,35 @@ function setupChecklist() {
 }
 
 // ---------- cargar hermanos desde una lista de Excel o CSV (Programa VyM) ----------
-// Columnas que reconoce (en cualquier orden, la primera fila son los títulos): Nombre, Sexo, Edad o Nacimiento,
-// Nombramiento, Bautizado, Teléfono, Dirección. Los que ya existen (mismo nombre) se saltan.
-const IMPORT_COLS = { name: ['nombre', 'nombre completo', 'hermano', 'hermana', 'publicador'], sex: ['sexo', 'genero'], age: ['edad'],
-  born: ['nacimiento', 'fecha de nacimiento'], nom: ['nombramiento', 'privilegio'], bapt: ['bautizado', 'bautizada', 'bautismo'],
-  tel: ['telefono', 'celular', 'tel', 'whatsapp'], dir: ['direccion', 'domicilio'] };
+// Reconoce los títulos en español o en inglés y en cualquier orden (la primera fila son los títulos): la plantilla de la app,
+// listas hechas a mano (Nombre y Apellidos por separado) y la exportación de personas de NW Scheduler (FirstName, LastName,
+// DisplayName, Gender, DOB, DateOfBaptism, Privilege, PioneerStatus, GroupName, GroupResponsibility, UseFor…). Los que ya
+// existen (mismo nombre), los que se mudaron o ya no están y los que no tienen sexo se saltan.
+const IMPORT_COLS = {
+  display: ['displayname', 'display name', 'nombre para mostrar', 'nombre a mostrar'],
+  name: ['nombre', 'nombre completo', 'hermano', 'hermana', 'publicador', 'name', 'full name', 'fullname', 'nombre y apellido', 'nombre y apellidos'],
+  first: ['firstname', 'first name', 'nombres', 'nombre(s)', 'primer nombre'],
+  last: ['lastname', 'last name', 'surname', 'apellido', 'apellidos', 'apellido(s)'],
+  sex: ['sexo', 'genero', 'gender', 'sex'], age: ['edad', 'age'],
+  born: ['nacimiento', 'fecha de nacimiento', 'fecha nacimiento', 'dob', 'birthdate', 'birth date', 'date of birth', 'cumpleanos'],
+  nom: ['nombramiento', 'privilegio', 'privilege', 'appointment'],
+  bapt: ['bautizado', 'bautizada', 'baptized'],
+  baptDate: ['dateofbaptism', 'date of baptism', 'fecha de bautismo', 'fecha bautismo', 'bautismo', 'baptism'],
+  pioneer: ['pioneerstatus', 'pioneer status', 'precursor', 'tipo de precursor', 'tipo de publicador', 'pioneer'],
+  hope: ['anointed', 'ungido', 'esperanza'],
+  group: ['groupname', 'group name', 'grupo', 'grupo de servicio', 'service group', 'group'],
+  role: ['groupresponsibility', 'group responsibility', 'responsabilidad en el grupo'],
+  tel: ['telefono', 'celular', 'tel', 'whatsapp', 'movil', 'telefono celular', 'phonemobile', 'mobile', 'phone', 'telefono de casa', 'phonehome', 'phonework'],
+  dir: ['direccion', 'domicilio', 'address'],
+  moved: ['moved', 'se mudo', 'mudado'], removed: ['removed', 'retirado', 'dado de baja'],
+};
+// Columnas UseFor… de NW Scheduler → asignaciones que puede recibir
+const IMPORT_PRIVS = { useforchairman: 'presidente', useforauxiliarycounselor: 'consejero_aux', useforprayers: 'oracion', usefortreasurestalk: 'tesoros',
+  usefortreasuresgems: 'tesoros', usefortreasuresbr: 'lectura', useforapplyic: 'estudiante', useforapplyrv: 'estudiante', useforapplybs: 'estudiante',
+  useforapplyexplaining: 'estudiante', useforapplystudenttalk: 'estudiante', useforapplyassistant: 'estudiante', useforlivingparts: 'vida', useforcbs: 'conductor',
+  useforcbsreader: 'lector', useforweekendchairman: 'presidente_fin', useforwatchtowerreader: 'atalaya' };
 function parseCSV(text) {
-  const first = text.split('\n')[0], sep = (first.match(/;/g) || []).length > (first.match(/,/g) || []).length ? ';' : ',';
+  const first = text.split('\n')[0], counts = [';', ',', '\t'].map(c => [c, first.split(c).length]).sort((a, b) => b[1] - a[1]), sep = counts[0][0];
   const rows = [];
   let row = [], cell = '', q = false;
   for (let i = 0; i < text.length; i++) {
@@ -641,7 +663,7 @@ function parseCSV(text) {
   return rows.filter(r => r.some(x => String(x).trim()));
 }
 async function readTable(file) {
-  if (/\.(csv|txt)$/i.test(file.name)) return parseCSV((await file.text()).replace(/^﻿/, ''));
+  if (/\.(csv|txt|tsv)$/i.test(file.name)) return parseCSV((await file.text()).replace(/^﻿/, ''));
   const X = await loadExcel(), wb = new X.Workbook();
   await wb.xlsx.load(await file.arrayBuffer());
   const ws = wb.worksheets[0], rows = [];
@@ -649,80 +671,135 @@ async function readTable(file) {
   ws.eachRow(r => rows.push(r.values.slice(1).map(plain)));
   return rows;
 }
+const importHead = s => norm(String(s || '')).replace(/[_]+/g, ' ').replace(/\s+/g, ' ').trim();
+const importYes = v => /^(si|sí|x|1|true|yes|s|verdadero)$/i.test(String(v ?? '').trim());
 function rowsToPeople(rows) {
-  const head = (rows[0] || []).map(x => norm(String(x || '')).trim());
-  const idx = Object.fromEntries(Object.keys(IMPORT_COLS).map(k => [k, head.findIndex(x => IMPORT_COLS[k].includes(x))]));
-  if (idx.name < 0) throw new Error('No encontré la columna “Nombre” en la primera fila.');
+  const head = (rows[0] || []).map(importHead), headTight = head.map(x => x.replace(/\s/g, ''));
+  const find = names => head.findIndex((x, i) => names.includes(x) || names.includes(headTight[i]));
+  const idx = Object.fromEntries(Object.keys(IMPORT_COLS).map(k => [k, find(IMPORT_COLS[k])]));
+  // Teléfono: el primero que tenga algo (celular antes que casa)
+  const telCols = IMPORT_COLS.tel.map(n => head.findIndex((x, i) => x === n || headTight[i] === n)).filter(i => i >= 0);
+  const privCols = Object.entries(IMPORT_PRIVS).map(([k, p]) => [headTight.indexOf(k), p]).filter(([i]) => i >= 0);
+  if (idx.display < 0 && idx.name < 0 && idx.first < 0) throw new Error('No encontré la columna del nombre en la primera fila (Nombre, Nombres o FirstName).');
   const get = (r, k) => idx[k] < 0 ? '' : (r[idx[k]] ?? '');
   // Sexo: H/M (hombre/mujer) o M/F (masculino/femenino), según lo que traiga la lista
   const hScheme = rows.slice(1).some(r => { const v = norm(String(get(r, 'sex'))).trim(); return v === 'h' || v.startsWith('hom'); });
   const sexOf = v => {
     v = norm(String(v)).trim();
     if (!v) return null;
-    if (v.startsWith('hom') || v.startsWith('var') || v.startsWith('masc') || v === 'h' || (v === 'm' && !hScheme)) return 'M';
+    if (v.startsWith('hom') || v.startsWith('var') || v.startsWith('masc') || v === 'male' || v === 'h' || (v === 'm' && !hScheme)) return 'M';
     if (v.startsWith('muj') || v.startsWith('fem') || v === 'f' || (v === 'm' && hScheme)) return 'F';
     return null;
   };
+  // Fechas: AAAA-MM-DD, AAAA/MM/DD o DD/MM/AAAA (con o sin hora)
   const dateOf = v => {
     if (v instanceof Date) return v.toISOString().slice(0, 10);
-    v = String(v).trim();
-    let m = v.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+    v = String(v ?? '').trim().split(/[ T]/)[0];
+    let m = v.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})$/);
     if (m) return `${m[1]}-${m[2].padStart(2, '0')}-${m[3].padStart(2, '0')}`;
     m = v.match(/^(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})$/);
-    return m ? `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}` : null;
+    return m && +m[2] <= 12 ? `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}` : null;
   };
   const ageFrom = iso => { const b = toDate(iso), n = new Date(); return n.getFullYear() - b.getFullYear() - (n < new Date(n.getFullYear(), b.getMonth(), b.getDate()) ? 1 : 0); };
   return rows.slice(1).map(r => {
-    const name = squash(String(get(r, 'name'))), sex = sexOf(get(r, 'sex')), born = dateOf(get(r, 'born'));
+    // Nombre: el que se muestra; si no, nombre + apellidos
+    const first = squash(String(idx.first >= 0 ? get(r, 'first') : idx.last >= 0 ? get(r, 'name') : '')), last = squash(String(get(r, 'last')));
+    const name = squash(String(get(r, 'display'))) || (first || last ? squash(first + ' ' + last) : squash(String(get(r, 'name'))));
+    const sex = sexOf(get(r, 'sex')), born = dateOf(get(r, 'born')), baptDate = dateOf(get(r, 'baptDate'));
     const nomV = norm(String(get(r, 'nom'))).trim();
-    const nombramiento = sex === 'M' ? (nomV.includes('anc') ? 'anciano' : /siervo|ministerial|^sm$/.test(nomV) ? 'sm' : '') : '';
+    const nombramiento = sex === 'M' ? (/anc|^e$|elder/.test(nomV) ? 'anciano' : /siervo|ministerial|^sm$|^ms$/.test(nomV) ? 'sm' : '') : '';
+    const sinBautizar = /^ubp$|no bautiz|unbapt/.test(nomV);
+    const pioV = norm(String(get(r, 'pioneer'))).trim();
+    const tipo = /regular|especial|special/.test(pioV) ? 'reg' : /aux/.test(pioV) ? 'aux' : 'pub';
+    const groupV = squash(String(get(r, 'group'))), grupo = /^(no asignado|sin grupo|ninguno|none|unassigned)$/i.test(groupV) ? '' : groupV;
+    const roleV = norm(String(get(r, 'role'))).trim();
     const ageV = parseInt(get(r, 'age'), 10);
+    const tel = telCols.map(i => squash(String(r[i] ?? ''))).find(Boolean) || '';
+    // Asignaciones (UseFor…): las marcadas, más las mecánicas que le tocan por ser anciano, siervo o varón bautizado
+    let puede = null;
+    if (privCols.length) {
+      const bautizado0 = !sinBautizar;
+      const kind = nombramiento === 'anciano' ? 'Anciano' : nombramiento === 'sm' ? 'Siervo ministerial' : sex === 'M' && bautizado0 ? 'Varón bautizado' : null;
+      const mec = kind ? PRIV_PRESETS.find(x => x[0] === kind)[1].filter(p => MEC_PRIVS.includes(p)) : [];
+      puede = [...new Set([...privCols.filter(([i]) => importYes(r[i])).map(([, p]) => p), ...mec])];
+    }
+    const skip = /^<.*>$/.test(name) ? 'Sin nombre' : importYes(get(r, 'moved')) ? 'Se mudó' : importYes(get(r, 'removed')) ? 'Ya no está' : '';
     return { name, sex, nombramiento, born, age: born ? ageFrom(born) : Number.isFinite(ageV) ? ageV : null,
-      bautizado: /^(si|sí|x|1|true|yes|s)$/i.test(String(get(r, 'bapt')).trim()) || !!nombramiento,
-      tel: squash(String(get(r, 'tel'))), dir: squash(String(get(r, 'dir'))), dup: !!profByName(name) };
-  }).filter(p => p.name);
+      bautizado: !sinBautizar && (importYes(get(r, 'bapt')) || importYes(get(r, 'baptDate')) || !!baptDate || /^pub$|publicador bautizado/.test(nomV) || !!nombramiento),
+      baptDate, tipo, esperanza: importYes(get(r, 'hope')) || /ungid/.test(norm(String(get(r, 'hope')))) ? 'ungido' : '',
+      grupo, rol: /overseer|superint/.test(roleV) ? 'sup' : /assistant|auxiliar/.test(roleV) ? 'aux' : '', puede,
+      tel, dir: squash(String(get(r, 'dir'))), skip, dup: !!profByName(name) };
+  }).filter(p => p.name).map((p, i, all) => !p.skip && all.findIndex(q => !q.skip && norm(q.name) === norm(p.name)) < i ? { ...p, skip: 'Repetido en la lista' } : p);
 }
+// Pone a los recién agregados en su grupo de servicio (crea los grupos que falten; superintendente y auxiliar si vienen)
+async function importGroups(added) {
+  const byName = new Map(nube.grupos.map(g => [norm(g.nombre).trim(), g]));
+  const plan = new Map();
+  for (const { p, id } of added) {
+    if (!p.grupo) continue;
+    const k = norm(p.grupo).trim();
+    if (!plan.has(k)) plan.set(k, { nombre: p.grupo, ids: [], sup: null, aux: null });
+    const x = plan.get(k); x.ids.push(id); if (p.rol === 'sup') x.sup = id; if (p.rol === 'aux') x.aux = id;
+  }
+  for (const [k, x] of plan) {
+    const g = byName.get(k);
+    if (g) await F.updateDoc(congRef('grupos', g.id), { miembros: F.arrayUnion(...x.ids), ...(!g.superintendente && x.sup ? { superintendente: x.sup } : {}), ...(!g.auxiliar && x.aux ? { auxiliar: x.aux } : {}) });
+    else await F.setDoc(F.doc(F.collection(F.db, 'congregaciones', nube.cong, 'grupos')), { nombre: x.nombre.slice(0, 60), superintendente: x.sup, auxiliar: x.aux, miembros: x.ids });
+  }
+  return plan.size;
+}
+const IMPORT_TIPOS = { pub: '', aux: 'Prec. auxiliar', reg: 'Prec. regular' };
 function openImportDialog() {
-  const fileI = h('input', { type: 'file', accept: '.xlsx,.csv,.txt' });
+  const fileI = h('input', { type: 'file', accept: '.xlsx,.csv,.txt,.tsv' });
   const box = h('div'), err = h('div', { class: 'err' });
+  const groupsBox = h('input', { type: 'checkbox', checked: true });
+  const groupsRow = h('label', { class: 'row', style: { flexWrap: 'nowrap', gap: '8px', fontSize: '14px', color: 'var(--text)' }, hidden: true }, groupsBox,
+    h('span', null, 'Poner a cada quien en su grupo de servicio (se crean los grupos que falten)'));
   let people = [];
   const close = () => { dlg.close(); dlg.remove(); };
-  const addBtn = h('button', { class: 'btn primary', disabled: true, onclick: () => {
-    const add = people.filter(p => !p.dup && p.sex);
+  const addBtn = h('button', { class: 'btn primary', disabled: true, onclick: async () => {
+    addBtn.disabled = true;
+    const add = people.filter(p => !p.dup && p.sex && !p.skip), added = [];
     for (const p of add) {
-      // Ancianos y siervos ministeriales: con los privilegios de su nombramiento; los demás, sin marcar (salen para todo)
+      // Asignaciones: las de la lista (UseFor…); si no trae, las de su nombramiento; los demás, sin marcar (salen para todo)
       const preset = PRIV_PRESETS.find(x => x[2] && x[2] === p.nombramiento);
-      const prof = { id: uid(), name: p.name, sex: p.sex, age: p.age, notes: '', familyId: null, tipo: 'pub', auxMeses: [], nombramiento: p.nombramiento,
-        situacion: '', bautizado: p.bautizado, capitan: false, nacimiento: p.born, bautismoFecha: null, esperanza: '' };
-      if (preset) prof.puede = [...preset[1]];
-      state.profiles.push(prof);
+      const prof = { id: uid(), name: p.name, sex: p.sex, age: p.age, notes: '', familyId: null, tipo: p.tipo, auxMeses: [], nombramiento: p.nombramiento,
+        situacion: '', bautizado: p.bautizado, capitan: false, nacimiento: p.born, bautismoFecha: p.baptDate, esperanza: p.esperanza };
+      if (p.puede) prof.puede = p.puede; else if (preset) prof.puede = [...preset[1]];
+      state.profiles.push(prof); added.push({ p, id: prof.id });
       if (FB_CONFIG && (p.tel || p.dir) && isElder()) F.setDoc(congRef('contactos', prof.id), { tel: p.tel, dir: p.dir, emergencia: '', emergenciaTel: '' }).catch(() => {});
     }
     save(); refreshDatalist();
+    let grupos = 0;
+    if (FB_CONFIG && !groupsRow.hidden && groupsBox.checked) { try { grupos = await importGroups(added); } catch (e) { toast('Los grupos no se pudieron poner: ' + errMsg(e)); } }
     if (FB_CONFIG) logChange(`Cargó ${add.length} hermanos desde una lista`);
-    close(); render(); toast(`Se agregaron ${add.length} hermano${add.length === 1 ? '' : 's'}`);
+    close(); render(); toast(`Se agregaron ${add.length} hermano${add.length === 1 ? '' : 's'}` + (grupos ? ` en ${grupos} grupo${grupos === 1 ? '' : 's'}` : ''));
   } }, 'Agregar');
   fileI.addEventListener('change', async () => {
     err.textContent = ''; box.replaceChildren(h('p', { class: 'muted' }, 'Leyendo…'));
     try {
       people = rowsToPeople(await readTable(fileI.files[0]));
-      const ok = people.filter(p => !p.dup && p.sex), dups = people.filter(p => p.dup).length, nosex = people.filter(p => !p.sex).length;
+      const ok = people.filter(p => !p.dup && p.sex && !p.skip), dups = people.filter(p => p.dup).length, nosex = people.filter(p => !p.sex && !p.skip).length, out = people.filter(p => p.skip && !p.dup).length;
+      groupsRow.hidden = !(FB_CONFIG && canGroups() && ok.some(p => p.grupo));
+      const why = p => p.dup ? 'Ya existe' : p.skip || (!p.sex ? 'Falta el sexo' : '✓');
       box.replaceChildren(h('p', { class: 'small-text' }, `${people.length} en la lista · `, h('strong', null, `${ok.length} nuevos`),
-        dups ? ` · ${dups} ya existen (se saltan)` : '', nosex ? ` · ${nosex} sin sexo (se saltan)` : ''),
+        dups ? ` · ${dups} ya existen` : '', out ? ` · ${out} se mudaron o ya no están` : '', nosex ? ` · ${nosex} sin sexo` : '', dups || out || nosex ? ' (se saltan)' : ''),
         h('div', { class: 'tablewrap', style: { maxHeight: '45vh' } }, h('table', { class: 'stats' },
-          h('thead', null, h('tr', null, ['Nombre', 'Sexo', 'Edad', 'Nombramiento', ''].map(t => h('th', null, t)))),
-          h('tbody', null, people.map(p => h('tr', { class: p.dup || !p.sex ? 'muted' : null },
+          h('thead', null, h('tr', null, ['Nombre', 'Sexo', 'Edad', 'Nombramiento', 'Precursor', 'Grupo', ''].map(t => h('th', null, t)))),
+          h('tbody', null, people.map(p => h('tr', { class: why(p) === '✓' ? null : 'muted' },
             h('td', null, p.name), h('td', null, p.sex === 'M' ? 'Hombre' : p.sex === 'F' ? 'Mujer' : '¿?'), h('td', null, p.age ?? '—'),
-            h('td', null, nomLabel(p.nombramiento) === 'Ninguno' ? '—' : nomLabel(p.nombramiento)), h('td', { class: 'small-text' }, p.dup ? 'Ya existe' : !p.sex ? 'Falta el sexo' : '✓')))))));
+            h('td', null, nomLabel(p.nombramiento) === 'Ninguno' ? (p.bautizado ? '—' : 'No bautizado') : nomLabel(p.nombramiento)),
+            h('td', null, IMPORT_TIPOS[p.tipo] || '—'), h('td', null, (p.grupo || '—') + (p.rol === 'sup' ? ' (sup.)' : p.rol === 'aux' ? ' (aux.)' : '')),
+            h('td', { class: 'small-text' }, why(p))))))));
       addBtn.disabled = !ok.length; addBtn.textContent = `Agregar ${ok.length} hermano${ok.length === 1 ? '' : 's'}`;
     } catch (e) { box.replaceChildren(); err.textContent = e.message || 'No se pudo leer el archivo.'; }
   });
-  const template = () => saveBlob(new Blob(['﻿Nombre,Sexo,Edad,Nombramiento,Bautizado,Teléfono,Dirección\nJuan Pérez,Hombre,45,Anciano,Sí,,\nMaría López,Mujer,32,,Sí,,\n'], { type: 'text/csv' }), 'plantilla-hermanos.csv');
+  const template = () => saveBlob(new Blob(['﻿Nombre,Sexo,Edad,Nombramiento,Bautizado,Precursor,Grupo,Teléfono,Dirección\nJuan Pérez,Hombre,45,Anciano,Sí,,Grupo 1,,\nMaría López,Mujer,32,,Sí,Regular,Grupo 1,,\n'], { type: 'text/csv' }), 'plantilla-hermanos.csv');
   const dlg = h('dialog', { class: 'dlg wide' },
     h('div', { class: 'dlg-body' }, h('h3', null, 'Cargar hermanos desde Excel'),
-      h('p', { class: 'muted small-text', style: { margin: 0 } }, 'La primera fila lleva los títulos: Nombre, Sexo (Hombre/Mujer), Edad o Nacimiento, Nombramiento (Anciano/Siervo ministerial), Bautizado (Sí), Teléfono y Dirección. Solo “Nombre” y “Sexo” son necesarios.'),
+      h('p', { class: 'muted small-text', style: { margin: 0 } }, 'Sirve la plantilla de la app, una lista propia (Nombre o Nombres y Apellidos, Sexo, Edad o Nacimiento, Nombramiento, Precursor, Grupo, Teléfono, Dirección) o la lista de personas exportada de NW Scheduler. Solo el nombre y el sexo son necesarios.'),
       h('div', { class: 'row' }, fileI, h('button', { class: 'btn small', onclick: template }, '⬇ Plantilla de ejemplo')),
-      box, err),
+      box, groupsRow, err),
     h('div', { class: 'dlg-foot' }, h('button', { class: 'btn', onclick: close }, 'Cancelar'), addBtn));
   document.body.append(dlg); dlg.showModal();
 }
